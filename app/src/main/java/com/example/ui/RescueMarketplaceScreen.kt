@@ -40,9 +40,11 @@ fun RescueMarketplaceScreen(viewModel: PharmacyViewModel) {
     val listings by viewModel.rescueListings.collectAsStateWithLifecycle()
     val inventory by viewModel.inventoryItems.collectAsStateWithLifecycle()
     val customers by viewModel.customers.collectAsStateWithLifecycle()
+    val medicationSales by viewModel.medicationSales.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
     var selectedSection by remember { mutableStateOf(0) } // 0 = Deals Feed, 1 = My Rescued stock, 2 = List Near-expiry
+    var simulatedTimelineHour by remember { mutableStateOf(48) } // 0, 24, or 48. Default is 48 is open public pool
     
     // Posting form states
     var selectedItemForPost by remember { mutableStateOf<InventoryItem?>(null) }
@@ -134,18 +136,134 @@ fun RescueMarketplaceScreen(viewModel: PharmacyViewModel) {
                     it.ownerDeviceId != currentDeviceId && it.status == "Available"
                 }
 
+                val currentLga = viewModel.getPharmacyLga()
+                val currentState = viewModel.getPharmacyState()
+
+                // Calculate escalation tier of each deal relative to current node
+                fun getDealTierForCurrentNode(deal: RescueListing): Int {
+                    var score = 0
+                    if (deal.ownerLga.isBlank() || deal.ownerLga.equals(currentLga, ignoreCase = true)) {
+                        score += 40
+                    } else if (deal.ownerState.isBlank() || deal.ownerState.equals(currentState, ignoreCase = true)) {
+                        score += 15
+                    }
+                    
+                    val salesQty = medicationSales.filter { it.productName.equals(deal.productName, ignoreCase = true) }
+                        .sumOf { it.quantitySold }
+                    if (salesQty > 0) {
+                        score += 30
+                    }
+
+                    return when {
+                        score >= 60 -> 1 // High Priority Match: Targeted immediately
+                        score >= 35 -> 2 // Regional Escalation: After 24 hours of list
+                        else -> 3        // Open Cooperative Pool: After 48 hours
+                    }
+                }
+
+                // Filter based on the selected passage of simulated time (Stepwise Escalation)
+                val visibleFeedDeals = feedDeals.filter { deal ->
+                    val tier = getDealTierForCurrentNode(deal)
+                    when (tier) {
+                        1 -> true // Always visible (immediate)
+                        2 -> simulatedTimelineHour >= 24 // Escales after 24 hours
+                        else -> simulatedTimelineHour >= 48 // Open general pool after 48 hours
+                    }
+                }
+
+                // Match Simulator Controls Layout
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Icon(Icons.Filled.HistoryToggleOff, contentDescription = null, tint = TealPrimary, modifier = Modifier.size(18.dp))
+                            Text(
+                                "Careflux Logistics Match Sim Control",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = TealPrimary
+                            )
+                        }
+                        Text(
+                            "Step-wise Routing: near-expiry stock is routed first to proximate, high-capacity nodes. Below, simulate time progression (Hour 0 to 48) to trace listings trickling down the security ring.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Simulation Hour: Hour $simulatedTimelineHour", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                FilterChip(
+                                    selected = simulatedTimelineHour == 0,
+                                    onClick = { simulatedTimelineHour = 0 },
+                                    label = { Text("Hour 0", fontSize = 10.sp) }
+                                )
+                                FilterChip(
+                                    selected = simulatedTimelineHour == 24,
+                                    onClick = { simulatedTimelineHour = 24 },
+                                    label = { Text("Hour 24", fontSize = 10.sp) }
+                                )
+                                FilterChip(
+                                    selected = simulatedTimelineHour == 48,
+                                    onClick = { simulatedTimelineHour = 48 },
+                                    label = { Text("Hour 48", fontSize = 10.sp) }
+                                )
+                            }
+                        }
+                        
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "Your Profile: $currentLga LGA, $currentState State",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.secondary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            TextButton(
+                                onClick = { viewModel.seedSimulationNodesAndSales() },
+                                modifier = Modifier.height(28.dp),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                            ) {
+                                Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(12.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Seed Simulation Nodes", fontSize = 10.sp)
+                            }
+                        }
+                    }
+                }
+
                 Text(
-                    text = "Browse Community Deals (${feedDeals.size})",
+                    text = "Browse Community Deals (${visibleFeedDeals.size} of ${feedDeals.size} total)",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold
                 )
 
-                if (feedDeals.isEmpty()) {
+                if (visibleFeedDeals.isEmpty()) {
                     Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(16.dp)) {
                             Icon(Icons.Filled.Inbox, contentDescription = null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                             Spacer(modifier = Modifier.height(8.dp))
-                            Text("No expiry rescue deals offered by other pharmacies yet.")
+                            Text(
+                                text = "No matching listings visible at simulated hour $simulatedTimelineHour.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Click Hour 24 or 48 to allow listings to escalate into the wider regional/nationwide pool, or seed simulated listings.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                            )
                         }
                     }
                 } else {
@@ -153,7 +271,7 @@ fun RescueMarketplaceScreen(viewModel: PharmacyViewModel) {
                         modifier = Modifier.weight(1f),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        items(feedDeals) { deal ->
+                        items(visibleFeedDeals) { deal ->
                             Card(
                                 border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
                             ) {
@@ -192,6 +310,39 @@ fun RescueMarketplaceScreen(viewModel: PharmacyViewModel) {
                                             val expStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(deal.expiryDate))
                                             Text(expStr, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
                                         }
+                                    }
+
+                                    val isLocalLga = deal.ownerLga.isNotBlank() && deal.ownerLga.equals(currentLga, ignoreCase = true)
+                                    val isLocalState = deal.ownerState.isNotBlank() && deal.ownerState.equals(currentState, ignoreCase = true)
+                                    val salesQty = medicationSales.filter { it.productName.equals(deal.productName, ignoreCase = true) }.sumOf { it.quantitySold }
+
+                                    Row(
+                                         modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                                         horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                         verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                         if (isLocalLga) {
+                                             SuggestionChip(
+                                                 onClick = {},
+                                                 label = { Text("LGA Match: ${deal.ownerLga}", fontSize = 10.sp) },
+                                                 icon = { Icon(Icons.Filled.LocationOn, contentDescription = null, modifier = Modifier.size(12.dp), tint = TealPrimary) }
+                                             )
+                                         } else if (isLocalState) {
+                                             SuggestionChip(
+                                                 onClick = {},
+                                                 label = { Text("State Match: ${deal.ownerState}", fontSize = 10.sp) },
+                                                 icon = { Icon(Icons.Filled.Map, contentDescription = null, modifier = Modifier.size(12.dp)) }
+                                             )
+                                         }
+                                         
+                                         if (salesQty > 0) {
+                                             SuggestionChip(
+                                                 onClick = {},
+                                                 colors = SuggestionChipDefaults.suggestionChipColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                                                 label = { Text("High Demand Core Match ($salesQty Sold)", fontSize = 10.sp) },
+                                                 icon = { Icon(Icons.Filled.Bolt, contentDescription = null, modifier = Modifier.size(12.dp), tint = TealPrimary) }
+                                             )
+                                         }
                                     }
 
                                     Divider(modifier = Modifier.padding(vertical = 4.dp))
@@ -422,6 +573,142 @@ fun RescueMarketplaceScreen(viewModel: PharmacyViewModel) {
                             ),
                             modifier = Modifier.fillMaxWidth()
                         )
+
+                        // Careflux Proximity & Demand matching report
+                        val matches = viewModel.calculateRedistributionOpportunities(selectedItemForPost!!.name, selectedItemForPost!!.category)
+                        
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.25f)),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.4f)),
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Icon(Icons.Filled.Hub, contentDescription = null, tint = TealPrimary, modifier = Modifier.size(20.dp))
+                                    Text(
+                                        "Careflux Logistics Redistribution Report",
+                                        style = MaterialTheme.typography.titleSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                                    )
+                                }
+                                
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    SuggestionChip(
+                                        onClick = {},
+                                        colors = SuggestionChipDefaults.suggestionChipColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.6f)),
+                                        label = { Text("EVENT: expiry_risk_detected", fontSize = 9.sp, fontWeight = FontWeight.Bold) }
+                                    )
+                                    SuggestionChip(
+                                        onClick = {},
+                                        colors = SuggestionChipDefaults.suggestionChipColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                                        label = { Text("ACTION: redistribution_opportunity_found", fontSize = 9.sp, fontWeight = FontWeight.Bold) }
+                                    )
+                                }
+                                
+                                Text(
+                                    "Dynamic Routing Engine: The system scans registered pharmacists and historical prescription/sale volumes to identify cooperative nodes designed to liquidate this item rapidly.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f)
+                                )
+                                
+                                if (matches.isEmpty()) {
+                                    Column(
+                                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Text(
+                                            "No active cooperative nodes synced in pool.",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.error
+                                        )
+                                        Button(
+                                            onClick = { viewModel.seedSimulationNodesAndSales() },
+                                            modifier = Modifier.height(32.dp),
+                                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
+                                        ) {
+                                            Text("Seed Demo Cooperative Nodes & Sales", fontSize = 10.sp)
+                                        }
+                                    }
+                                } else {
+                                    Text(
+                                        "Found Nodes Matching Demand Criteria (${matches.size}):",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onTertiaryContainer
+                                    )
+                                    
+                                    matches.forEach { match ->
+                                        Card(
+                                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)),
+                                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                                        ) {
+                                            Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Text(match.pharmacyName, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                                    Text(
+                                                        "Score: ${match.score}%",
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = if (match.score >= 50) TealPrimary else MaterialTheme.colorScheme.primary
+                                                    )
+                                                }
+                                                Text(
+                                                    "Device: ${match.deviceModel} — Location: ${match.lga} LGA, ${match.state} State",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                                
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    val tierLabel = when (match.escalationTier) {
+                                                        1 -> "Tier 1: Immediate routing (Now)"
+                                                        2 -> "Tier 2: Escalated routing (24 hours)"
+                                                        else -> "Tier 3: Open pool (48 hours)"
+                                                    }
+                                                    Text(
+                                                        tierLabel,
+                                                        style = MaterialTheme.typography.labelSmall,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = MaterialTheme.colorScheme.secondary
+                                                    )
+                                                }
+                                                
+                                                if (match.reasons.isNotEmpty()) {
+                                                    Spacer(modifier = Modifier.height(2.dp))
+                                                    match.reasons.forEach { r ->
+                                                        Row(
+                                                            verticalAlignment = Alignment.CenterVertically, 
+                                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                        ) {
+                                                            Icon(
+                                                                imageVector = Icons.Filled.Check, 
+                                                                contentDescription = null, 
+                                                                modifier = Modifier.size(10.dp), 
+                                                                tint = TealPrimary
+                                                            )
+                                                            Text(r, style = MaterialTheme.typography.bodySmall, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
 
                         Button(
                             onClick = {

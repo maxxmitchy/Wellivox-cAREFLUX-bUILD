@@ -134,6 +134,116 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
     private val _isSuspended = kotlinx.coroutines.flow.MutableStateFlow(false)
     val isSuspended: StateFlow<Boolean> = _isSuspended.asStateFlow()
 
+    // --- Cooperative Location Preferences & Matching Engine ---
+    fun getPharmacyName(): String {
+        return prefs.getString("pharmacy_name", "Community Pharmacy") ?: "Community Pharmacy"
+    }
+    fun setPharmacyName(name: String) {
+        prefs.edit().putString("pharmacy_name", name.trim()).apply()
+        saveOrUpdateDeviceConfig()
+    }
+
+    fun getPharmacyState(): String {
+        return prefs.getString("pharmacy_state", "Lagos") ?: "Lagos"
+    }
+    fun setPharmacyState(state: String) {
+        prefs.edit().putString("pharmacy_state", state.trim()).apply()
+        saveOrUpdateDeviceConfig()
+    }
+
+    fun getPharmacyLga(): String {
+        return prefs.getString("pharmacy_lga", "Ikeja") ?: "Ikeja"
+    }
+    fun setPharmacyLga(lga: String) {
+        prefs.edit().putString("pharmacy_lga", lga.trim()).apply()
+        saveOrUpdateDeviceConfig()
+    }
+
+    private val _registeredNodes = kotlinx.coroutines.flow.MutableStateFlow<List<Map<String, Any>>>(emptyList())
+    val registeredNodes: StateFlow<List<Map<String, Any>>> = _registeredNodes.asStateFlow()
+
+    data class RedistributionMatch(
+        val nodeId: String,
+        val pharmacyName: String,
+        val deviceModel: String,
+        val lga: String,
+        val state: String,
+        val score: Int,
+        val reasons: List<String>,
+        val classMatch: Boolean,
+        val locMatch: Boolean,
+        val escalationTier: Int
+    )
+
+    fun calculateRedistributionOpportunities(productName: String, category: String): List<RedistributionMatch> {
+        val currentLga = getPharmacyLga()
+        val currentState = getPharmacyState()
+        val allNodes = registeredNodes.value
+        val allSales = medicationSales.value
+
+        return allNodes.filter { (it["deviceId"] as? String ?: it["id"] as? String ?: "") != deviceId }.map { node ->
+            val nodeDeviceId = node["deviceId"] as? String ?: node["id"] as? String ?: ""
+            val nodeName = node["displayName"] as? String ?: node["pharmacyName"] as? String ?: "Cooperative Pharmacy"
+            val nodeModel = node["deviceModel"] as? String ?: "Network Node"
+            
+            // Locate based on registered stats OR inferred from their historical sales
+            val nodeLga = (node["lga"] as? String)?.takeIf { it.isNotBlank() }
+                ?: allSales.filter { it.pharmacyNode == nodeModel }.groupBy { it.patientLga }
+                    .maxByOrNull { it.value.size }?.key ?: "Ikeja"
+                    
+            val nodeState = (node["state"] as? String)?.takeIf { it.isNotBlank() }
+                ?: allSales.filter { it.pharmacyNode == nodeModel }.groupBy { it.patientState }
+                    .maxByOrNull { it.value.size }?.key ?: "Lagos"
+
+            val reasons = mutableListOf<String>()
+            var score = 0
+
+            // 1. Geography Proximity (Max 40 pts)
+            if (nodeLga.equals(currentLga, ignoreCase = true)) {
+                score += 40
+                reasons.add("Situated in the same LGA ($currentLga)")
+            } else if (nodeState.equals(currentState, ignoreCase = true)) {
+                score += 15
+                reasons.add("Situated in the same Regional State ($currentState)")
+            }
+
+            // 2. High Demand Probability (Max 30 pts)
+            val nodeSalesOfCategory = allSales.filter { it.pharmacyNode == nodeModel && it.category.equals(category, ignoreCase = true) }
+            val nodeSalesOfProduct = allSales.filter { it.pharmacyNode == nodeModel && it.productName.equals(productName, ignoreCase = true) }
+
+            val categorySalesQty = nodeSalesOfCategory.sumOf { it.quantitySold }
+            val productSalesQty = nodeSalesOfProduct.sumOf { it.quantitySold }
+
+            if (productSalesQty > 0) {
+                score += 30
+                reasons.add("Proven SKU demand: sold $productSalesQty units of '$productName' recently")
+            } else if (categorySalesQty > 0) {
+                score += 20
+                reasons.add("Strong class affinity: sold $categorySalesQty units under '$category' category")
+            }
+
+            // 3. Step-wise Escalation Classification
+            val tier = when {
+                score >= 60 -> 1 // High demand + proximate (Targeted Priority-1)
+                score >= 30 -> 2 // Moderate demand or proximate (Priority-2)
+                else -> 3        // Open general pool (Priority-3)
+            }
+
+            RedistributionMatch(
+                nodeId = nodeDeviceId,
+                pharmacyName = nodeName,
+                deviceModel = nodeModel,
+                lga = nodeLga,
+                state = nodeState,
+                score = score,
+                reasons = reasons,
+                classMatch = categorySalesQty > 0 || productSalesQty > 0,
+                locMatch = nodeLga.equals(currentLga, ignoreCase = true),
+                escalationTier = tier
+            )
+        }.sortedByDescending { it.score }
+    }
+
     init {
         val carefluxPrefs = application.getSharedPreferences("careflux_prefs", Context.MODE_PRIVATE)
         var id = carefluxPrefs.getString("device_uuid", null)
@@ -146,7 +256,8 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
         // Start snapshot listener for dynamic feature flags
         try {
             val deviceModel = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
-            val docRef = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+            val firestore = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+            val docRef = firestore
                 .collection("device_configs")
                 .document(deviceId)
 
@@ -176,6 +287,19 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                     _isSuspended.value = suspended
                 }
             }
+
+            // Sync Registered Cooperative Nodes & Pharmacists
+            firestore.collection("registered_pharmacists")
+                .addSnapshotListener { snapshot, e ->
+                    if (e == null && snapshot != null) {
+                        val nodesList = snapshot.documents.mapNotNull { doc ->
+                            val data = doc.data?.toMutableMap() ?: return@mapNotNull null
+                            data["id"] = doc.id
+                            data
+                        }
+                        _registeredNodes.value = nodesList
+                    }
+                }
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -308,6 +432,8 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
 
                                     val matched = repository.getRescueListingByFirestoreId(remoteId)
                                     val idToUse = matched?.id ?: 0
+                                    val lga = itemMap["ownerLga"] as? String ?: "Ikeja"
+                                    val state = itemMap["ownerState"] as? String ?: "Lagos"
 
                                     repository.insertRescueListing(
                                         RescueListing(
@@ -328,7 +454,9 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                                             acceptedByDeviceModel = acceptedNodeModel,
                                             acceptedAt = acceptedAtTime,
                                             soldAt = soldAtTime,
-                                            profitShareAmount = profitVal
+                                            profitShareAmount = profitVal,
+                                            ownerLga = lga,
+                                            ownerState = state
                                         )
                                     )
                                 }
@@ -1144,6 +1272,9 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 val docRef = db.collection("expiry_rescue_listings").document()
                 val firestoreId = docRef.id
 
+                val lgaVal = getPharmacyLga()
+                val stateVal = getPharmacyState()
+
                 // 1. Insert local copy to Room immediately for instant responsiveness
                 repository.insertRescueListing(
                     RescueListing(
@@ -1159,7 +1290,9 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                         ownerDeviceId = deviceId,
                         ownerDeviceModel = deviceModel,
                         listedAt = System.currentTimeMillis(),
-                        status = "Available"
+                        status = "Available",
+                        ownerLga = lgaVal,
+                        ownerState = stateVal
                     )
                 )
 
@@ -1180,7 +1313,9 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                     "acceptedByDeviceModel" to "",
                     "acceptedAt" to 0L,
                     "soldAt" to 0L,
-                    "profitShareAmount" to 0.0
+                    "profitShareAmount" to 0.0,
+                    "ownerLga" to lgaVal,
+                    "ownerState" to stateVal
                 )
                 docRef.set(listingData).await()
             } catch (e: Exception) {
@@ -1395,12 +1530,29 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                     "deviceModel" to deviceModel,
                     "aiContentEnabled" to true,
                     "carefluxAiEnabled" to true,
-                    "lastActive" to System.currentTimeMillis()
+                    "lastActive" to System.currentTimeMillis(),
+                    "pharmacyName" to getPharmacyName(),
+                    "lga" to getPharmacyLga(),
+                    "state" to getPharmacyState()
                 )
                 if (user != null) {
                     dataMap["ownerEmail"] = user.email.orEmpty()
                     dataMap["ownerName"] = user.displayName.orEmpty()
                     dataMap["ownerUid"] = user.uid
+
+                    // Also sync to registered_pharmacists
+                    try {
+                        db.collection("registered_pharmacists").document(user.uid)
+                            .update(
+                                mapOf(
+                                    "pharmacyName" to getPharmacyName(),
+                                    "lga" to getPharmacyLga(),
+                                    "state" to getPharmacyState()
+                                )
+                            )
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
                 }
 
                 docRef.set(dataMap, com.google.firebase.firestore.SetOptions.merge())
@@ -1507,6 +1659,94 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
         val formattedAmount = "%,.2f".format(amount)
         val message = "Careflux Transaction Alert:\nDear $patientName, your prescription ($itemsSummary) was successfully dispensed. Total: ₦$formattedAmount. Thank you for choosing Careflux Pharmacy!"
         return sendTermiiSms(phone, message)
+    }
+
+    fun seedSimulationNodesAndSales() {
+        viewModelScope.launch {
+            try {
+                val db = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                
+                // 1. Seed 3 Simulated Cooperative Node Pharmacies
+                val nodes = listOf(
+                    mapOf(
+                        "uid" to "sim_node_1",
+                        "deviceId" to "sim_device_1",
+                        "displayName" to "CitiCare Kosofe Pharmacy",
+                        "pharmacyName" to "CitiCare Kosofe Pharmacy",
+                        "deviceModel" to "Infinix Note 30",
+                        "lga" to "Kosofe",
+                        "state" to "Lagos",
+                        "registeredAt" to System.currentTimeMillis()
+                    ),
+                    mapOf(
+                        "uid" to "sim_node_2",
+                        "deviceId" to "sim_device_2",
+                        "displayName" to "Careflux Ikeja Central",
+                        "pharmacyName" to "Careflux Ikeja Central",
+                        "deviceModel" to "TECNO Camon 20",
+                        "lga" to "Ikeja",
+                        "state" to "Lagos",
+                        "registeredAt" to System.currentTimeMillis()
+                    ),
+                    mapOf(
+                        "uid" to "sim_node_3",
+                        "deviceId" to "sim_device_3",
+                        "displayName" to "Surulere Co-op Health",
+                        "pharmacyName" to "Surulere Co-op Health",
+                        "deviceModel" to "Xiaomi Redmi Note 12",
+                        "lga" to "Surulere",
+                        "state" to "Lagos",
+                        "registeredAt" to System.currentTimeMillis()
+                    )
+                )
+
+                for (node in nodes) {
+                    db.collection("registered_pharmacists")
+                        .document(node["uid"].toString())
+                        .set(node)
+                }
+
+                // 2. Seed Related Medication Sales to showcase demand probability matching
+                val sales = listOf(
+                    // Sales for Ikeja node (high SKU demand for 'Coartem' / Antimalarials)
+                    mapOf(
+                        "productName" to "Coartem 80/480",
+                        "brand" to "Novartis",
+                        "genericName" to "Artemether/Lumefantrine",
+                        "category" to "Antimalarials",
+                        "quantitySold" to 45,
+                        "dateSold" to System.currentTimeMillis() - 86400000L * 3, // 3 days ago
+                        "pharmacyNode" to "TECNO Camon 20", // Matches Node 2
+                        "patientState" to "Lagos",
+                        "patientLga" to "Ikeja",
+                        "salePrice" to 112500.0
+                    ),
+                    // Sales for Kosofe node (moderate class affinity for 'Antimalarials' in Kosofe)
+                    mapOf(
+                        "productName" to "Amatem Softgel",
+                        "brand" to "Elbe",
+                        "genericName" to "Artemether/Lumefantrine",
+                        "category" to "Antimalarials",
+                        "quantitySold" to 22,
+                        "dateSold" to System.currentTimeMillis() - 86400000L * 5,
+                        "pharmacyNode" to "Infinix Note 30", // Matches Node 1
+                        "patientState" to "Lagos",
+                        "patientLga" to "Kosofe",
+                        "salePrice" to 44000.0
+                    )
+                )
+
+                for (sale in sales) {
+                    db.collection("medication_sales")
+                        .add(sale)
+                }
+
+                android.util.Log.d("PharmacyViewModel", "Simulated cooperative nodes and sales successfully seeded!")
+
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
     }
 
     class Factory(private val application: Application) : ViewModelProvider.Factory {

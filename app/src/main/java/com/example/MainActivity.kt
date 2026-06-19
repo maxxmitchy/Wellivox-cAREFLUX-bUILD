@@ -463,6 +463,9 @@ fun PharmacyRootScreen(
             var tempApiKey by remember { mutableStateOf(viewModel.getApiKey()) }
             var tempTermiiApiKey by remember { mutableStateOf(viewModel.getTermiiApiKey()) }
             var tempTermiiSenderId by remember { mutableStateOf(viewModel.getTermiiSenderId()) }
+            var tempPharmacyName by remember { mutableStateOf(viewModel.getPharmacyName()) }
+            var tempPharmacyLga by remember { mutableStateOf(viewModel.getPharmacyLga()) }
+            var tempPharmacyState by remember { mutableStateOf(viewModel.getPharmacyState()) }
             var showClearDbDialog by remember { mutableStateOf(false) }
 
             if (showClearDbDialog) {
@@ -491,7 +494,57 @@ fun PharmacyRootScreen(
                     onDismissRequest = { showSettingsDialog = false },
                     title = { Text("App Settings") },
                     text = {
-                        Column(modifier = Modifier.fillMaxWidth()) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .verticalScroll(rememberScrollState())
+                        ) {
+                            Text("Cooperative Node Profile", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.height(8.dp))
+                            
+                            Text("Pharmacy Name", style = MaterialTheme.typography.labelMedium)
+                            Spacer(modifier = Modifier.height(4.dp))
+                            OutlinedTextField(
+                                value = tempPharmacyName,
+                                onValueChange = { tempPharmacyName = it },
+                                placeholder = { Text("e.g. Wellivox Health Palace") },
+                                modifier = Modifier.fillMaxWidth(),
+                                singleLine = true
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("LGA Location", style = MaterialTheme.typography.labelMedium)
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    OutlinedTextField(
+                                        value = tempPharmacyLga,
+                                        onValueChange = { tempPharmacyLga = it },
+                                        placeholder = { Text("e.g. Ikeja") },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        singleLine = true
+                                    )
+                                }
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("Regional State", style = MaterialTheme.typography.labelMedium)
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    OutlinedTextField(
+                                        value = tempPharmacyState,
+                                        onValueChange = { tempPharmacyState = it },
+                                        placeholder = { Text("e.g. Lagos") },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        singleLine = true
+                                    )
+                                }
+                            }
+                            
+                            Spacer(modifier = Modifier.height(14.dp))
+                            HorizontalDivider()
+                            Spacer(modifier = Modifier.height(14.dp))
+
                             Text("Gemini API Key", style = MaterialTheme.typography.labelMedium)
                             Spacer(modifier = Modifier.height(4.dp))
                             OutlinedTextField(
@@ -565,6 +618,9 @@ fun PharmacyRootScreen(
                             viewModel.setApiKey(tempApiKey)
                             viewModel.setTermiiApiKey(tempTermiiApiKey)
                             viewModel.setTermiiSenderId(tempTermiiSenderId)
+                            viewModel.setPharmacyName(tempPharmacyName)
+                            viewModel.setPharmacyLga(tempPharmacyLga)
+                            viewModel.setPharmacyState(tempPharmacyState)
                             showSettingsDialog = false
                         }) {
                             Text("Save")

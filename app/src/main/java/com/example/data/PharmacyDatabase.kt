@@ -24,7 +24,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         RescueListing::class,
         AdminAuditLog::class
     ],
-    version = 16,
+    version = 17,
     exportSchema = false
 )
 abstract class PharmacyDatabase : RoomDatabase() {

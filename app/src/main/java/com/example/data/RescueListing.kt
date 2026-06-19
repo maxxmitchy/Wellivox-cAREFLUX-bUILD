@@ -22,7 +22,9 @@ data class RescueListing(
     val acceptedByDeviceModel: String = "",
     val acceptedAt: Long = 0L,
     val soldAt: Long = 0L,
-    val profitShareAmount: Double = 0.0
+    val profitShareAmount: Double = 0.0,
+    val ownerLga: String = "Ikeja",
+    val ownerState: String = "Lagos"
 ) {
     val isExpired: Boolean
         get() = (System.currentTimeMillis() - listedAt) > (rescueDurationDays * 24L * 60 * 60 * 1000)
