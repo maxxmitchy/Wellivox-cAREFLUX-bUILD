@@ -162,6 +162,9 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
     private val _registeredNodes = kotlinx.coroutines.flow.MutableStateFlow<List<Map<String, Any>>>(emptyList())
     val registeredNodes: StateFlow<List<Map<String, Any>>> = _registeredNodes.asStateFlow()
 
+    private val _keyRequests = kotlinx.coroutines.flow.MutableStateFlow<List<Map<String, Any>>>(emptyList())
+    val keyRequests: StateFlow<List<Map<String, Any>>> = _keyRequests.asStateFlow()
+
     data class RedistributionMatch(
         val nodeId: String,
         val pharmacyName: String,
@@ -285,6 +288,20 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                     _isAiContentEnabled.value = aiContent
                     _isCarefluxAiEnabled.value = carefluxAi
                     _isSuspended.value = suspended
+
+                    // Deep sync approved personal credentials if generated
+                    val customGemini = snapshot.getString("customGeminiApiKey")
+                    val customTermii = snapshot.getString("customTermiiApiKey")
+                    val customTermiiSender = snapshot.getString("customTermiiSenderId")
+                    if (!customGemini.isNullOrBlank()) {
+                        prefs.edit().putString("custom_api_key", customGemini.trim()).apply()
+                    }
+                    if (!customTermii.isNullOrBlank()) {
+                        prefs.edit().putString("custom_termii_api_key", customTermii.trim()).apply()
+                    }
+                    if (!customTermiiSender.isNullOrBlank()) {
+                        prefs.edit().putString("custom_termii_sender_id", customTermiiSender.trim()).apply()
+                    }
                 }
             }
 
@@ -298,6 +315,19 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                             data
                         }
                         _registeredNodes.value = nodesList
+                    }
+                }
+
+            // Sync Key Creation Requests (real-time stream)
+            firestore.collection("key_creation_requests")
+                .addSnapshotListener { snapshot, e ->
+                    if (e == null && snapshot != null) {
+                        val reqList = snapshot.documents.mapNotNull { doc ->
+                            val data = doc.data?.toMutableMap() ?: return@mapNotNull null
+                            data["id"] = doc.id
+                            data
+                        }
+                        _keyRequests.value = reqList
                     }
                 }
         } catch (e: Exception) {
@@ -1659,6 +1689,96 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
         val formattedAmount = "%,.2f".format(amount)
         val message = "Careflux Transaction Alert:\nDear $patientName, your prescription ($itemsSummary) was successfully dispensed. Total: ₦$formattedAmount. Thank you for choosing Careflux Pharmacy!"
         return sendTermiiSms(phone, message)
+    }
+
+    fun submitKeyRequest() {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val db = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                val requestDoc = db.collection("key_creation_requests").document(deviceId)
+                val requestData = hashMapOf(
+                    "deviceId" to deviceId,
+                    "pharmacyName" to getPharmacyName(),
+                    "lga" to getPharmacyLga(),
+                    "state" to getPharmacyState(),
+                    "requestedAt" to System.currentTimeMillis(),
+                    "status" to "PENDING",
+                    "geminiKey" to "",
+                    "termiiApiKey" to "",
+                    "termiiSenderId" to ""
+                )
+                requestDoc.set(requestData, com.google.firebase.firestore.SetOptions.merge())
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    fun approveKeyRequest(targetDeviceId: String, gemini: String, termii: String, sender: String) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val db = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                
+                // 1. Update request status
+                db.collection("key_creation_requests").document(targetDeviceId)
+                    .update(
+                        "status", "APPROVED",
+                        "geminiKey", gemini,
+                        "termiiApiKey", termii,
+                        "termiiSenderId", sender
+                    )
+                
+                // 2. Provision custom keys to device config
+                db.collection("device_configs").document(targetDeviceId)
+                    .update(
+                        "customGeminiApiKey", gemini,
+                        "customTermiiApiKey", termii,
+                        "customTermiiSenderId", sender
+                    )
+                
+                // 3. Log to audit trail
+                val logId = java.util.UUID.randomUUID().toString()
+                db.collection("admin_audit_logs").document(logId).set(
+                    hashMapOf(
+                        "id" to logId,
+                        "adminName" to "Administrator",
+                        "action" to "APPROVE_KEYS",
+                        "affectedNodeId" to targetDeviceId,
+                        "affectedNodeModel" to "Personal Keys Issued",
+                        "reason" to "Custom API Keys request approved and provisioned.",
+                        "timestamp" to System.currentTimeMillis()
+                    )
+                )
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    fun rejectKeyRequest(targetDeviceId: String, rationale: String) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val db = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                db.collection("key_creation_requests").document(targetDeviceId)
+                    .update("status", "REJECTED")
+                
+                // Log to audit trail
+                val logId = java.util.UUID.randomUUID().toString()
+                db.collection("admin_audit_logs").document(logId).set(
+                    hashMapOf(
+                        "id" to logId,
+                        "adminName" to "Administrator",
+                        "action" to "REJECT_KEYS",
+                        "affectedNodeId" to targetDeviceId,
+                        "affectedNodeModel" to "Personal Keys Denied",
+                        "reason" to "Keys request rejected: $rationale",
+                        "timestamp" to System.currentTimeMillis()
+                    )
+                )
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
     }
 
     fun seedSimulationNodesAndSales() {

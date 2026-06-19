@@ -227,6 +227,7 @@ fun PharmacyRootScreen(
 
     val isAiContentEnabled by viewModel.isAiContentEnabled.collectAsStateWithLifecycle()
     val isCarefluxAiEnabled by viewModel.isCarefluxAiEnabled.collectAsStateWithLifecycle()
+    val keyRequests by viewModel.keyRequests.collectAsStateWithLifecycle()
 
     val isUserAdmin = remember(currentUser) {
         val email = currentUser?.email?.lowercase() ?: ""
@@ -401,6 +402,17 @@ fun PharmacyRootScreen(
                 }
 
                 androidx.compose.material3.NavigationDrawerItem(
+                    label = { Text("Cooperative Profile", color = TealPrimary, fontWeight = FontWeight.Bold) },
+                    selected = false,
+                    onClick = {
+                        scope.launch { drawerState.close() }
+                        showSettingsDialog = true
+                    },
+                    icon = { Icon(Icons.Filled.Settings, contentDescription = "Cooperative Profile Settings", tint = TealPrimary) },
+                    modifier = Modifier.padding(androidx.compose.material3.NavigationDrawerItemDefaults.ItemPadding)
+                )
+
+                androidx.compose.material3.NavigationDrawerItem(
                     label = { Text("Sign Out", color = MaterialTheme.colorScheme.error) },
                     selected = false,
                     onClick = {
@@ -459,7 +471,7 @@ fun PharmacyRootScreen(
             )
 
         // --- Settings Dialog ---
-        if (showSettingsDialog && isUserAdmin) {
+        if (showSettingsDialog) {
             var tempApiKey by remember { mutableStateOf(viewModel.getApiKey()) }
             var tempTermiiApiKey by remember { mutableStateOf(viewModel.getTermiiApiKey()) }
             var tempTermiiSenderId by remember { mutableStateOf(viewModel.getTermiiSenderId()) }
@@ -545,49 +557,119 @@ fun PharmacyRootScreen(
                             HorizontalDivider()
                             Spacer(modifier = Modifier.height(14.dp))
 
-                            Text("Gemini API Key", style = MaterialTheme.typography.labelMedium)
-                            Spacer(modifier = Modifier.height(4.dp))
-                            OutlinedTextField(
-                                value = tempApiKey,
-                                onValueChange = { tempApiKey = it },
-                                placeholder = { Text("Paste your API Key here") },
-                                modifier = Modifier.fillMaxWidth(),
-                                singleLine = true
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                "Adding custom keys bypasses shared quotas and avoids HTTP 429 exceptions.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text("Termii SMS API Key", style = MaterialTheme.typography.labelMedium)
-                            Spacer(modifier = Modifier.height(4.dp))
-                            OutlinedTextField(
-                                value = tempTermiiApiKey,
-                                onValueChange = { tempTermiiApiKey = it },
-                                placeholder = { Text("At_...") },
-                                modifier = Modifier.fillMaxWidth(),
-                                singleLine = true
-                            )
-                            
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Text("Termii Registered Sender ID", style = MaterialTheme.typography.labelMedium)
-                            Spacer(modifier = Modifier.height(4.dp))
-                            OutlinedTextField(
-                                value = tempTermiiSenderId,
-                                onValueChange = { tempTermiiSenderId = it },
-                                placeholder = { Text("e.g. N-Alert") },
-                                modifier = Modifier.fillMaxWidth(),
-                                singleLine = true
-                            )
-                            Spacer(modifier = Modifier.height(4.dp))
-                            Text(
-                                "Requires a verified Termii.com sender; unregistered values will fail delivery.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            if (isUserAdmin) {
+                                Text("Gemini API Key", style = MaterialTheme.typography.labelMedium)
+                                Spacer(modifier = Modifier.height(4.dp))
+                                OutlinedTextField(
+                                    value = tempApiKey,
+                                    onValueChange = { tempApiKey = it },
+                                    placeholder = { Text("Paste your API Key here") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    "Adding custom keys bypasses shared quotas and avoids HTTP 429 exceptions.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                
+                                Spacer(modifier = Modifier.height(16.dp))
+                                Text("Termii SMS API Key", style = MaterialTheme.typography.labelMedium)
+                                Spacer(modifier = Modifier.height(4.dp))
+                                OutlinedTextField(
+                                    value = tempTermiiApiKey,
+                                    onValueChange = { tempTermiiApiKey = it },
+                                    placeholder = { Text("At_...") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true
+                                )
+                                
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text("Termii Registered Sender ID", style = MaterialTheme.typography.labelMedium)
+                                Spacer(modifier = Modifier.height(4.dp))
+                                OutlinedTextField(
+                                    value = tempTermiiSenderId,
+                                    onValueChange = { tempTermiiSenderId = it },
+                                    placeholder = { Text("e.g. N-Alert") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    "Requires a verified Termii.com sender; unregistered values will fail delivery.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            } else {
+                                Card(
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f)),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
+                                ) {
+                                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Text("Dedicated Node Credentials", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = TealPrimary)
+                                        
+                                        val myRequest = keyRequests.find { (it["deviceId"] as? String) == viewModel.deviceId }
+                                        if (myRequest == null) {
+                                            Text(
+                                                text = "This node is currently running on the shared clinical cooperative resource pool. For dedicated API quotas and guaranteed delivery services, you can request a personal API suite.",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            Button(
+                                                onClick = { viewModel.submitKeyRequest() },
+                                                colors = ButtonDefaults.buttonColors(containerColor = TealPrimary),
+                                                shape = RoundedCornerShape(8.dp),
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
+                                                Text("Submit Request for Personal Keys", color = Color.Black, fontWeight = FontWeight.Bold)
+                                            }
+                                        } else {
+                                            val status = myRequest["status"] as? String ?: "PENDING"
+                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                Text("Request Status:", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                                val statusColor = when (status) {
+                                                    "APPROVED" -> Color(0xFF4CAF50)
+                                                    "REJECTED" -> MaterialTheme.colorScheme.error
+                                                    else -> Color(0xFFFF9800)
+                                                }
+                                                Text(status.uppercase(), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = statusColor)
+                                            }
+                                            
+                                            if (status == "PENDING") {
+                                                Text(
+                                                    text = "Your request for a personal Gemini & Termii suite is submitted and pending review by administrative compliance officers.",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            } else if (status == "APPROVED") {
+                                                Text(
+                                                    text = "✓ Dedicated API suite successfully provisioned and active on this node. Shared database queries and messaging tasks are now running on personal isolated keys.",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = Color(0xFF4CAF50),
+                                                    fontWeight = FontWeight.Medium
+                                                )
+                                            } else if (status == "REJECTED") {
+                                                Text(
+                                                    text = "Your request was declined. Please verify your node registration or reach out to Wellivox administration.",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                Button(
+                                                    onClick = { viewModel.submitKeyRequest() },
+                                                    colors = ButtonDefaults.buttonColors(containerColor = TealPrimary),
+                                                    shape = RoundedCornerShape(8.dp),
+                                                    modifier = Modifier.fillMaxWidth()
+                                                ) {
+                                                    Text("Re-submit Key Request", color = Color.Black, fontWeight = FontWeight.Bold)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
 
                             Spacer(modifier = Modifier.height(20.dp))
                             HorizontalDivider()
@@ -599,17 +681,19 @@ fun PharmacyRootScreen(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
-                            Spacer(modifier = Modifier.height(16.dp))
-                            HorizontalDivider()
-                            Spacer(modifier = Modifier.height(12.dp))
-                            Text("Data Management", style = MaterialTheme.typography.labelMedium)
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Button(
-                                onClick = { showClearDbDialog = true },
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text("Clear Entire Database")
+                            if (isUserAdmin) {
+                                Spacer(modifier = Modifier.height(16.dp))
+                                HorizontalDivider()
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text("Data Management", style = MaterialTheme.typography.labelMedium)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Button(
+                                    onClick = { showClearDbDialog = true },
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("Clear Entire Database")
+                                }
                             }
                         }
                     },
@@ -1210,22 +1294,20 @@ fun HeaderSection(
                 )
             }
 
-            if (isAdmin) {
-                Box(
-                    modifier = Modifier
-                        .size(38.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                        .clickable { onSettingsClick() },
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Settings,
-                        contentDescription = "Settings",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(22.dp)
-                    )
-                }
+            Box(
+                modifier = Modifier
+                    .size(38.dp)
+                    .clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                    .clickable { onSettingsClick() },
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Settings,
+                    contentDescription = "Settings",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(22.dp)
+                )
             }
 
             // Theme Toggle Button

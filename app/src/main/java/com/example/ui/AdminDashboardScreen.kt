@@ -34,9 +34,10 @@ import java.util.*
 @Composable
 fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
     val auditLogs by viewModel.adminAuditLogs.collectAsStateWithLifecycle()
+    val keyRequests by viewModel.keyRequests.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
-    var selectedSubTab by remember { mutableStateOf(0) } // 0 = Nodes, 1 = LGA Analytics, 2 = Audit Trail
+    var selectedSubTab by remember { mutableStateOf(0) } // 0 = Nodes, 1 = LGA Analytics, 2 = Key Requests, 3 = Audit Trail
     var pharmacistsList by remember { mutableStateOf<List<Map<String, Any>>>(emptyList()) }
     var deviceConfigsList by remember { mutableStateOf<List<Map<String, Any>>>(emptyList()) }
     var isLoadingNodes by remember { mutableStateOf(true) }
@@ -670,6 +671,7 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                 listOf(
                     "Node" to Icons.Filled.Store,
                     "LGA Analytics" to Icons.Filled.Analytics,
+                    "Key Requests" to Icons.Filled.VpnKey,
                     "Audit Trail" to Icons.Filled.HistoryToggleOff
                 ).forEachIndexed { idx, pair ->
                     val isSelected = selectedSubTab == idx
@@ -2108,6 +2110,249 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                             e.printStackTrace()
                             aiAdvisorReport = "Error generating public health plan: ${e.localizedMessage}"
                             isGeneratingReport = false
+                        }
+                    }
+                }
+            }
+        } else if (selectedSubTab == 2) {
+            // --- Key Requests Screen (Interactive Management and Approval) ---
+            var requestToApprove by remember { mutableStateOf<Map<String, Any>?>(null) }
+            var requestToReject by remember { mutableStateOf<Map<String, Any>?>(null) }
+            var rejectionReason by remember { mutableStateOf("") }
+            
+            // Approval form states
+            var formGeminiKey by remember { mutableStateOf("") }
+            var formTermiiKey by remember { mutableStateOf("") }
+            var formSenderId by remember { mutableStateOf("N-Alert") }
+
+            if (requestToApprove != null) {
+                val req = requestToApprove!!
+                val phName = req["pharmacyName"] as? String ?: "Cooperative Node"
+                val devId = req["deviceId"] as? String ?: ""
+                
+                AlertDialog(
+                    onDismissRequest = { requestToApprove = null },
+                    title = { Text("Approve & Provision API Suite", fontWeight = FontWeight.Bold) },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text("Assign dedicated keys for $phName:", style = MaterialTheme.typography.bodyMedium)
+                            
+                            OutlinedTextField(
+                                value = formGeminiKey,
+                                onValueChange = { formGeminiKey = it },
+                                label = { Text("Gemini API Key") },
+                                placeholder = { Text("AIzaSy...") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(10.dp)
+                            )
+                            
+                            OutlinedTextField(
+                                value = formTermiiKey,
+                                onValueChange = { formTermiiKey = it },
+                                label = { Text("Termii SMS API Key") },
+                                placeholder = { Text("At_...") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(10.dp)
+                            )
+                            
+                            OutlinedTextField(
+                                value = formSenderId,
+                                onValueChange = { formSenderId = it },
+                                label = { Text("Termii Sender ID") },
+                                placeholder = { Text("e.g. N-Alert") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(10.dp)
+                            )
+                        }
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                viewModel.approveKeyRequest(devId, formGeminiKey, formTermiiKey, formSenderId)
+                                requestToApprove = null
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = TealPrimary),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("Approve & Sync Keys", color = Color.Black, fontWeight = FontWeight.Bold)
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { requestToApprove = null }) { Text("Cancel") }
+                    }
+                )
+            }
+
+            if (requestToReject != null) {
+                val req = requestToReject!!
+                val phName = req["pharmacyName"] as? String ?: "Cooperative Node"
+                val devId = req["deviceId"] as? String ?: ""
+                
+                AlertDialog(
+                    onDismissRequest = { requestToReject = null },
+                    title = { Text("Reject Key Request", fontWeight = FontWeight.Bold) },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text("Specify decline rationale for $phName:", style = MaterialTheme.typography.bodyMedium)
+                            OutlinedTextField(
+                                value = rejectionReason,
+                                onValueChange = { rejectionReason = it },
+                                placeholder = { Text("e.g., node license unverified...") },
+                                label = { Text("Reason for decline") },
+                                modifier = Modifier.fillMaxWidth().height(100.dp),
+                                singleLine = false,
+                                shape = RoundedCornerShape(10.dp)
+                            )
+                        }
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                viewModel.rejectKeyRequest(devId, rejectionReason)
+                                requestToReject = null
+                                rejectionReason = ""
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("Decline Request", color = Color.White, fontWeight = FontWeight.Bold)
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { requestToReject = null }) { Text("Cancel") }
+                    }
+                )
+            }
+
+            if (keyRequests.isEmpty()) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Filled.VpnKey, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f), modifier = Modifier.size(48.dp))
+                        Text(
+                            text = "No key request setups found.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            } else {
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    items(keyRequests.sortedByDescending { it["requestedAt"] as? Long ?: 0L }) { req ->
+                        val phName = req["pharmacyName"] as? String ?: "Unverified Node"
+                        val model = req["deviceModel"] as? String ?: "Network Node"
+                        val lga = req["lga"] as? String ?: ""
+                        val state = req["state"] as? String ?: ""
+                        val status = req["status"] as? String ?: "PENDING"
+                        val devId = req["deviceId"] as? String ?: ""
+                        val requestedAt = req["requestedAt"] as? Long ?: 0L
+                        val dateFormatted = java.text.SimpleDateFormat("MMM dd, yyyy - HH:mm", java.util.Locale.getDefault()).format(java.util.Date(requestedAt))
+
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f)),
+                            shape = RoundedCornerShape(16.dp),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(phName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
+                                        Text("Node ID: $devId", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    
+                                    val statusColor = when (status) {
+                                        "APPROVED" -> Color(0xFF4CAF50)
+                                        "REJECTED" -> MaterialTheme.colorScheme.error
+                                        else -> Color(0xFFFF9800)
+                                    }
+                                    
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(statusColor.copy(alpha = 0.12f))
+                                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                                    ) {
+                                        Text(status.uppercase(), fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, color = statusColor)
+                                    }
+                                }
+
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.08f))
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column {
+                                        Text("Regional Scope: $lga, $state", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text("Submitted: $dateFormatted", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+
+                                if (status == "PENDING") {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Button(
+                                            onClick = {
+                                                formGeminiKey = ""
+                                                formTermiiKey = ""
+                                                formSenderId = "N-Alert"
+                                                requestToApprove = req
+                                            },
+                                            colors = ButtonDefaults.buttonColors(containerColor = TealPrimary),
+                                            shape = RoundedCornerShape(8.dp),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Text("Approve & Provision", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                        }
+                                        
+                                        OutlinedButton(
+                                            onClick = {
+                                                rejectionReason = ""
+                                                requestToReject = req
+                                            },
+                                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
+                                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                                            shape = RoundedCornerShape(8.dp),
+                                            modifier = Modifier.weight(1.0f)
+                                        ) {
+                                            Text("Decline", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                        }
+                                    }
+                                } else if (status == "APPROVED") {
+                                    val preGemini = req["geminiKey"] as? String ?: ""
+                                    val preTermii = req["termiiApiKey"] as? String ?: ""
+                                    val preSender = req["termiiSenderId"] as? String ?: "N-Alert"
+                                    
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f))
+                                            .padding(10.dp),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Text("Provisioned Keys Profile:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TealPrimary)
+                                        Text("Gemini: ${if (preGemini.length > 10) "${preGemini.take(6)}...${preGemini.takeLast(4)}" else "Custom Active"}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text("Termii SMS Key: ${if (preTermii.length > 10) "${preTermii.take(6)}...${preTermii.takeLast(4)}" else "Custom Active"} (Sender: $preSender)", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                }
+                            }
                         }
                     }
                 }
