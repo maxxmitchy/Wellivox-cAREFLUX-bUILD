@@ -1,0 +1,8 @@
+{
+  "name": "Careflux",
+  "description": "Keep track of pharmacy inventory levels, daily prescription volume, low-stock warnings, refill alerts, and send automated client reminders via WhatsApp.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

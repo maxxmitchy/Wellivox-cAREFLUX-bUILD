@@ -1,0 +1,738 @@
+package com.example.ui
+
+import android.content.Context
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.*
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.example.ui.theme.AppThemeManager
+import com.example.ui.theme.TealPrimary
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.api.ApiException
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.GoogleAuthProvider
+import com.google.firebase.auth.FirebaseUser
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun AuthScreen(
+    onAuthSuccess: (FirebaseUser) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val context = LocalContext.current
+    val auth = remember { FirebaseAuth.getInstance() }
+    val scope = rememberCoroutineScope()
+    
+    var isSignUp by remember { mutableStateOf(false) }
+    var email by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+    var name by remember { mutableStateOf("") }
+    var phoneNumber by remember { mutableStateOf("") }
+    var showPassword by remember { mutableStateOf(false) }
+    var isLoading by remember { mutableStateOf(false) }
+    
+    // Manage email verification screen if not verified
+    var pendingVerificationUser by remember { mutableStateOf<FirebaseUser?>(null) }
+    
+    // Check initially if currentUser needs verification
+    LaunchedEffect(Unit) {
+        val currentUser = auth.currentUser
+        if (currentUser != null) {
+            if (currentUser.isEmailVerified || isGoogleProvider(currentUser)) {
+                onAuthSuccess(currentUser)
+            } else {
+                pendingVerificationUser = currentUser
+            }
+        }
+    }
+
+    // Google Sign-In setup
+    val gso = remember {
+        GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+            .requestIdToken("214615316254-k3rj9rk3q6v5ach7vhc5r2l46hipjuvv.apps.googleusercontent.com")
+            .requestEmail()
+            .build()
+    }
+    val googleSignInClient = remember { GoogleSignIn.getClient(context, gso) }
+
+    val googleSignInLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val data = result.data
+        if (data != null) {
+            isLoading = true
+            val task = GoogleSignIn.getSignedInAccountFromIntent(data)
+            try {
+                val account = task.getResult(ApiException::class.java)
+                val idToken = account.idToken
+                if (idToken != null) {
+                    val credential = GoogleAuthProvider.getCredential(idToken, null)
+                    auth.signInWithCredential(credential)
+                        .addOnCompleteListener { authResult ->
+                            isLoading = false
+                            if (authResult.isSuccessful) {
+                                val user = auth.currentUser
+                                if (user != null) {
+                                    Toast.makeText(context, "Welcome ${user.displayName ?: "User"}", Toast.LENGTH_SHORT).show()
+                                    onAuthSuccess(user)
+                                }
+                            } else {
+                                Toast.makeText(context, "Google Sign-In failed: ${authResult.exception?.localizedMessage}", Toast.LENGTH_LONG).show()
+                            }
+                        }
+                } else {
+                    isLoading = false
+                    Toast.makeText(context, "Failed to get Google ID Token", Toast.LENGTH_SHORT).show()
+                }
+            } catch (e: Exception) {
+                isLoading = false
+                if (e is com.google.android.gms.common.api.ApiException) {
+                    val explanation = when(e.statusCode) {
+                        10 -> "DEVELOPER_ERROR (Code 10). This indicates the debug app's SHA-1 fingerprint signature is not registered in your Firebase Console. Please register this specific build's SHA-1."
+                        12500 -> "Sign-in Failed (Code 12500). Please configure Google Sign-In in your Firebase Auth dashboard."
+                        else -> "Google Sign-In Error Code ${e.statusCode}: ${e.localizedMessage}"
+                    }
+                    Toast.makeText(context, explanation, Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(context, "Google Sign-In Error: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    if (pendingVerificationUser != null) {
+        val user = pendingVerificationUser!!
+        EmailVerificationScreen(
+            user = user,
+            onVerified = {
+                onAuthSuccess(user)
+            },
+            onCancel = {
+                auth.signOut()
+                pendingVerificationUser = null
+            }
+        )
+        return
+    }
+
+    val isDark = AppThemeManager.isDark
+    
+    // Core background theme
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(if (isDark) Color(0xFF0F172A) else Color(0xFFF1F5F9))
+            .verticalScroll(rememberScrollState()),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            
+            // 2. Beautiful branding title
+            Spacer(modifier = Modifier.height(40.dp))
+            Text(
+                text = "CarefluxRx",
+                fontWeight = FontWeight.Black,
+                fontSize = 32.sp,
+                color = if (isDark) Color.White else Color(0xFF1E293B),
+                letterSpacing = 1.sp
+            )
+            Text(
+                text = "A registered product of Wellivox",
+                fontSize = 13.sp,
+                color = (if (isDark) Color.White else Color(0xFF1E293B)).copy(alpha = 0.6f),
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+            
+            Spacer(modifier = Modifier.height(32.dp))
+            
+            // 3. Welcome Sign In Content card matching styling in image
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(
+                        1.dp, 
+                        if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0), 
+                        RoundedCornerShape(24.dp)
+                    ),
+                shape = RoundedCornerShape(24.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (isDark) Color(0xFF1E293B) else Color.White
+                )
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(28.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    
+                    Text(
+                        text = if (isSignUp) "Create Account" else "Welcome Back",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 24.sp,
+                        color = if (isDark) Color.White else Color(0xFF0F172A)
+                    )
+                    
+                    Spacer(modifier = Modifier.height(6.dp))
+                    
+                    Text(
+                        text = if (isSignUp) "Join CarefluxRx today" else "Sign in to your account",
+                        fontSize = 14.sp,
+                        color = if (isDark) Color(0xFF94A3B8) else Color(0xFF64748B)
+                    )
+                    
+                    Spacer(modifier = Modifier.height(28.dp))
+                    
+                    if (isSignUp) {
+                        OutlinedTextField(
+                            value = name,
+                            onValueChange = { name = it },
+                            label = { Text("Full Name") },
+                            leadingIcon = { Icon(Icons.Default.Person, contentDescription = "Name") },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("auth_name_field"),
+                            shape = RoundedCornerShape(12.dp),
+                            singleLine = true
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        OutlinedTextField(
+                            value = phoneNumber,
+                            onValueChange = { phoneNumber = it },
+                            label = { Text("Phone Number") },
+                            leadingIcon = { Icon(Icons.Default.Phone, contentDescription = "Phone") },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .testTag("auth_phone_field"),
+                            shape = RoundedCornerShape(12.dp),
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
+                    
+                    OutlinedTextField(
+                        value = email,
+                        onValueChange = { email = it.trim() },
+                        label = { Text("Email Address") },
+                        leadingIcon = { Icon(Icons.Default.Email, contentDescription = "Email") },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("auth_email_field"),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
+                    )
+                    
+                    Spacer(modifier = Modifier.height(16.dp))
+                    
+                    OutlinedTextField(
+                        value = password,
+                        onValueChange = { password = it },
+                        label = { Text("Password") },
+                        leadingIcon = { Icon(Icons.Default.Lock, contentDescription = "Password") },
+                        trailingIcon = {
+                            IconButton(onClick = { showPassword = !showPassword }) {
+                                Icon(
+                                    imageVector = if (showPassword) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                    contentDescription = if (showPassword) "Hide Password" else "Show Password"
+                                )
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("auth_password_field"),
+                        visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
+                        shape = RoundedCornerShape(12.dp),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password)
+                    )
+                    
+                    Spacer(modifier = Modifier.height(24.dp))
+                    
+                    Button(
+                        onClick = {
+                            if (email.isBlank() || password.isBlank() || (isSignUp && (name.isBlank() || phoneNumber.isBlank()))) {
+                                Toast.makeText(context, "Please fill in all details", Toast.LENGTH_SHORT).show()
+                                return@Button
+                            }
+                            
+                            isLoading = true
+                            if (isSignUp) {
+                                val normPhone = phoneNumber.trim().replace(Regex("[^+\\d]"), "")
+                                if (normPhone.isBlank()) {
+                                    Toast.makeText(context, "Please enter your phone number", Toast.LENGTH_SHORT).show()
+                                    isLoading = false
+                                    return@Button
+                                }
+                                
+                                val dbFirestore = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                                dbFirestore.collection("registered_pharmacists")
+                                    .whereEqualTo("phoneNumber", normPhone)
+                                    .get()
+                                    .addOnCompleteListener { isUniqueCheck ->
+                                        if (isUniqueCheck.isSuccessful && !isUniqueCheck.result.isEmpty) {
+                                            isLoading = false
+                                            Toast.makeText(context, "Sign Up Failed: This phone number is already registered by another pharmacist!", Toast.LENGTH_LONG).show()
+                                        } else {
+                                            // Real Firebase Sign Up with Verification Send
+                                            auth.createUserWithEmailAndPassword(email, password)
+                                                .addOnCompleteListener { signupResult ->
+                                                    if (signupResult.isSuccessful) {
+                                                        val user = auth.currentUser
+                                                        // Set user name/profile
+                                                        val profileUpdates = com.google.firebase.auth.userProfileChangeRequest {
+                                                            displayName = name.trim()
+                                                        }
+                                                        user?.updateProfile(profileUpdates)?.addOnCompleteListener {
+                                                            // Save pharmacist details to Firestore
+                                                            val devId = context.getSharedPreferences("careflux_prefs", Context.MODE_PRIVATE)
+                                                                .getString("device_uuid", "Unknown") ?: "Unknown"
+                                                            val deviceModel = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
+                                                            
+                                                            val pharmacistMap = hashMapOf(
+                                                                "uid" to user.uid,
+                                                                "email" to user.email.orEmpty(),
+                                                                "displayName" to name.trim(),
+                                                                "phoneNumber" to normPhone,
+                                                                "deviceId" to devId,
+                                                                "deviceModel" to deviceModel,
+                                                                "registeredAt" to System.currentTimeMillis(),
+                                                                "lastLoginAt" to System.currentTimeMillis()
+                                                            )
+                                                            dbFirestore.collection("registered_pharmacists")
+                                                                .document(user.uid)
+                                                                .set(pharmacistMap)
+ 
+                                                            // Send verification email
+                                                            user.sendEmailVerification()
+                                                                .addOnCompleteListener { verifResult ->
+                                                                    isLoading = false
+                                                                    if (verifResult.isSuccessful) {
+                                                                        Toast.makeText(context, "Verification email sent. Please check your inbox.", Toast.LENGTH_LONG).show()
+                                                                        pendingVerificationUser = user
+                                                                    } else {
+                                                                        Toast.makeText(context, "Created successfully but failed to send email verification.", Toast.LENGTH_SHORT).show()
+                                                                        pendingVerificationUser = user
+                                                                    }
+                                                                }
+                                                        }
+                                                    } else {
+                                                        isLoading = false
+                                                        Toast.makeText(context, "Sign Up Failed: ${signupResult.exception?.localizedMessage}", Toast.LENGTH_LONG).show()
+                                                    }
+                                                }
+                                        }
+                                    }
+                            } else {
+                                // Real Firebase Sign In with Email Verification Enforcement
+                                auth.signInWithEmailAndPassword(email, password)
+                                    .addOnCompleteListener { loginResult ->
+                                        isLoading = false
+                                        if (loginResult.isSuccessful) {
+                                            val user = auth.currentUser
+                                            if (user != null) {
+                                                if (user.isEmailVerified) {
+                                                    // Save pharmacist details/login stats
+                                                    val dbFirestore = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                                                    val devId = context.getSharedPreferences("careflux_prefs", Context.MODE_PRIVATE)
+                                                        .getString("device_uuid", "Unknown") ?: "Unknown"
+                                                    val deviceModel = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
+                                                    
+                                                    val updateMap = hashMapOf<String, Any>(
+                                                        "uid" to user.uid,
+                                                        "email" to user.email.orEmpty(),
+                                                        "displayName" to user.displayName.orEmpty(),
+                                                        "deviceId" to devId,
+                                                        "deviceModel" to deviceModel,
+                                                        "lastLoginAt" to System.currentTimeMillis()
+                                                    )
+                                                    dbFirestore.collection("registered_pharmacists")
+                                                        .document(user.uid)
+                                                        .update(updateMap)
+                                                        .addOnFailureListener {
+                                                            updateMap["registeredAt"] = System.currentTimeMillis()
+                                                            dbFirestore.collection("registered_pharmacists")
+                                                                .document(user.uid)
+                                                                .set(updateMap)
+                                                        }
+
+                                                    Toast.makeText(context, "Login Successful!", Toast.LENGTH_SHORT).show()
+                                                    onAuthSuccess(user)
+                                                } else {
+                                                    Toast.makeText(context, "Please verify your email address before logging in.", Toast.LENGTH_LONG).show()
+                                                    pendingVerificationUser = user
+                                                }
+                                            }
+                                        } else {
+                                            Toast.makeText(context, "Log In Failed: ${loginResult.exception?.localizedMessage}", Toast.LENGTH_LONG).show()
+                                        }
+                                    }
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color(0xFF3B82F6) // Matches the sleek blue button in the image
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp)
+                            .testTag("auth_action_button"),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        if (isLoading) {
+                            CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
+                        } else {
+                            Text(
+                                text = if (isSignUp) "Sign Up" else "Sign In",
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 16.sp
+                            )
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(18.dp))
+                    
+                    // Simple "OR" separator matching the clean layout in image
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        HorizontalDivider(modifier = Modifier.weight(1f), color = if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0))
+                        Text(
+                            text = "OR",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isDark) Color(0xFF64748B) else Color(0xFF94A3B8),
+                            modifier = Modifier.padding(horizontal = 12.dp)
+                        )
+                        HorizontalDivider(modifier = Modifier.weight(1f), color = if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0))
+                    }
+                    
+                    Spacer(modifier = Modifier.height(18.dp))
+                    
+                    // Google Sign-In Button with colorful Google G icon
+                    OutlinedButton(
+                        onClick = {
+                            val intent = googleSignInClient.signInIntent
+                            googleSignInLauncher.launch(intent)
+                        },
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = Color.Transparent
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        border = ButtonDefaults.outlinedButtonBorder.copy(
+                            width = 1.dp
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp)
+                            .testTag("google_auth_button")
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            // Render a nice Google icon matching the image structure
+                            Icon(
+                                imageVector = Icons.Default.AccountCircle, // Elegant alternative vector if drawable is absent
+                                tint = Color(0xFFDB4437),
+                                contentDescription = "Google Icon",
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = "Continue with Google",
+                                fontWeight = FontWeight.Bold,
+                                color = if (isDark) Color.White else Color(0xFF0F172A),
+                                fontSize = 15.sp
+                            )
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(28.dp))
+                    
+                    // Link to toggle registration modes matching the shared image
+                    Text(
+                        text = if (isSignUp) "Already have an account? Sign In" else "Don't have an account? Sign up",
+                        color = Color(0xFF3B82F6),
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 14.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier
+                            .clickable {
+                                isSignUp = !isSignUp
+                            }
+                            .testTag("toggle_auth_mode")
+                    )
+                }
+            }
+            
+            // Allow user to toggle light/dark theme dynamically on the login screen too!
+            Spacer(modifier = Modifier.height(24.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(if (isDark) Color(0xFF1E293B) else Color.White)
+                    .clickable { 
+                        AppThemeManager.isDark = !AppThemeManager.isDark 
+                        // Persist theme choice immediately
+                        context.getSharedPreferences("careflux_prefs", Context.MODE_PRIVATE)
+                            .edit()
+                            .putBoolean("theme_dark", AppThemeManager.isDark)
+                            .apply()
+                    }
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Icon(
+                    imageVector = if (isDark) Icons.Default.LightMode else Icons.Default.DarkMode,
+                    contentDescription = "Toggle Theme",
+                    tint = if (isDark) Color.Yellow else Color(0xFF0F172A),
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = if (isDark) "Switch to Light Mode" else "Switch to Dark Mode",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isDark) Color.White else Color(0xFF0F172A)
+                )
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "Careflux is a product under Wellivox, a registered company.",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontSize = 11.sp,
+                    color = (if (isDark) Color.White else Color(0xFF1E293B)).copy(alpha = 0.5f),
+                    textAlign = TextAlign.Center
+                )
+                Text(
+                    text = "All healthcare operations on CarefluxRx™ are securely documented.",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontSize = 10.sp,
+                    color = (if (isDark) Color.White else Color(0xFF1E293B)).copy(alpha = 0.4f),
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+            }
+            Spacer(modifier = Modifier.height(32.dp))
+        }
+    }
+}
+
+@Composable
+fun EmailVerificationScreen(
+    user: FirebaseUser,
+    onVerified: () -> Unit,
+    onCancel: () -> Unit
+) {
+    val context = LocalContext.current
+    val isDark = AppThemeManager.isDark
+    var isChecking by remember { mutableStateOf(false) }
+    var resendCooldown by remember { mutableStateOf(0) }
+    
+    // Auto check verification status every 5 seconds until verified
+    LaunchedEffect(Unit) {
+        while (true) {
+            user.reload().addOnCompleteListener { task ->
+                if (task.isSuccessful) {
+                    if (user.isEmailVerified) {
+                        onVerified()
+                    }
+                }
+            }
+            delay(5000)
+        }
+    }
+
+    LaunchedEffect(resendCooldown) {
+        if (resendCooldown > 0) {
+            delay(1000)
+            resendCooldown--
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(if (isDark) Color(0xFF0F172A) else Color(0xFFF1F5F9))
+            .padding(24.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .border(
+                    1.dp, 
+                    if (isDark) Color(0xFF334155) else Color(0xFFE2E8F0), 
+                    RoundedCornerShape(24.dp)
+                ),
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = if (isDark) Color(0xFF1E293B) else Color.White
+            )
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Icon(
+                    imageVector = Icons.Default.MarkEmailRead,
+                    contentDescription = "Verify Email",
+                    tint = Color(0xFF3B82F6),
+                    modifier = Modifier.size(72.dp)
+                )
+                
+                Spacer(modifier = Modifier.height(24.dp))
+                
+                Text(
+                    text = "Verify Your Email",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 24.sp,
+                    color = if (isDark) Color.White else Color(0xFF0F172A),
+                    textAlign = TextAlign.Center
+                )
+                
+                Spacer(modifier = Modifier.height(12.dp))
+                
+                Text(
+                    text = "We sent a verification link to:\n${user.email}\n\nPlease click the link in your inbox to proceed.",
+                    fontSize = 14.sp,
+                    color = if (isDark) Color(0xFF94A3B8) else Color(0xFF475569),
+                    textAlign = TextAlign.Center,
+                    lineHeight = 20.sp
+                )
+                
+                Spacer(modifier = Modifier.height(32.dp))
+                
+                Button(
+                    onClick = {
+                        isChecking = true
+                        user.reload().addOnCompleteListener { task ->
+                            isChecking = false
+                            if (task.isSuccessful) {
+                                if (user.isEmailVerified) {
+                                    Toast.makeText(context, "Email Verified Successfully!", Toast.LENGTH_SHORT).show()
+                                    onVerified()
+                                } else {
+                                    Toast.makeText(context, "Verification email still check pending. Please wait or reload.", Toast.LENGTH_LONG).show()
+                                }
+                            } else {
+                                Toast.makeText(context, "Error reloading user data: ${task.exception?.localizedMessage}", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF3B82F6)
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    if (isChecking) {
+                        CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
+                    } else {
+                        Text("I've Clicked the Link", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                OutlinedButton(
+                    onClick = {
+                        if (resendCooldown == 0) {
+                            user.sendEmailVerification().addOnCompleteListener { task ->
+                                if (task.isSuccessful) {
+                                    Toast.makeText(context, "Verification email sent!", Toast.LENGTH_SHORT).show()
+                                    resendCooldown = 60
+                                } else {
+                                    Toast.makeText(context, "Failed to send link: ${task.exception?.localizedMessage}", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        }
+                    },
+                    enabled = resendCooldown == 0,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                ) {
+                    Text(
+                        text = if (resendCooldown > 0) "Resend in ${resendCooldown}s" else "Resend Verification Email",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+                }
+                
+                Spacer(modifier = Modifier.height(24.dp))
+                
+                Text(
+                    text = "Sign Out & Cancel",
+                    color = Color.Red.copy(alpha = 0.8f),
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 14.sp,
+                    modifier = Modifier
+                        .clickable { onCancel() }
+                        .padding(8.dp)
+                )
+            }
+        }
+    }
+}
+
+// Utility function to detect Google Auth providers so we do not enforce email verification screen on standard google logins
+fun isGoogleProvider(user: FirebaseUser): Boolean {
+    for (profile in user.providerData) {
+        if (profile.providerId == "google.com") {
+            return true
+        }
+    }
+    return false
+}
