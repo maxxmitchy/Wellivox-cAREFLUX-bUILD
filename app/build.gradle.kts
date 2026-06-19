@@ -1,3 +1,5 @@
+import java.util.Base64
+
 plugins {
   alias(libs.plugins.android.application)
   alias(libs.plugins.kotlin.compose)
@@ -46,7 +48,21 @@ android {
       signingConfig = signingConfigs.getByName("release")
     }
     debug {
-      signingConfig = signingConfigs.getByName("debugConfig")
+      val customKeystore = file("${rootDir}/debug.keystore")
+      val keystoreBase64 = file("${rootDir}/debug.keystore.base64")
+      if (customKeystore.exists()) {
+        signingConfig = signingConfigs.getByName("debugConfig")
+      } else if (keystoreBase64.exists()) {
+        try {
+          val encodedText = keystoreBase64.readText().replace("\\s".toRegex(), "")
+          val decodedBytes = Base64.getDecoder().decode(encodedText)
+          customKeystore.writeBytes(decodedBytes)
+          signingConfig = signingConfigs.getByName("debugConfig")
+          logger.lifecycle("Successfully auto-decoded debug.keystore from base64.")
+        } catch (e: Exception) {
+          logger.warn("Failed to decode debug.keystore.base64: ${e.message}. Falling back to default signing.")
+        }
+      }
     }
   }
   compileOptions {
