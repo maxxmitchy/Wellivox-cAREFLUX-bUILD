@@ -127,7 +127,7 @@ fun RescueMarketplaceScreen(viewModel: PharmacyViewModel) {
             }
         }
 
-        // Custom Pill Tabs Segmented Layout
+        // Custom Pill Tabs Segmented Layout (Icon Only for high contrast, space-efficient design)
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -142,30 +142,20 @@ fun RescueMarketplaceScreen(viewModel: PharmacyViewModel) {
                 Triple("Post Expiry Post", Icons.Filled.PostAdd, 2)
             ).forEach { (title, icon, index) ->
                 val isSelected = selectedSection == index
-                Row(
+                Box(
                     modifier = Modifier
                         .weight(1f)
                         .clip(RoundedCornerShape(12.dp))
                         .background(if (isSelected) TealPrimary else Color.Transparent)
                         .clickable { selectedSection = index }
-                        .padding(vertical = 11.dp, horizontal = 4.dp),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
+                        .padding(vertical = 12.dp),
+                    contentAlignment = Alignment.Center
                 ) {
                     Icon(
                         imageVector = icon,
-                        contentDescription = null,
+                        contentDescription = title,
                         tint = if (isSelected) Color.Black else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(15.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = title,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = if (isSelected) Color.Black else MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
+                        modifier = Modifier.size(20.dp)
                     )
                 }
             }

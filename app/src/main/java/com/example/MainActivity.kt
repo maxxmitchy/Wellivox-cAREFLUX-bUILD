@@ -401,16 +401,7 @@ fun PharmacyRootScreen(
                     )
                 }
 
-                androidx.compose.material3.NavigationDrawerItem(
-                    label = { Text("Cooperative Profile", color = TealPrimary, fontWeight = FontWeight.Bold) },
-                    selected = false,
-                    onClick = {
-                        scope.launch { drawerState.close() }
-                        showSettingsDialog = true
-                    },
-                    icon = { Icon(Icons.Filled.Settings, contentDescription = "Cooperative Profile Settings", tint = TealPrimary) },
-                    modifier = Modifier.padding(androidx.compose.material3.NavigationDrawerItemDefaults.ItemPadding)
-                )
+
 
                 androidx.compose.material3.NavigationDrawerItem(
                     label = { Text("Sign Out", color = MaterialTheme.colorScheme.error) },

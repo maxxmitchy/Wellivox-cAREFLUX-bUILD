@@ -524,6 +524,7 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -658,7 +659,7 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
             }
         }
 
-        // Sub-navigation tabs (Segmented Style)
+        // Sub-navigation tabs (Segmented Style - Icon Only for maximum layout breathing room)
         if (selectedNodeForDetail == null) {
             Row(
                 modifier = Modifier
@@ -675,28 +676,20 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                     "Audit Trail" to Icons.Filled.HistoryToggleOff
                 ).forEachIndexed { idx, pair ->
                     val isSelected = selectedSubTab == idx
-                    Row(
+                    Box(
                         modifier = Modifier
                             .weight(1f)
                             .clip(RoundedCornerShape(8.dp))
                             .background(if (isSelected) TealPrimary else Color.Transparent)
                             .clickable { selectedSubTab = idx }
                             .padding(vertical = 12.dp),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
+                        contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = pair.second,
-                            contentDescription = null,
+                            contentDescription = pair.first,
                             tint = if (isSelected) Color.Black else MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(15.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = pair.first,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (isSelected) Color.Black else MaterialTheme.colorScheme.onSurfaceVariant
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                 }
@@ -783,93 +776,89 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                 }
 
                 if (isLoadingNodeDetail) {
-                    Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    Box(modifier = Modifier.fillMaxWidth().height(200.dp), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = TealPrimary)
                     }
                 } else {
                     if (selectedDetailTab == 0) {
-                        LazyColumn(
-                            modifier = Modifier.weight(1f),
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
                             verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
-                            item {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Synced Patient Directory",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Card(
+                                    colors = CardDefaults.cardColors(containerColor = TealPrimary.copy(alpha = 0.15f))
                                 ) {
                                     Text(
-                                        text = "Synced Patient Directory",
-                                        style = MaterialTheme.typography.titleMedium,
+                                        text = "${syncedCustomers.size} Profiles",
+                                        fontSize = 11.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onSurface
+                                        color = TealPrimary,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
                                     )
-                                    Card(
-                                        colors = CardDefaults.cardColors(containerColor = TealPrimary.copy(alpha = 0.15f))
-                                    ) {
-                                        Text(
-                                            text = "${syncedCustomers.size} Profiles",
-                                            fontSize = 11.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = TealPrimary,
-                                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                                        )
-                                    }
                                 }
                             }
 
                             if (syncedCustomers.isEmpty()) {
-                                item {
-                                    // Custom Design Empty State
-                                    Card(
-                                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f)),
-                                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
+                                // Custom Design Empty State
+                                Card(
+                                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f)),
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
+                                ) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 40.dp, horizontal = 24.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(16.dp)
                                     ) {
-                                        Column(
+                                        Box(
                                             modifier = Modifier
-                                                .fillMaxWidth()
-                                                .padding(vertical = 40.dp, horizontal = 24.dp),
-                                            horizontalAlignment = Alignment.CenterHorizontally,
-                                            verticalArrangement = Arrangement.spacedBy(16.dp)
+                                                .size(64.dp)
+                                                .clip(androidx.compose.foundation.shape.CircleShape)
+                                                .background(TealPrimary.copy(alpha = 0.1f)),
+                                            contentAlignment = Alignment.Center
                                         ) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(64.dp)
-                                                    .clip(androidx.compose.foundation.shape.CircleShape)
-                                                    .background(TealPrimary.copy(alpha = 0.1f)),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Filled.CloudOff,
-                                                    contentDescription = null,
-                                                    tint = TealPrimary,
-                                                    modifier = Modifier.size(32.dp)
-                                                )
-                                            }
-                                            Column(
-                                                horizontalAlignment = Alignment.CenterHorizontally,
-                                                verticalArrangement = Arrangement.spacedBy(6.dp)
-                                            ) {
-                                                Text(
-                                                    text = "Offline-First Safe Node",
-                                                    style = MaterialTheme.typography.titleMedium,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = MaterialTheme.colorScheme.onSurface
-                                                )
-                                                Text(
-                                                    text = "This healthcare station is actively operating under local-first protocol. Once synchronization cascades occur, demographic ledgers and patient records will populate here in real-time.",
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                                    textAlign = TextAlign.Center,
-                                                    lineHeight = 16.sp
-                                                )
-                                            }
+                                            Icon(
+                                                imageVector = Icons.Filled.CloudOff,
+                                                contentDescription = null,
+                                                tint = TealPrimary,
+                                                modifier = Modifier.size(32.dp)
+                                            )
+                                        }
+                                        Column(
+                                            horizontalAlignment = Alignment.CenterHorizontally,
+                                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Text(
+                                                text = "Offline-First Safe Node",
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                            Text(
+                                                text = "This healthcare station is actively operating under local-first protocol. Once synchronization cascades occur, demographic ledgers and patient records will populate here in real-time.",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                textAlign = TextAlign.Center,
+                                                lineHeight = 16.sp
+                                            )
                                         }
                                     }
                                 }
                             } else {
-                                items(syncedCustomers) { cust ->
+                                syncedCustomers.forEach { cust ->
                                     val cId = cust["id"]?.toString() ?: ""
                                     val cName = cust["name"] as? String ?: "Anonymous"
                                     val cPhone = cust["phoneNumber"] as? String ?: ""
@@ -1038,31 +1027,28 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                         }
                     } else {
                         // Cohort Insights tab
-                        LazyColumn(
-                            modifier = Modifier.weight(1f),
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
                             verticalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
                             if (syncedCustomers.isEmpty()) {
-                                item {
-                                    Card(
-                                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f)),
-                                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
-                                    ) {
-                                        Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-                                            Text(
-                                                text = "No analytics compiled. Sync patient profiles to unlock demographic statistics.",
-                                                textAlign = TextAlign.Center,
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                        }
+                                Card(
+                                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f)),
+                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
+                                ) {
+                                    Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                                        Text(
+                                            text = "No analytics compiled. Sync patient profiles to unlock demographic statistics.",
+                                            textAlign = TextAlign.Center,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
                                     }
                                 }
                             } else {
-                                item {
-                                    // Age distribution card
-                                    Card(
+                                // Age distribution card
+                                Card(
                                         modifier = Modifier.fillMaxWidth(),
                                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
@@ -1122,9 +1108,7 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                                             }
                                         }
                                     }
-                                }
 
-                                item {
                                     // Gender distribution card
                                     Card(
                                         modifier = Modifier.fillMaxWidth(),
@@ -1182,9 +1166,7 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                                             }
                                         }
                                     }
-                                }
 
-                                item {
                                     // Geographic coverage
                                     Card(
                                         modifier = Modifier.fillMaxWidth(),
@@ -1260,7 +1242,6 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                             }
                         }
                     }
-                }
             } else {
                 // Main Nodes List Tab
                 Row(
@@ -1287,7 +1268,7 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                 }
 
                 if (isLoadingNodes) {
-                    Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    Box(modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp), contentAlignment = Alignment.Center) {
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -1297,15 +1278,15 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                         }
                     }
                 } else if (nodesList.isEmpty()) {
-                    Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    Box(modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp), contentAlignment = Alignment.Center) {
                         Text("No connected pharmacy devices discovered.")
                     }
                 } else {
-                    LazyColumn(
-                        modifier = Modifier.weight(1f),
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        items(nodesList) { node ->
+                        nodesList.forEach { node ->
                             val isSuspended = node["isSuspended"] as? Boolean ?: false
                             val nodeId = node["id"] as? String ?: ""
                             val modelName = node["deviceModel"] as? String ?: "Generic Node"
@@ -1611,9 +1592,7 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
 
             Column(
                 modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState()),
+                    .fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 // Interactive Header Card
@@ -2228,7 +2207,7 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
             }
 
             if (keyRequests.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Box(modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp), contentAlignment = Alignment.Center) {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
                         verticalArrangement = Arrangement.spacedBy(8.dp)
@@ -2242,11 +2221,11 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                     }
                 }
             } else {
-                LazyColumn(
-                    modifier = Modifier.weight(1f),
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    items(keyRequests.sortedByDescending { it["requestedAt"] as? Long ?: 0L }) { req ->
+                    keyRequests.sortedByDescending { it["requestedAt"] as? Long ?: 0L }.forEach { req ->
                         val phName = req["pharmacyName"] as? String ?: "Unverified Node"
                         val model = req["deviceModel"] as? String ?: "Network Node"
                         val lga = req["lga"] as? String ?: ""
@@ -2360,7 +2339,7 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
         } else {
 
             if (auditLogs.isEmpty()) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Box(modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp), contentAlignment = Alignment.Center) {
                     Text(
                         text = "No administrative modifications logged yet.",
                         style = MaterialTheme.typography.bodySmall,
@@ -2368,11 +2347,11 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                     )
                 }
             } else {
-                LazyColumn(
-                    modifier = Modifier.weight(1f),
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    items(auditLogs.sortedByDescending { it.timestamp }) { log ->
+                    auditLogs.sortedByDescending { it.timestamp }.forEach { log ->
                         val isCritical = log.actionPerformed.contains("SUSPEND") || log.actionPerformed.contains("DISABLE")
                         val actionColor = if (isCritical) com.example.ui.theme.WarningRed else TealPrimary
                         val originColorContainer = if (isCritical) com.example.ui.theme.WarningRedContainerSoft else TealPrimary.copy(alpha = 0.08f)
