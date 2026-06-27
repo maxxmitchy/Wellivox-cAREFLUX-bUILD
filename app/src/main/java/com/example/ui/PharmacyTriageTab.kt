@@ -107,7 +107,7 @@ fun PharmacyTriageTabContent(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .padding(vertical = 8.dp)
             .testTag("triage_main_container")
     ) {
         // Core Title Banner
@@ -235,7 +235,7 @@ fun PharmacyTriageTabContent(
             },
             colors = OutlinedTextFieldDefaults.colors(
                 focusedBorderColor = TealPrimary,
-                unfocusedBorderColor = SlateBorderLight
+                unfocusedBorderColor = UnfocusedTextFieldBorder
             ),
             singleLine = true
         )

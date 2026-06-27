@@ -87,7 +87,7 @@ fun AIContentEngineTab(viewModel: AIContentEngineViewModel) {
     var isStoryFormat by remember { mutableStateOf(false) }
     var selectedLayoutTheme by remember { mutableStateOf(SlideLayoutTheme.PHARMA_EDITORIAL) }
 
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+    Column(modifier = Modifier.fillMaxSize().padding(vertical = 16.dp)) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,

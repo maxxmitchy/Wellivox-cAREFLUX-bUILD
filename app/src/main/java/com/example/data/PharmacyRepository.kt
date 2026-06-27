@@ -11,6 +11,10 @@ class PharmacyRepository(private val pharmacyDao: PharmacyDao) {
         pharmacyDao.insertOperationTask(task)
     }
 
+    suspend fun getOperationTaskById(id: Int): OperationTask? {
+        return pharmacyDao.getOperationTaskById(id)
+    }
+
     suspend fun updateOperationTask(task: OperationTask) {
         pharmacyDao.updateOperationTask(task)
     }
@@ -50,8 +54,8 @@ class PharmacyRepository(private val pharmacyDao: PharmacyDao) {
         return pharmacyDao.getInventoryItemById(id)
     }
 
-    suspend fun insertInventoryItem(item: InventoryItem) {
-        pharmacyDao.insertInventoryItem(item)
+    suspend fun insertInventoryItem(item: InventoryItem): Long {
+        return pharmacyDao.insertInventoryItem(item)
     }
 
     suspend fun updateInventoryItem(item: InventoryItem) {

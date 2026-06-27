@@ -69,61 +69,45 @@ fun RescueMarketplaceScreen(viewModel: PharmacyViewModel) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp),
+            .padding(vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        // Hero Header banner styled with stunning modern graphic gradient
-        Card(
-            shape = RoundedCornerShape(24.dp),
-            modifier = Modifier.fillMaxWidth(),
-            colors = CardDefaults.cardColors(containerColor = Color.Transparent)
+        // Ultra-compact Hero Header banner styled for space efficiency and high visual impact
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(TealPrimary.copy(alpha = 0.12f))
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .background(
-                        Brush.linearGradient(
-                            colors = listOf(
-                                TealPrimary.copy(alpha = 0.25f),
-                                MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
-                            )
-                        )
-                    )
-                    .padding(20.dp)
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(TealPrimary),
+                contentAlignment = Alignment.Center
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(54.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(TealPrimary),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Storefront,
-                            contentDescription = null,
-                            tint = Color.Black,
-                            modifier = Modifier.size(28.dp)
-                        )
-                    }
-                    Column {
-                        Text(
-                            "Cooperative Rescue Marketplace",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Black,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            "Share, rescue, and cooperatively liquidate near-expiry stocks across clinical node pools with zero waste.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
+                Icon(
+                    imageVector = Icons.Filled.Storefront,
+                    contentDescription = null,
+                    tint = Color.Black,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "Cooperative Rescue Marketplace",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Black,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    "Zero-waste near-expiry medical pool routing.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
         }
 

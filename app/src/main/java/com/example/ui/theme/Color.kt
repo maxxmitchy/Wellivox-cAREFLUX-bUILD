@@ -56,6 +56,9 @@ object AppThemeManager {
     val slateBorderLight: Color
         get() = if (isDark) Color(0xFF1E293B) else Color(0xFFE2E8F0)
 
+    val unfocusedTextFieldBorder: Color
+        get() = if (isDark) Color(0xFF8E9DAE) else Color(0xFF4A5568)
+
     val slateBackgroundLight: Color
         get() = if (isDark) Color(0xFF0F172A) else Color(0xFFF1F5F9)
 
@@ -89,5 +92,6 @@ val PendingOrangeContainer: Color get() = AppThemeManager.pendingOrangeContainer
 val PendingOrangeBorder: Color get() = AppThemeManager.pendingOrangeBorder
 
 val SlateBorderLight: Color get() = AppThemeManager.slateBorderLight
+val UnfocusedTextFieldBorder: Color get() = AppThemeManager.unfocusedTextFieldBorder
 val SlateBackgroundLight: Color get() = AppThemeManager.slateBackgroundLight
 val SlateTextMedium: Color get() = AppThemeManager.slateTextMedium

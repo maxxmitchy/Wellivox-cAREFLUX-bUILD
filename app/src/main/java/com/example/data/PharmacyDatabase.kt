@@ -24,7 +24,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         RescueListing::class,
         AdminAuditLog::class
     ],
-    version = 17,
+    version = 21,
     exportSchema = false
 )
 abstract class PharmacyDatabase : RoomDatabase() {
@@ -52,6 +52,13 @@ abstract class PharmacyDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_17_18 = object : Migration(17, 18) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                // Safely add the nullable imageUri column to prescription_volumes table to maintain patient volume data integrity
+                database.execSQL("ALTER TABLE prescription_volumes ADD COLUMN imageUri TEXT")
+            }
+        }
+
         fun getDatabase(context: Context): PharmacyDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -59,7 +66,7 @@ abstract class PharmacyDatabase : RoomDatabase() {
                     PharmacyDatabase::class.java,
                     "pharmacy_database"
                 )
-                .addMigrations(MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14)
+                .addMigrations(MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_17_18)
                 .fallbackToDestructiveMigration(dropAllTables = true)
                 .build()
                 INSTANCE = instance

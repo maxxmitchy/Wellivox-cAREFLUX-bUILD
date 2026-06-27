@@ -58,7 +58,7 @@ fun ReceiptsTab(receipts: List<Receipt>, context: Context, onDeleteReceipt: (Rec
         )
     }
 
-    Column(modifier = Modifier.fillMaxSize().padding(horizontal = 4.dp)) {
+    Column(modifier = Modifier.fillMaxSize()) {
         Text(
             text = "Receipts & Invoices History",
             style = MaterialTheme.typography.titleLarge,

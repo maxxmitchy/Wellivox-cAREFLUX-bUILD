@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import com.squareup.moshi.Moshi
@@ -41,6 +42,48 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
 
     val repository: PharmacyRepository
     private val prefs = application.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+
+    private var isFirstTaskSyncDone = false
+
+    private fun showLocalNotification(title: String, content: String, targetTab: String = "branch_team") {
+        try {
+            val context = getApplication<Application>().applicationContext
+            val channelId = "careflux_notifications_channel"
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                val channel = android.app.NotificationChannel(
+                    channelId,
+                    "Careflux Notifications",
+                    android.app.NotificationManager.IMPORTANCE_HIGH
+                )
+                val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
+                manager.createNotificationChannel(channel)
+            }
+
+            val intent = android.content.Intent(context, com.example.MainActivity::class.java).apply {
+                flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK
+                putExtra("OPEN_TAB", targetTab)
+            }
+            val pendingIntent: android.app.PendingIntent = android.app.PendingIntent.getActivity(
+                context, (0..9999).random(), intent, android.app.PendingIntent.FLAG_IMMUTABLE
+            )
+
+            val notification = androidx.core.app.NotificationCompat.Builder(context, channelId)
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setContentTitle(title)
+                .setContentText(content)
+                .setStyle(androidx.core.app.NotificationCompat.BigTextStyle().bigText(content))
+                .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
+                .setContentIntent(pendingIntent)
+                .setAutoCancel(true)
+                .build()
+
+            androidx.core.app.NotificationManagerCompat.from(context).notify((1000..9999).random(), notification)
+        } catch (e: SecurityException) {
+            e.printStackTrace()
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
 
     fun getApiKey(): String {
         return prefs.getString("custom_api_key", null)?.takeIf { it.isNotBlank() } 
@@ -84,12 +127,29 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 currentCart + CartItem(item, quantity)
             }
         }
+        viewModelScope.launch {
+            val dbItem = repository.getInventoryItemById(item.id)
+            if (dbItem != null) {
+                val newQty = (dbItem.stockQuantity - quantity).coerceAtLeast(0)
+                saveAndSyncInventoryItemDirectly(dbItem.copy(stockQuantity = newQty, lastUpdated = System.currentTimeMillis()))
+            }
+        }
     }
 
     fun updateCartItemQuantity(itemId: Int, quantity: Int) {
+        val currentCart = _cart.value
+        val existing = currentCart.find { it.inventoryItem.id == itemId } ?: return
+        val diff = quantity - existing.quantity
         if (quantity <= 0) {
             removeFromCart(itemId)
             return
+        }
+        viewModelScope.launch {
+            val dbItem = repository.getInventoryItemById(itemId)
+            if (dbItem != null) {
+                val newQty = (dbItem.stockQuantity - diff).coerceAtLeast(0)
+                saveAndSyncInventoryItemDirectly(dbItem.copy(stockQuantity = newQty, lastUpdated = System.currentTimeMillis()))
+            }
         }
         _cart.value = _cart.value.map { if (it.inventoryItem.id == itemId) it.copy(quantity = quantity) else it }
     }
@@ -99,10 +159,37 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun removeFromCart(itemId: Int) {
-        _cart.value = _cart.value.filter { it.inventoryItem.id != itemId }
+        val currentCart = _cart.value
+        val itemToRemove = currentCart.find { it.inventoryItem.id == itemId }
+        if (itemToRemove != null) {
+            val restoredQty = itemToRemove.quantity
+            viewModelScope.launch {
+                val dbItem = repository.getInventoryItemById(itemId)
+                if (dbItem != null) {
+                    val newQty = dbItem.stockQuantity + restoredQty
+                    saveAndSyncInventoryItemDirectly(dbItem.copy(stockQuantity = newQty, lastUpdated = System.currentTimeMillis()))
+                }
+            }
+        }
+        _cart.value = currentCart.filter { it.inventoryItem.id != itemId }
     }
 
     fun clearCart() {
+        _cart.value = emptyList()
+        _deliveryFeeString.value = ""
+    }
+
+    fun clearCartAndRestoreStock() {
+        val currentCart = _cart.value
+        viewModelScope.launch {
+            currentCart.forEach { cartItem ->
+                val dbItem = repository.getInventoryItemById(cartItem.inventoryItem.id)
+                if (dbItem != null) {
+                    val newQty = dbItem.stockQuantity + cartItem.quantity
+                    saveAndSyncInventoryItemDirectly(dbItem.copy(stockQuantity = newQty, lastUpdated = System.currentTimeMillis()))
+                }
+            }
+        }
         _cart.value = emptyList()
         _deliveryFeeString.value = ""
     }
@@ -122,6 +209,8 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
     val medicationSales: StateFlow<List<MedicationSale>>
     val rescueListings: StateFlow<List<RescueListing>>
     val adminAuditLogs: StateFlow<List<AdminAuditLog>>
+    private val _branchTransfers = kotlinx.coroutines.flow.MutableStateFlow<List<Map<String, Any>>>(emptyList())
+    val branchTransfers: StateFlow<List<Map<String, Any>>> = _branchTransfers.asStateFlow()
 
     // --- Dynamic Feature Flags State ---
     val deviceId: String
@@ -133,6 +222,36 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
 
     private val _isSuspended = kotlinx.coroutines.flow.MutableStateFlow(false)
     val isSuspended: StateFlow<Boolean> = _isSuspended.asStateFlow()
+
+    private val _isInventoryLoading = kotlinx.coroutines.flow.MutableStateFlow(true)
+    val isInventoryLoading: StateFlow<Boolean> = _isInventoryLoading.asStateFlow()
+
+    // --- Branch Multi-User & Real-time Integration Engine ---
+    private var userProfileListener: com.google.firebase.firestore.ListenerRegistration? = null
+    private val activeSyncListeners = mutableListOf<com.google.firebase.firestore.ListenerRegistration>()
+
+    private val _currentPharmacistBranchId = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+    val currentPharmacistBranchId: StateFlow<String?> = _currentPharmacistBranchId.asStateFlow()
+
+    private val _currentPharmacistRole = kotlinx.coroutines.flow.MutableStateFlow<String?>("Pharmacist")
+    val currentPharmacistRole: StateFlow<String?> = _currentPharmacistRole.asStateFlow()
+
+    private val _currentPharmacistName = kotlinx.coroutines.flow.MutableStateFlow<String?>("Staff Pharmacist")
+    val currentPharmacistName: StateFlow<String?> = _currentPharmacistName.asStateFlow()
+
+    private val _currentPharmacistBranchName = kotlinx.coroutines.flow.MutableStateFlow<String?>("Careflux Branch")
+    val currentPharmacistBranchName: StateFlow<String?> = _currentPharmacistBranchName.asStateFlow()
+
+    private val _currentPharmacistPhone = kotlinx.coroutines.flow.MutableStateFlow<String?>("+2348000000000")
+    val currentPharmacistPhone: StateFlow<String?> = _currentPharmacistPhone.asStateFlow()
+
+    // Realtime staff list in the same branch
+    private val _branchStaffList = kotlinx.coroutines.flow.MutableStateFlow<List<Map<String, Any>>>(emptyList())
+    val branchStaffList: StateFlow<List<Map<String, Any>>> = _branchStaffList.asStateFlow()
+
+    fun generateUniqueId(): Int {
+        return java.util.UUID.randomUUID().hashCode() and 0x7FFFFFFF
+    }
 
     // --- Cooperative Location Preferences & Matching Engine ---
     fun getPharmacyName(): String {
@@ -164,6 +283,9 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
 
     private val _keyRequests = kotlinx.coroutines.flow.MutableStateFlow<List<Map<String, Any>>>(emptyList())
     val keyRequests: StateFlow<List<Map<String, Any>>> = _keyRequests.asStateFlow()
+
+    private val _allBranches = kotlinx.coroutines.flow.MutableStateFlow<List<Map<String, Any>>>(emptyList())
+    val allBranches: StateFlow<List<Map<String, Any>>> = _allBranches.asStateFlow()
 
     data class RedistributionMatch(
         val nodeId: String,
@@ -330,6 +452,19 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                         _keyRequests.value = reqList
                     }
                 }
+
+            // Sync all registered branches / pharmacies (real-time stream)
+            firestore.collection("branches")
+                .addSnapshotListener { snapshot, e ->
+                    if (e == null && snapshot != null) {
+                        val branchList = snapshot.documents.mapNotNull { doc ->
+                            val data = doc.data?.toMutableMap() ?: return@mapNotNull null
+                            data["id"] = doc.id
+                            data
+                        }
+                        _allBranches.value = branchList
+                    }
+                }
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -337,6 +472,12 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
         loadTemplates()
         val database = PharmacyDatabase.getDatabase(application)
         repository = PharmacyRepository(database.pharmacyDao())
+
+        viewModelScope.launch {
+            repository.allInventoryItems.collect {
+                _isInventoryLoading.value = false
+            }
+        }
 
         triageConditions = repository.allTriageConditions.stateIn(
             scope = viewModelScope,
@@ -652,6 +793,48 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
 
     // --- Actions ---
 
+    fun insertAndSyncInventoryItem(item: InventoryItem) {
+        viewModelScope.launch {
+            saveAndSyncInventoryItemDirectly(item)
+        }
+    }
+
+    private suspend fun saveAndSyncInventoryItemDirectly(item: InventoryItem) {
+        val updated = item.copy(lastUpdated = System.currentTimeMillis())
+        val generatedId = repository.insertInventoryItem(updated)
+        val finalItem = if (updated.id == 0) updated.copy(id = generatedId.toInt()) else updated
+        
+        val branchId = _currentPharmacistBranchId.value
+        if (!branchId.isNullOrBlank()) {
+            val map = mapOf(
+                "id" to finalItem.id,
+                "name" to finalItem.name,
+                "dosage" to finalItem.dosage,
+                "stockQuantity" to finalItem.stockQuantity,
+                "minRequiredStock" to finalItem.minRequiredStock,
+                "category" to finalItem.category,
+                "price" to finalItem.price,
+                "expiryDate" to finalItem.expiryDate,
+                "batchNumber" to finalItem.batchNumber,
+                "supplier" to finalItem.supplier,
+                "unitForm" to finalItem.unitForm,
+                "lastSoldDate" to finalItem.lastSoldDate,
+                "totalSoldQuantity" to finalItem.totalSoldQuantity,
+                "brand" to finalItem.brand,
+                "salesStrategy" to finalItem.salesStrategy,
+                "lastUpdated" to finalItem.lastUpdated,
+                "branchId" to branchId,
+                "imageUri" to (finalItem.imageUri ?: "")
+            )
+            syncEntityToFirestore("branch_inventory", finalItem.id.toString(), map)
+            
+            // Clean up any old, legacy corrupted "id = 0" documents if this was a new item creation
+            if (item.id == 0) {
+                deleteEntityFromFirestore("branch_inventory", "0")
+            }
+        }
+    }
+
     fun addOrUpdateInventory(name: String, dosage: String, currentStock: Int, minStock: Int, category: String, price: Double = 0.0, id: Int = 0, updateStockStats: Boolean = false, addedQty: Int = 0, expiryDate: Long? = null, batchNumber: String = "", supplier: String = "", imageUri: String? = null, unitForm: String = "", brand: String = "") {
         viewModelScope.launch {
             var actualId = id
@@ -698,31 +881,56 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 imageUri = finalImageUri,
                 brand = itemBrand
             )
-            repository.insertInventoryItem(item)
+            saveAndSyncInventoryItemDirectly(item)
         }
     }
 
     fun deleteInventory(item: InventoryItem) {
         viewModelScope.launch {
             repository.deleteInventoryItem(item)
+            deleteEntityFromFirestore("branch_inventory", item.id.toString())
+        }
+    }
+
+    fun deduplicateLocalInventory() {
+        viewModelScope.launch {
+            try {
+                val allItems = repository.allInventoryItems.first()
+                val groups = allItems.groupBy { 
+                    "${it.name.trim().lowercase()}_${it.dosage.trim().lowercase()}_${it.batchNumber.trim().lowercase()}" 
+                }
+                for ((_, group) in groups) {
+                    if (group.size > 1) {
+                        val sorted = group.sortedByDescending { it.lastUpdated }
+                        val keep = sorted.first()
+                        val toDelete = sorted.drop(1)
+                        for (item in toDelete) {
+                            repository.deleteInventoryItem(item)
+                            deleteEntityFromFirestore("branch_inventory", item.id.toString())
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
     }
 
     fun updateStockLevel(item: InventoryItem, newQuantity: Int) {
         viewModelScope.launch {
-            repository.updateInventoryItem(item.copy(stockQuantity = newQuantity, lastUpdated = System.currentTimeMillis()))
+            saveAndSyncInventoryItemDirectly(item.copy(stockQuantity = newQuantity, lastUpdated = System.currentTimeMillis()))
         }
     }
 
     fun updateInventorySalesStrategy(item: InventoryItem, strategy: String) {
         viewModelScope.launch {
-            repository.updateInventoryItem(item.copy(salesStrategy = strategy, lastUpdated = System.currentTimeMillis()))
+            saveAndSyncInventoryItemDirectly(item.copy(salesStrategy = strategy, lastUpdated = System.currentTimeMillis()))
         }
     }
 
-    fun logPrescriptionVolume(date: String, volume: Int, notes: String) {
+    fun logPrescriptionVolume(date: String, volume: Int, notes: String, imageUri: String? = null) {
         viewModelScope.launch {
-            repository.insertPrescriptionVolume(DailyPrescriptionVolume(date, volume, notes))
+            repository.insertPrescriptionVolume(DailyPrescriptionVolume(date, volume, notes, imageUri))
         }
     }
 
@@ -759,21 +967,204 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
     }
 
     // --- Operation Tasks Actions ---
-    fun addOperationTask(title: String, description: String, urgency: String, category: String) {
+    fun addOperationTask(
+        title: String, 
+        description: String, 
+        urgency: String, 
+        category: String,
+        assignedToName: String? = null,
+        assignedToUid: String? = null
+    ) {
         viewModelScope.launch {
-            repository.insertOperationTask(OperationTask(title = title, description = description, urgency = urgency, category = category))
+            val localId = (100000..999999).random()
+            val task = OperationTask(
+                id = localId, 
+                title = title, 
+                description = description, 
+                urgency = urgency, 
+                category = category, 
+                isCompleted = false,
+                assignedToName = assignedToName,
+                assignedToUid = assignedToUid
+            )
+            repository.insertOperationTask(task)
+            
+            val branchId = _currentPharmacistBranchId.value
+            if (!branchId.isNullOrBlank()) {
+                val map = mapOf(
+                    "id" to localId,
+                    "title" to title,
+                    "description" to description,
+                    "urgency" to urgency,
+                    "category" to category,
+                    "isCompleted" to false,
+                    "createdAt" to task.createdAt,
+                    "branchId" to branchId,
+                    "assignedToName" to (assignedToName ?: ""),
+                    "assignedToUid" to (assignedToUid ?: "")
+                )
+                syncEntityToFirestore("branch_operation_tasks", localId.toString(), map)
+                logAuditTrail(
+                    action = "DELEGATE_TASK",
+                    details = "Delegated task '$title' to ${assignedToName ?: "Staff"} inside category '$category' ($urgency urgency level).",
+                    affectedId = localId.toString()
+                )
+            }
+        }
+    }
+
+    fun verifiablyCompleteOperationTask(
+        task: OperationTask,
+        notes: String,
+        channel: String,
+        patientName: String,
+        onFinished: (Boolean, String) -> Unit
+    ) {
+        viewModelScope.launch {
+            val updaterName = _currentPharmacistName.value ?: "Staff Pharmacist"
+            val updated = task.copy(
+                isCompleted = true,
+                verifiedBy = updaterName,
+                verificationNotes = notes.trim(),
+                verificationChannel = channel,
+                verificationCustomerName = patientName.trim(),
+                verifiedAt = System.currentTimeMillis()
+            )
+            repository.updateOperationTask(updated)
+            
+            val branchId = _currentPharmacistBranchId.value
+            if (!branchId.isNullOrBlank()) {
+                val map: Map<String, Any> = mapOf(
+                    "id" to updated.id,
+                    "title" to updated.title,
+                    "description" to updated.description,
+                    "urgency" to updated.urgency,
+                    "category" to updated.category,
+                    "isCompleted" to updated.isCompleted,
+                    "createdAt" to updated.createdAt,
+                    "branchId" to branchId,
+                    "assignedToName" to (updated.assignedToName ?: ""),
+                    "assignedToUid" to (updated.assignedToUid ?: ""),
+                    "verifiedBy" to (updated.verifiedBy ?: ""),
+                    "verificationNotes" to (updated.verificationNotes ?: ""),
+                    "verificationChannel" to (updated.verificationChannel ?: ""),
+                    "verificationCustomerName" to (updated.verificationCustomerName ?: ""),
+                    "verifiedAt" to (updated.verifiedAt ?: 0L),
+                    "isApproved" to updated.isApproved,
+                    "approvedBy" to (updated.approvedBy ?: ""),
+                    "approvedAt" to (updated.approvedAt ?: 0L),
+                    "approvalNotes" to (updated.approvalNotes ?: "")
+                )
+                syncEntityToFirestore("branch_operation_tasks", updated.id.toString(), map)
+                logAuditTrail(
+                    action = "TASK_VERIFIED_COMPLETE",
+                    details = "Task '${updated.title}' verified by $updaterName. Channel: $channel, Note: ${notes.take(40)}...",
+                    affectedId = updated.id.toString()
+                )
+            }
+            onFinished(true, "Task compliance check passed.")
+        }
+    }
+
+    fun approveOperationTask(
+        task: OperationTask,
+        notes: String,
+        onFinished: (Boolean, String) -> Unit
+    ) {
+        viewModelScope.launch {
+            val managerName = _currentPharmacistName.value ?: "Branch Manager"
+            val updated = task.copy(
+                isApproved = true,
+                approvedBy = managerName,
+                approvedAt = System.currentTimeMillis(),
+                approvalNotes = notes.trim()
+            )
+            repository.updateOperationTask(updated)
+            
+            val branchId = _currentPharmacistBranchId.value
+            if (!branchId.isNullOrBlank()) {
+                val map: Map<String, Any> = mapOf(
+                    "id" to updated.id,
+                    "title" to updated.title,
+                    "description" to updated.description,
+                    "urgency" to updated.urgency,
+                    "category" to updated.category,
+                    "isCompleted" to updated.isCompleted,
+                    "createdAt" to updated.createdAt,
+                    "branchId" to branchId,
+                    "assignedToName" to (updated.assignedToName ?: ""),
+                    "assignedToUid" to (updated.assignedToUid ?: ""),
+                    "verifiedBy" to (updated.verifiedBy ?: ""),
+                    "verificationNotes" to (updated.verificationNotes ?: ""),
+                    "verificationChannel" to (updated.verificationChannel ?: ""),
+                    "verificationCustomerName" to (updated.verificationCustomerName ?: ""),
+                    "verifiedAt" to (updated.verifiedAt ?: 0L),
+                    "isApproved" to updated.isApproved,
+                    "approvedBy" to (updated.approvedBy ?: ""),
+                    "approvedAt" to (updated.approvedAt ?: 0L),
+                    "approvalNotes" to (updated.approvalNotes ?: "")
+                )
+                syncEntityToFirestore("branch_operation_tasks", updated.id.toString(), map)
+                logAuditTrail(
+                    action = "TASK_APPROVED_BY_MANAGER",
+                    details = "Task '${updated.title}' approved by $managerName. Review notes: ${notes.take(40)}...",
+                    affectedId = updated.id.toString()
+                )
+            }
+            onFinished(true, "Task approved and finalized by manager.")
         }
     }
 
     fun toggleOperationTask(task: OperationTask) {
         viewModelScope.launch {
-            repository.updateOperationTask(task.copy(isCompleted = !task.isCompleted))
+            val updated = task.copy(isCompleted = !task.isCompleted)
+            repository.updateOperationTask(updated)
+            
+            val branchId = _currentPharmacistBranchId.value
+            if (!branchId.isNullOrBlank()) {
+                val map: Map<String, Any> = mapOf(
+                    "id" to updated.id,
+                    "title" to updated.title,
+                    "description" to updated.description,
+                    "urgency" to updated.urgency,
+                    "category" to updated.category,
+                    "isCompleted" to updated.isCompleted,
+                    "createdAt" to updated.createdAt,
+                    "branchId" to branchId,
+                    "assignedToName" to (updated.assignedToName ?: ""),
+                    "assignedToUid" to (updated.assignedToUid ?: ""),
+                    "verifiedBy" to (updated.verifiedBy ?: ""),
+                    "verificationNotes" to (updated.verificationNotes ?: ""),
+                    "verificationChannel" to (updated.verificationChannel ?: ""),
+                    "verificationCustomerName" to (updated.verificationCustomerName ?: ""),
+                    "verifiedAt" to (updated.verifiedAt ?: 0L),
+                    "isApproved" to updated.isApproved,
+                    "approvedBy" to (updated.approvedBy ?: ""),
+                    "approvedAt" to (updated.approvedAt ?: 0L),
+                    "approvalNotes" to (updated.approvalNotes ?: "")
+                )
+                syncEntityToFirestore("branch_operation_tasks", updated.id.toString(), map)
+                logAuditTrail(
+                    action = "TASK_STATE_CHANGE",
+                    details = "Task '${updated.title}' completion updated to ${updated.isCompleted}.",
+                    affectedId = updated.id.toString()
+                )
+            }
         }
     }
 
     fun deleteOperationTask(task: OperationTask) {
         viewModelScope.launch {
             repository.deleteOperationTask(task)
+            val branchId = _currentPharmacistBranchId.value
+            if (!branchId.isNullOrBlank()) {
+                deleteEntityFromFirestore("branch_operation_tasks", task.id.toString())
+                logAuditTrail(
+                    action = "DELETE_TASK",
+                    details = "Deleted task '${task.title}'",
+                    affectedId = task.id.toString()
+                )
+            }
         }
     }
 
@@ -878,12 +1269,24 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch { 
             repository.deleteCustomer(customer)
             // Cleanup orphans since no ForeignKeys cascade
-            customerMedications.value.filter { it.customerId == customer.id }.forEach {
-                repository.deleteCustomerMedication(it)
+            customerMedications.value.filter { it.customerId == customer.id }.forEach { med ->
+                repository.deleteCustomerMedication(med)
+                try {
+                    com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                        .collection("customer_medications").document("${deviceId}_${med.id}").delete()
+                } catch (e: Exception) { e.printStackTrace() }
             }
-            clinicalInterventions.value.filter { it.customerId == customer.id }.forEach {
-                repository.deleteClinicalIntervention(it)
+            clinicalInterventions.value.filter { it.customerId == customer.id }.forEach { inter ->
+                repository.deleteClinicalIntervention(inter)
+                try {
+                    com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                        .collection("interventions").document("${deviceId}_${inter.id}").delete()
+                } catch (e: Exception) { e.printStackTrace() }
             }
+            try {
+                com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                    .collection("customers").document("${deviceId}_${customer.id}").delete()
+            } catch (e: Exception) { e.printStackTrace() }
             triggerImmediateSync()
         }
     }
@@ -1573,12 +1976,16 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                     // Also sync to registered_pharmacists
                     try {
                         db.collection("registered_pharmacists").document(user.uid)
-                            .update(
+                            .set(
                                 mapOf(
+                                    "uid" to user.uid,
+                                    "email" to user.email.orEmpty(),
+                                    "displayName" to (user.displayName ?: user.email?.substringBefore("@") ?: "Staff Pharmacist"),
                                     "pharmacyName" to getPharmacyName(),
                                     "lga" to getPharmacyLga(),
                                     "state" to getPharmacyState()
-                                )
+                                ),
+                                com.google.firebase.firestore.SetOptions.merge()
                             )
                     } catch (e: Exception) {
                         e.printStackTrace()
@@ -1867,6 +2274,866 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 e.printStackTrace()
             }
         }
+    }
+
+    // --- Branch Realtime Synchronization, Security & Auditing Logic ---
+    
+    fun handleUserAuthenticated(user: com.google.firebase.auth.FirebaseUser) {
+        userProfileListener?.remove()
+        val db = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+        userProfileListener = db.collection("registered_pharmacists").document(user.uid)
+            .addSnapshotListener { snapshot, e ->
+                if (e != null) {
+                    android.util.Log.e("PharmacyViewModel", "Error fetching user details", e)
+                    return@addSnapshotListener
+                }
+                if (snapshot != null && snapshot.exists()) {
+                    val bId = snapshot.getString("branchId") ?: ""
+                    val bName = snapshot.getString("branchName") ?: "Careflux Rx"
+                    val role = snapshot.getString("role") ?: "Pharmacist"
+                    val displayName = snapshot.getString("displayName") ?: user.displayName ?: "Staff Pharmacist"
+                    val phoneNumber = snapshot.getString("phoneNumber") ?: user.phoneNumber ?: "+2348000000000"
+                    
+                    _currentPharmacistBranchId.value = bId
+                    _currentPharmacistBranchName.value = bName
+                    _currentPharmacistRole.value = role
+                    _currentPharmacistName.value = displayName
+                    _currentPharmacistPhone.value = phoneNumber
+                    
+                    if (bId.isNotEmpty()) {
+                        setupBranchRealtimeSync(bId)
+                    }
+                } else if (snapshot != null && !snapshot.exists()) {
+                    // Create default registered_pharmacist profile document if missing (e.g. for Google Sign-In or new users)
+                    val devId = deviceId
+                    val deviceModel = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
+                    val defaultMap = hashMapOf(
+                        "uid" to user.uid,
+                        "email" to user.email.orEmpty(),
+                        "displayName" to (user.displayName ?: user.email?.substringBefore("@") ?: "Staff Pharmacist"),
+                        "deviceId" to devId,
+                        "deviceModel" to deviceModel,
+                        "phoneNumber" to (user.phoneNumber ?: "+2348000000000"),
+                        "registeredAt" to System.currentTimeMillis(),
+                        "lastLoginAt" to System.currentTimeMillis(),
+                        "branchId" to "",
+                        "branchName" to "",
+                        "role" to "Pharmacist",
+                        "isApproved" to true
+                    )
+                    db.collection("registered_pharmacists").document(user.uid).set(defaultMap)
+                        .addOnSuccessListener {
+                            android.util.Log.d("PharmacyViewModel", "Default pharmacist profile created successfully for ${user.uid}")
+                        }
+                        .addOnFailureListener { err ->
+                            android.util.Log.e("PharmacyViewModel", "Failed to create default pharmacist profile", err)
+                        }
+                }
+            }
+    }
+
+    private fun setupBranchRealtimeSync(userBranchId: String) {
+        // Run self-healing local deduplication immediately on sync setup
+        deduplicateLocalInventory()
+
+        // Step 1: Remove existing listen channels to prevent leakages
+        activeSyncListeners.forEach { it.remove() }
+        activeSyncListeners.clear()
+        
+        val db = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+        
+        // Listener 1: Sync staff members in the same branch in realtime (for Manager view)
+        val staffListener = db.collection("registered_pharmacists")
+            .whereEqualTo("branchId", userBranchId)
+            .addSnapshotListener { snapshot, e ->
+                if (e == null && snapshot != null) {
+                    val list = snapshot.documents.map { doc ->
+                        (doc.data ?: emptyMap()).toMutableMap().apply {
+                            this["uid"] = doc.id
+                        }
+                    }
+                    _branchStaffList.value = list
+                }
+            }
+        activeSyncListeners.add(staffListener)
+
+        // Listener 2: Real-time Branch Stock Coordination
+        val invListener = db.collection("branch_inventory")
+            .whereEqualTo("branchId", userBranchId)
+            .addSnapshotListener { snapshot, e ->
+                if (e != null || snapshot == null) return@addSnapshotListener
+                viewModelScope.launch {
+                    try {
+                        // Safely purge any old corrupt document ID ending with _0 in Firestore
+                        snapshot.documents.forEach { doc ->
+                            if (doc.id.endsWith("_0") || (doc.data?.get("id") as? Number)?.toInt() == 0) {
+                                deleteEntityFromFirestore("branch_inventory", "0")
+                            }
+                        }
+
+                        val remoteItems = snapshot.documents.mapNotNull { doc ->
+                            val data = doc.data ?: return@mapNotNull null
+                            val id = (data["id"] as? Number)?.toInt() ?: return@mapNotNull null
+                            if (id == 0) return@mapNotNull null // Ignore corrupt ID 0 items
+
+                            val name = data["name"] as? String ?: ""
+                            val dosage = data["dosage"] as? String ?: ""
+                            val stockQuantity = (data["stockQuantity"] as? Number)?.toInt() ?: 0
+                            val minRequiredStock = (data["minRequiredStock"] as? Number)?.toInt() ?: 0
+                            val category = data["category"] as? String ?: ""
+                            val price = (data["price"] as? Number)?.toDouble() ?: 0.0
+                            val expiryDate = (data["expiryDate"] as? Number)?.toLong() ?: 0L
+                            val batchNumber = data["batchNumber"] as? String ?: ""
+                            val supplier = data["supplier"] as? String ?: ""
+                            val unitForm = data["unitForm"] as? String ?: ""
+                            val lastSoldDate = (data["lastSoldDate"] as? Number)?.toLong() ?: 0L
+                            val totalSoldQuantity = (data["totalSoldQuantity"] as? Number)?.toInt() ?: 0
+                            val imageUri = data["imageUri"] as? String
+                            val brand = data["brand"] as? String ?: ""
+                            val salesStrategy = data["salesStrategy"] as? String ?: ""
+                            val lastUpdated = (data["lastUpdated"] as? Number)?.toLong() ?: System.currentTimeMillis()
+                            
+                            com.example.data.InventoryItem(
+                                id = id,
+                                name = name,
+                                dosage = dosage,
+                                stockQuantity = stockQuantity,
+                                minRequiredStock = minRequiredStock,
+                                category = category,
+                                price = price,
+                                expiryDate = expiryDate,
+                                batchNumber = batchNumber,
+                                supplier = supplier,
+                                unitForm = unitForm,
+                                lastSoldDate = lastSoldDate,
+                                totalSoldQuantity = totalSoldQuantity,
+                                imageUri = imageUri,
+                                brand = brand,
+                                salesStrategy = salesStrategy,
+                                lastUpdated = lastUpdated
+                            )
+                        }
+                        
+                        var needsDeduplicate = false
+                        remoteItems.forEach { remote ->
+                            val local = repository.getInventoryItemById(remote.id)
+                            if (local == null || remote.lastUpdated >= local.lastUpdated) {
+                                repository.insertInventoryItem(remote)
+                                if (local == null) {
+                                    needsDeduplicate = true
+                                }
+                            }
+                        }
+                        if (needsDeduplicate) {
+                            deduplicateLocalInventory()
+                        }
+                    } catch (ex: Exception) {
+                        ex.printStackTrace()
+                    }
+                }
+            }
+        activeSyncListeners.add(invListener)
+
+        // Listener 3: Realtime Branch Customers Sync
+        val custListener = db.collection("branch_customers")
+            .whereEqualTo("branchId", userBranchId)
+            .addSnapshotListener { snapshot, e ->
+                if (e != null || snapshot == null) return@addSnapshotListener
+                viewModelScope.launch {
+                    try {
+                        val remoteList = snapshot.documents.mapNotNull { doc ->
+                            val data = doc.data ?: return@mapNotNull null
+                            val id = (data["id"] as? Number)?.toInt() ?: return@mapNotNull null
+                            val name = data["name"] as? String ?: ""
+                            val phoneNumber = data["phoneNumber"] as? String ?: ""
+                            val email = data["email"] as? String ?: ""
+                            val notes = data["notes"] as? String ?: ""
+                            val loyaltyPoints = (data["loyaltyPoints"] as? Number)?.toInt() ?: 0
+                            val refillStreak = (data["refillStreak"] as? Number)?.toInt() ?: 0
+                            val dateAdded = (data["dateAdded"] as? Number)?.toLong() ?: System.currentTimeMillis()
+                            val age = (data["age"] as? Number)?.toInt() ?: 30
+                            val gender = data["gender"] as? String ?: "Male"
+                            val state = data["state"] as? String ?: "Lagos"
+                            val lga = data["lga"] as? String ?: "Ikeja"
+                            val city = data["city"] as? String ?: "Ikeja"
+                            
+                            com.example.data.Customer(
+                                id = id,
+                                name = name,
+                                phoneNumber = phoneNumber,
+                                email = email,
+                                notes = notes,
+                                loyaltyPoints = loyaltyPoints,
+                                refillStreak = refillStreak,
+                                dateAdded = dateAdded,
+                                age = age,
+                                gender = gender,
+                                state = state,
+                                lga = lga,
+                                city = city
+                            )
+                        }
+                        remoteList.forEach { remote ->
+                            val local = repository.getCustomerById(remote.id)
+                            if (local == null || remote.dateAdded >= local.dateAdded) {
+                                repository.insertCustomer(remote)
+                            }
+                        }
+                    } catch (ex: Exception) {
+                        ex.printStackTrace()
+                    }
+                }
+            }
+        activeSyncListeners.add(custListener)
+
+        // Listener 4: Realtime Branch Operations Tasks
+        val taskListener = db.collection("branch_operation_tasks")
+            .whereEqualTo("branchId", userBranchId)
+            .addSnapshotListener { snapshot, e ->
+                if (e != null || snapshot == null) return@addSnapshotListener
+                viewModelScope.launch {
+                    try {
+                        val remoteList = snapshot.documents.mapNotNull { doc ->
+                            val data = doc.data ?: return@mapNotNull null
+                            val id = (data["id"] as? Number)?.toInt() ?: return@mapNotNull null
+                            val title = data["title"] as? String ?: ""
+                            val description = data["description"] as? String ?: ""
+                            val urgency = data["urgency"] as? String ?: "Medium"
+                            val category = data["category"] as? String ?: "Manual"
+                            val isCompleted = data["isCompleted"] as? Boolean ?: false
+                            val createdAt = (data["createdAt"] as? Number)?.toLong() ?: System.currentTimeMillis()
+                            
+                            val verifiedBy = data["verifiedBy"] as? String
+                            val verificationNotes = data["verificationNotes"] as? String
+                            val verificationChannel = data["verificationChannel"] as? String
+                            val verificationCustomerName = data["verificationCustomerName"] as? String
+                            val verifiedAtNum = data["verifiedAt"] as? Number
+                            val verifiedAt = if (verifiedAtNum != null && verifiedAtNum.toLong() != 0L) verifiedAtNum.toLong() else null
+                            
+                            val isApproved = data["isApproved"] as? Boolean ?: false
+                            val approvedBy = data["approvedBy"] as? String
+                            val approvedAtNum = data["approvedAt"] as? Number
+                            val approvedAt = if (approvedAtNum != null && approvedAtNum.toLong() != 0L) approvedAtNum.toLong() else null
+                            val approvalNotes = data["approvalNotes"] as? String
+                            
+                            val assignedToName = data["assignedToName"] as? String
+                            val assignedToUid = data["assignedToUid"] as? String
+
+                            com.example.data.OperationTask(
+                                id = id,
+                                title = title,
+                                description = description,
+                                urgency = urgency,
+                                category = category,
+                                isCompleted = isCompleted,
+                                createdAt = createdAt,
+                                verifiedBy = if (verifiedBy.isNullOrEmpty()) null else verifiedBy,
+                                verificationNotes = if (verificationNotes.isNullOrEmpty()) null else verificationNotes,
+                                verificationChannel = if (verificationChannel.isNullOrEmpty()) null else verificationChannel,
+                                verificationCustomerName = if (verificationCustomerName.isNullOrEmpty()) null else verificationCustomerName,
+                                verifiedAt = verifiedAt,
+                                isApproved = isApproved,
+                                approvedBy = if (approvedBy.isNullOrEmpty()) null else approvedBy,
+                                approvedAt = approvedAt,
+                                approvalNotes = if (approvalNotes.isNullOrEmpty()) null else approvalNotes,
+                                assignedToName = if (assignedToName.isNullOrEmpty()) null else assignedToName,
+                                assignedToUid = if (assignedToUid.isNullOrEmpty()) null else assignedToUid
+                            )
+                        }
+                        
+                        val currentUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid
+                        val isManager = _currentPharmacistRole.value == "Branch Manager"
+
+                        remoteList.forEach { remote ->
+                            val local = repository.getOperationTaskById(remote.id)
+                            
+                            if (isFirstTaskSyncDone) {
+                                // 1. Notify pharmacist if task is assigned to them
+                                if (remote.assignedToUid == currentUid && remote.assignedToUid?.isNotEmpty() == true) {
+                                    if (local == null) {
+                                        showLocalNotification(
+                                            title = "New Task Assigned",
+                                            content = "You have been assigned a new task: ${remote.title}.",
+                                            targetTab = "ai_tasks"
+                                        )
+                                    } else if (local.assignedToUid != remote.assignedToUid) {
+                                        showLocalNotification(
+                                            title = "Task Reassigned to You",
+                                            content = "Task '${remote.title}' is now assigned to you.",
+                                            targetTab = "ai_tasks"
+                                        )
+                                    }
+                                }
+                                
+                                // 2. Notify manager if a task is completed
+                                if (isManager) {
+                                    if (remote.isCompleted && (local == null || !local.isCompleted)) {
+                                        showLocalNotification(
+                                            title = "Task Completed by Staff",
+                                            content = "Task '${remote.title}' has been marked completed by ${remote.verifiedBy ?: "staff"}.",
+                                            targetTab = "branch_team"
+                                        )
+                                    }
+                                }
+                            }
+                            
+                            repository.insertOperationTask(remote)
+                        }
+                        isFirstTaskSyncDone = true
+                    } catch (ex: Exception) {
+                        ex.printStackTrace()
+                    }
+                }
+            }
+        activeSyncListeners.add(taskListener)
+
+        // Listener 5: Realtime Branch Receipts Sync
+        val receiptListener = db.collection("branch_receipts")
+            .whereEqualTo("branchId", userBranchId)
+            .addSnapshotListener { snapshot, e ->
+                if (e != null || snapshot == null) return@addSnapshotListener
+                viewModelScope.launch {
+                    try {
+                        snapshot.documents.forEach { doc ->
+                            val data = doc.data ?: return@forEach
+                            val id = (data["id"] as? Number)?.toInt() ?: return@forEach
+                            val timestamp = (data["timestamp"] as? Number)?.toLong() ?: System.currentTimeMillis()
+                            val customerName = data["customerName"] as? String ?: ""
+                            val totalAmount = (data["totalAmount"] as? Number)?.toDouble() ?: 0.0
+                            val imageFileName = data["imageFileName"] as? String ?: ""
+                            val isInvoice = data["isInvoice"] as? Boolean ?: false
+                            val paymentStatus = data["paymentStatus"] as? String ?: "Paid"
+                            val orderId = data["orderId"] as? String ?: ""
+                            
+                            repository.insertReceipt(
+                                com.example.data.Receipt(
+                                    id = id,
+                                    timestamp = timestamp,
+                                    customerName = customerName,
+                                    totalAmount = totalAmount,
+                                    imageFileName = imageFileName,
+                                    isInvoice = isInvoice,
+                                    paymentStatus = paymentStatus,
+                                    orderId = orderId
+                                )
+                            )
+                        }
+                    } catch (ex: Exception) {
+                        ex.printStackTrace()
+                    }
+                }
+            }
+        activeSyncListeners.add(receiptListener)
+
+        // Listener 6: Realtime Branch Audit Logs Sync (for transfers ledger)
+        val auditListener = db.collection("branch_audit_logs")
+            .whereEqualTo("branchId", userBranchId)
+            .addSnapshotListener { snapshot, e ->
+                if (e != null || snapshot == null) return@addSnapshotListener
+                val logs = snapshot.documents.mapNotNull { doc ->
+                    val data = doc.data ?: return@mapNotNull null
+                    val act = data["action"] as? String ?: ""
+                    if (act == "TRANSFER" || act == "BULK_TRANSFER") {
+                        val mutableMap = data.toMutableMap()
+                        mutableMap["id"] = doc.id
+                        mutableMap
+                    } else {
+                        null
+                    }
+                }.sortedByDescending { (it["timestamp"] as? Number)?.toLong() ?: 0L }
+                _branchTransfers.value = logs
+            }
+        activeSyncListeners.add(auditListener)
+    }
+
+    fun syncEntityToFirestore(collectionName: String, docId: String, dataMap: Map<String, Any?>) {
+        val branchId = _currentPharmacistBranchId.value ?: return
+        viewModelScope.launch {
+            try {
+                val db = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                val mutableMap = dataMap.toMutableMap()
+                mutableMap["branchId"] = branchId
+                mutableMap["syncedAt"] = System.currentTimeMillis()
+                db.collection(collectionName).document("${branchId}_$docId").set(mutableMap)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    fun deleteEntityFromFirestore(collectionName: String, docId: String) {
+        val branchId = _currentPharmacistBranchId.value ?: return
+        viewModelScope.launch {
+            try {
+                val db = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                db.collection(collectionName).document("${branchId}_$docId").delete()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    fun logAuditTrail(action: String, details: String, affectedId: String = "") {
+        val branchId = _currentPharmacistBranchId.value ?: "Self"
+        val userName = _currentPharmacistName.value ?: "Staff Pharmacist"
+        val userRole = _currentPharmacistRole.value ?: "Pharmacist"
+        val userUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: "LocalNode"
+        
+        viewModelScope.launch {
+            try {
+                val db = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                val auditMap = hashMapOf(
+                    "branchId" to branchId,
+                    "uid" to userUid,
+                    "displayName" to userName,
+                    "role" to userRole,
+                    "action" to action,
+                    "timestamp" to System.currentTimeMillis(),
+                    "details" to details,
+                    "affectedId" to affectedId
+                )
+                db.collection("branch_audit_logs").add(auditMap)
+                
+                repository.insertAdminAuditLog(
+                    com.example.data.AdminAuditLog(
+                        adminName = "$userName ($userRole)",
+                        actionPerformed = action,
+                        timestamp = System.currentTimeMillis(),
+                        affectedNodeId = affectedId,
+                        affectedNodeModel = "Branch: ${_currentPharmacistBranchName.value ?: "Careflux"}",
+                        reason = details
+                    )
+                )
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    // --- Branch Stock Control & Compliance Core Actions ---
+
+    fun performBranchTransfer(item: com.example.data.InventoryItem, quantity: Int, destinationBranch: String, reason: String) {
+        viewModelScope.launch {
+            if (item.stockQuantity < quantity) {
+                android.widget.Toast.makeText(getApplication(), "Transfer Failed: Insufficient stock available", android.widget.Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            val newQty = item.stockQuantity - quantity
+            val updated = item.copy(stockQuantity = newQty, lastUpdated = System.currentTimeMillis())
+            repository.insertInventoryItem(updated)
+            
+            val map = mapOf(
+                "id" to updated.id,
+                "name" to updated.name,
+                "dosage" to updated.dosage,
+                "stockQuantity" to updated.stockQuantity,
+                "minRequiredStock" to updated.minRequiredStock,
+                "category" to updated.category,
+                "price" to updated.price,
+                "expiryDate" to updated.expiryDate,
+                "batchNumber" to updated.batchNumber,
+                "supplier" to updated.supplier,
+                "unitForm" to updated.unitForm,
+                "lastSoldDate" to updated.lastSoldDate,
+                "totalSoldQuantity" to updated.totalSoldQuantity,
+                "brand" to updated.brand,
+                "salesStrategy" to updated.salesStrategy,
+                "lastUpdated" to updated.lastUpdated
+            )
+            syncEntityToFirestore("branch_inventory", updated.id.toString(), map)
+            
+            logAuditTrail(
+                action = "TRANSFER",
+                details = "Transferred $quantity units of ${item.name} (${item.dosage}) to branch: '$destinationBranch'. Reason: $reason",
+                affectedId = item.id.toString()
+            )
+            android.widget.Toast.makeText(getApplication(), "Stock Transfer registered and logged safely", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun performBulkBranchTransfer(transfers: List<Pair<com.example.data.InventoryItem, Int>>, destinationBranch: String, reason: String) {
+        viewModelScope.launch {
+            var successCount = 0
+            var failCount = 0
+            val stringBuilder = StringBuilder()
+            
+            transfers.forEach { (item, quantity) ->
+                if (item.stockQuantity < quantity) {
+                    failCount++
+                    stringBuilder.append("• ${item.name}: Insufficient stock\n")
+                    return@forEach
+                }
+                
+                val newQty = item.stockQuantity - quantity
+                val updated = item.copy(stockQuantity = newQty, lastUpdated = System.currentTimeMillis())
+                repository.insertInventoryItem(updated)
+                
+                val map = mapOf(
+                    "id" to updated.id,
+                    "name" to updated.name,
+                    "dosage" to updated.dosage,
+                    "stockQuantity" to updated.stockQuantity,
+                    "minRequiredStock" to updated.minRequiredStock,
+                    "category" to updated.category,
+                    "price" to updated.price,
+                    "expiryDate" to updated.expiryDate,
+                    "batchNumber" to updated.batchNumber,
+                    "supplier" to updated.supplier,
+                    "unitForm" to updated.unitForm,
+                    "lastSoldDate" to updated.lastSoldDate,
+                    "totalSoldQuantity" to updated.totalSoldQuantity,
+                    "brand" to updated.brand,
+                    "salesStrategy" to updated.salesStrategy,
+                    "lastUpdated" to updated.lastUpdated
+                )
+                syncEntityToFirestore("branch_inventory", updated.id.toString(), map)
+                
+                logAuditTrail(
+                    action = "BULK_TRANSFER",
+                    details = "Bulk Transferred $quantity units of ${item.name} (${item.dosage}) to branch: '$destinationBranch'. Reason: $reason",
+                    affectedId = item.id.toString()
+                )
+                successCount++
+            }
+            
+            val message = if (failCount == 0) {
+                "Bulk transfer of $successCount items completed successfully!"
+            } else {
+                "Bulk transfer completed: $successCount successful, $failCount failed.\n$stringBuilder"
+            }
+            android.widget.Toast.makeText(getApplication(), message, android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+
+    fun performReturn(item: com.example.data.InventoryItem, quantity: Int, customerName: String, reason: String) {
+        viewModelScope.launch {
+            val newQty = item.stockQuantity + quantity
+            val updated = item.copy(stockQuantity = newQty, lastUpdated = System.currentTimeMillis())
+            repository.insertInventoryItem(updated)
+            
+            val map = mapOf(
+                "id" to updated.id,
+                "name" to updated.name,
+                "dosage" to updated.dosage,
+                "stockQuantity" to updated.stockQuantity,
+                "minRequiredStock" to updated.minRequiredStock,
+                "category" to updated.category,
+                "price" to updated.price,
+                "expiryDate" to updated.expiryDate,
+                "batchNumber" to updated.batchNumber,
+                "supplier" to updated.supplier,
+                "unitForm" to updated.unitForm,
+                "lastSoldDate" to updated.lastSoldDate,
+                "totalSoldQuantity" to updated.totalSoldQuantity,
+                "brand" to updated.brand,
+                "salesStrategy" to updated.salesStrategy,
+                "lastUpdated" to updated.lastUpdated
+            )
+            syncEntityToFirestore("branch_inventory", updated.id.toString(), map)
+            
+            logAuditTrail(
+                action = "RETURN",
+                details = "Customer '$customerName' returned $quantity units of ${item.name} (${item.dosage}). Reason: $reason. Restored to inventory.",
+                affectedId = item.id.toString()
+            )
+            android.widget.Toast.makeText(getApplication(), "Product return logged. Stock restored.", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun performExpiryWriteOff(item: com.example.data.InventoryItem, quantity: Int, reason: String) {
+        viewModelScope.launch {
+            if (item.stockQuantity < quantity) {
+                android.widget.Toast.makeText(getApplication(), "Write-off Failed: Insufficient stock", android.widget.Toast.LENGTH_SHORT).show()
+                return@launch
+            }
+            val newQty = item.stockQuantity - quantity
+            val updated = item.copy(stockQuantity = newQty, lastUpdated = System.currentTimeMillis())
+            repository.insertInventoryItem(updated)
+            
+            val map = mapOf(
+                "id" to updated.id,
+                "name" to updated.name,
+                "dosage" to updated.dosage,
+                "stockQuantity" to updated.stockQuantity,
+                "minRequiredStock" to updated.minRequiredStock,
+                "category" to updated.category,
+                "price" to updated.price,
+                "expiryDate" to updated.expiryDate,
+                "batchNumber" to updated.batchNumber,
+                "supplier" to updated.supplier,
+                "unitForm" to updated.unitForm,
+                "lastSoldDate" to updated.lastSoldDate,
+                "totalSoldQuantity" to updated.totalSoldQuantity,
+                "brand" to updated.brand,
+                "salesStrategy" to updated.salesStrategy,
+                "lastUpdated" to updated.lastUpdated
+            )
+            syncEntityToFirestore("branch_inventory", updated.id.toString(), map)
+            
+            logAuditTrail(
+                action = "EXPIRY_WRITE_OFF",
+                details = "Wrote-off $quantity units of ${item.name} (${item.dosage}) as expired/damaged. Reason: $reason.",
+                affectedId = item.id.toString()
+            )
+            android.widget.Toast.makeText(getApplication(), "Expired inventory successfully written off & logged", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // Role-Based Team Management - Allowed only for Branch Managers
+    fun updateStaffRoleOrApproval(staffUid: String, newRole: String, isApproved: Boolean) {
+        viewModelScope.launch {
+            try {
+                if (_currentPharmacistRole.value != "Branch Manager") {
+                    android.widget.Toast.makeText(getApplication(), "Access Denied: Only Branch Managers can configure staff roles", android.widget.Toast.LENGTH_SHORT).show()
+                    return@launch
+                }
+                val db = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                db.collection("registered_pharmacists").document(staffUid)
+                    .update(
+                        mapOf(
+                            "role" to newRole,
+                            "isApproved" to isApproved
+                        )
+                    ).addOnSuccessListener {
+                        logAuditTrail("MANAGE_STAFF", "Configured credentials of staff Member uid: $staffUid. Role set to '$newRole', Active state: $isApproved")
+                        android.widget.Toast.makeText(getApplication(), "Staff credentials configured successfully", android.widget.Toast.LENGTH_SHORT).show()
+                    }.addOnFailureListener {
+                        android.widget.Toast.makeText(getApplication(), "Failed to update staff credentials", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
+    // --- Ad-hoc Profile Branch Enrollment and Setup ---
+    fun joinBranch(branchCode: String, onFinished: (Boolean, String) -> Unit) {
+        val auth = com.google.firebase.auth.FirebaseAuth.getInstance()
+        val user = auth.currentUser
+        if (user == null) {
+            onFinished(false, "Authentication Error: No active user session.")
+            return
+        }
+        val cleanCode = branchCode.trim().uppercase()
+        if (cleanCode.isBlank()) {
+            onFinished(false, "Please enter a non-empty Branch Code.")
+            return
+        }
+        val db = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+        db.collection("branches").document(cleanCode).get()
+            .addOnCompleteListener { task ->
+                if (task.isSuccessful && task.result != null && task.result.exists()) {
+                    val branchName = task.result.getString("name") ?: "Careflux Pharmacy"
+                    
+                    db.collection("registered_pharmacists").document(user.uid).get()
+                        .addOnCompleteListener { pTask ->
+                            val existingData = if (pTask.isSuccessful && pTask.result != null && pTask.result.exists()) {
+                                pTask.result.data ?: mapOf()
+                            } else {
+                                mapOf()
+                            }
+                            
+                            val updateMap = hashMapOf<String, Any>()
+                            updateMap.putAll(existingData)
+                            
+                            updateMap["uid"] = user.uid
+                            updateMap["email"] = user.email.orEmpty()
+                            if (updateMap["displayName"] == null || (updateMap["displayName"] as? String).isNullOrBlank()) {
+                                updateMap["displayName"] = user.displayName ?: user.email?.substringBefore("@") ?: "Staff Pharmacist"
+                            }
+                            updateMap["deviceId"] = deviceId
+                            updateMap["deviceModel"] = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
+                            updateMap["branchId"] = cleanCode
+                            updateMap["branchName"] = branchName
+                            
+                            if (updateMap["role"] == null) {
+                                updateMap["role"] = "Pharmacist"
+                            }
+                            if (updateMap["isApproved"] == null) {
+                                updateMap["isApproved"] = true
+                            }
+                            if (updateMap["phoneNumber"] == null || (updateMap["phoneNumber"] as? String).isNullOrBlank()) {
+                                updateMap["phoneNumber"] = user.phoneNumber ?: "+2348000000000"
+                            }
+                            if (updateMap["registeredAt"] == null) {
+                                updateMap["registeredAt"] = System.currentTimeMillis()
+                            }
+                            updateMap["lastLoginAt"] = System.currentTimeMillis()
+                            
+                            db.collection("registered_pharmacists").document(user.uid)
+                                .set(updateMap)
+                                .addOnSuccessListener {
+                                    val finalRole = updateMap["role"] as? String ?: "Pharmacist"
+                                    _currentPharmacistBranchId.value = cleanCode
+                                    _currentPharmacistBranchName.value = branchName
+                                    _currentPharmacistRole.value = finalRole
+                                    setupBranchRealtimeSync(cleanCode)
+                                    onFinished(true, "Successfully joined branch: $branchName ($cleanCode).")
+                                    logAuditTrail("JOIN_BRANCH", "User joined branch '$branchName' with code $cleanCode.")
+                                }
+                                .addOnFailureListener { e ->
+                                    onFinished(false, "Failed to update profile: ${e.localizedMessage}")
+                                }
+                        }
+                } else {
+                    onFinished(false, "Branch with Code '$cleanCode' does not exist in our database.")
+                }
+            }
+    }
+
+    fun registerBranch(name: String, lga: String, state: String, onFinished: (Boolean, String) -> Unit) {
+        val auth = com.google.firebase.auth.FirebaseAuth.getInstance()
+        val user = auth.currentUser
+        if (user == null) {
+            onFinished(false, "Authentication Error: No active user session.")
+            return
+        }
+        val cleanName = name.trim()
+        val cleanLga = lga.trim().ifBlank { "Ikeja" }
+        val cleanState = state.trim().ifBlank { "Lagos" }
+        
+        if (cleanName.isBlank()) {
+            onFinished(false, "Please enter a non-empty Branch Name.")
+            return
+        }
+        
+        val randomCode = "CF-" + (100000..999999).random().toString()
+        val db = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+        
+        val branchMap = mapOf(
+            "id" to randomCode,
+            "name" to cleanName,
+            "lga" to cleanLga,
+            "state" to cleanState,
+            "createdBy" to user.uid,
+            "createdAt" to System.currentTimeMillis()
+        )
+        
+        db.collection("branches").document(randomCode).set(branchMap)
+            .addOnSuccessListener {
+                db.collection("registered_pharmacists").document(user.uid).get()
+                    .addOnCompleteListener { pTask ->
+                        val existingData = if (pTask.isSuccessful && pTask.result != null && pTask.result.exists()) {
+                            pTask.result.data ?: mapOf()
+                        } else {
+                            mapOf()
+                        }
+                        
+                        val updateMap = hashMapOf<String, Any>()
+                        updateMap.putAll(existingData)
+                        
+                        updateMap["uid"] = user.uid
+                        updateMap["email"] = user.email.orEmpty()
+                        if (updateMap["displayName"] == null || (updateMap["displayName"] as? String).isNullOrBlank()) {
+                            updateMap["displayName"] = user.displayName ?: user.email?.substringBefore("@") ?: "Staff Pharmacist"
+                        }
+                        updateMap["deviceId"] = deviceId
+                        updateMap["deviceModel"] = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
+                        updateMap["branchId"] = randomCode
+                        updateMap["branchName"] = cleanName
+                        updateMap["role"] = "Branch Manager"
+                        updateMap["isApproved"] = true
+                        
+                        if (updateMap["phoneNumber"] == null || (updateMap["phoneNumber"] as? String).isNullOrBlank()) {
+                            updateMap["phoneNumber"] = user.phoneNumber ?: "+2348000000000"
+                        }
+                        if (updateMap["registeredAt"] == null) {
+                            updateMap["registeredAt"] = System.currentTimeMillis()
+                        }
+                        updateMap["lastLoginAt"] = System.currentTimeMillis()
+                        
+                        db.collection("registered_pharmacists").document(user.uid)
+                            .set(updateMap)
+                            .addOnSuccessListener {
+                                _currentPharmacistBranchId.value = randomCode
+                                _currentPharmacistBranchName.value = cleanName
+                                _currentPharmacistRole.value = "Branch Manager"
+                                setupBranchRealtimeSync(randomCode)
+                                onFinished(true, "Branch registered successfully! Store Code: $randomCode")
+                                logAuditTrail("CREATE_BRANCH", "Created branch '$cleanName' and self-assigned as Branch Manager under $randomCode")
+                            }
+                            .addOnFailureListener { e ->
+                                onFinished(false, "Branch created successfully ($randomCode) but failed to link profile: ${e.localizedMessage}")
+                            }
+                    }
+            }
+            .addOnFailureListener { e ->
+                onFinished(false, "Failed to register branch: ${e.localizedMessage}")
+            }
+    }
+
+    fun deleteBranch(branchId: String, onFinished: (Boolean, String) -> Unit) {
+        val auth = com.google.firebase.auth.FirebaseAuth.getInstance()
+        val user = auth.currentUser
+        if (user == null) {
+            onFinished(false, "Authentication required.")
+            return
+        }
+        val db = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+        db.collection("branches").document(branchId).delete()
+            .addOnSuccessListener {
+                db.collection("registered_pharmacists")
+                    .whereEqualTo("branchId", branchId)
+                    .get()
+                    .addOnCompleteListener { task ->
+                        if (task.isSuccessful && task.result != null) {
+                            val batch = db.batch()
+                            for (doc in task.result.documents) {
+                                val docRef = db.collection("registered_pharmacists").document(doc.id)
+                                batch.update(docRef, mapOf(
+                                    "branchId" to "",
+                                    "branchName" to ""
+                                ))
+                            }
+                            batch.commit()
+                        }
+                        logAuditTrail("DELETE_BRANCH", "Deleted branch $branchId from director")
+                        if (_currentPharmacistBranchId.value == branchId) {
+                            _currentPharmacistBranchId.value = ""
+                            _currentPharmacistBranchName.value = "Not Configured"
+                        }
+                        onFinished(true, "Branch deleted successfully.")
+                    }
+            }
+            .addOnFailureListener { e ->
+                onFinished(false, "Failed to delete branch: ${e.localizedMessage}")
+            }
+    }
+
+    fun updatePharmacistProfile(newName: String, newPhone: String, onFinished: (Boolean, String) -> Unit) {
+        val auth = com.google.firebase.auth.FirebaseAuth.getInstance()
+        val user = auth.currentUser
+        if (user == null) {
+            onFinished(false, "Authentication required.")
+            return
+        }
+        val cleanName = newName.trim()
+        val cleanPhone = newPhone.trim().replace(Regex("[^+\\d]"), "")
+        if (cleanName.isBlank()) {
+            onFinished(false, "Full Name cannot be empty.")
+            return
+        }
+        if (cleanPhone.isBlank()) {
+            onFinished(false, "Phone Number cannot be empty.")
+            return
+        }
+
+        val db = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+        val userRef = db.collection("registered_pharmacists").document(user.uid)
+        
+        userRef.update(mapOf(
+            "displayName" to cleanName,
+            "phoneNumber" to cleanPhone
+        ))
+            .addOnSuccessListener {
+                _currentPharmacistName.value = cleanName
+                _currentPharmacistPhone.value = cleanPhone
+                onFinished(true, "Profile updated successfully.")
+                logAuditTrail("UPDATE_PROFILE", "User updated profile name to '$cleanName' and phone to '$cleanPhone'.")
+            }
+            .addOnFailureListener { e ->
+                onFinished(false, "Failed to update profile: ${e.localizedMessage}")
+            }
     }
 
     class Factory(private val application: Application) : ViewModelProvider.Factory {

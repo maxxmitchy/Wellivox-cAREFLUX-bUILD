@@ -63,6 +63,14 @@ fun AuthScreen(
     var showPassword by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(false) }
     
+    // Branch registration and joining states
+    var registerNewBranch by remember { mutableStateOf(false) }
+    var signUpBranchCode by remember { mutableStateOf("") }
+    var signUpBranchName by remember { mutableStateOf("") }
+    var signUpBranchLga by remember { mutableStateOf("") }
+    var signUpBranchState by remember { mutableStateOf("") }
+    var selectedRole by remember { mutableStateOf("Pharmacist") } // "Pharmacist", "Intern Pharmacist", "Technician"
+    
     // Manage email verification screen if not verified
     var pendingVerificationUser by remember { mutableStateOf<FirebaseUser?>(null) }
     
@@ -249,6 +257,179 @@ fun AuthScreen(
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone)
                         )
                         Spacer(modifier = Modifier.height(16.dp))
+
+                        // Branch selection controls (Join Branch vs Register Branch)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Button(
+                                onClick = { registerNewBranch = false },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (!registerNewBranch) TealPrimary else MaterialTheme.colorScheme.surfaceVariant
+                                ),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text(
+                                    text = "Join Branch",
+                                    color = if (!registerNewBranch) Color.Black else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                )
+                            }
+                            Button(
+                                onClick = { registerNewBranch = true },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (registerNewBranch) TealPrimary else MaterialTheme.colorScheme.surfaceVariant
+                                ),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Text(
+                                    text = "Register Branch",
+                                    color = if (registerNewBranch) Color.Black else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        if (!registerNewBranch) {
+                            // Join Existing Branch Inputs
+                            OutlinedTextField(
+                                value = signUpBranchCode,
+                                onValueChange = { signUpBranchCode = it.trim().uppercase() },
+                                label = { Text("Branch Code") },
+                                placeholder = { Text("e.g. CF-123456") },
+                                leadingIcon = { Icon(Icons.Default.QrCode, contentDescription = "Branch Code") },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("auth_branch_code_field"),
+                                shape = RoundedCornerShape(12.dp),
+                                singleLine = true
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            Text(
+                                text = "Select Your Professional Role:",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isDark) Color.White else Color(0xFF0F172A),
+                                modifier = Modifier.align(Alignment.Start)
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                val roles = listOf("Pharmacist", "Intern Pharmacist", "Technician")
+                                roles.forEach { role ->
+                                    val isSelected = selectedRole == role
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(if (isSelected) TealPrimary else MaterialTheme.colorScheme.surfaceVariant)
+                                            .clickable { selectedRole = role }
+                                            .border(
+                                                width = 1.dp,
+                                                color = if (isSelected) TealPrimary else Color.Transparent,
+                                                shape = RoundedCornerShape(8.dp)
+                                            )
+                                            .padding(vertical = 10.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = role,
+                                            color = if (isSelected) Color.Black else MaterialTheme.colorScheme.onSurfaceVariant,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 9.sp,
+                                            textAlign = TextAlign.Center
+                                        )
+                                    }
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(16.dp))
+                        } else {
+                            // Register New Branch Inputs
+                            OutlinedTextField(
+                                value = signUpBranchName,
+                                onValueChange = { signUpBranchName = it },
+                                label = { Text("New Branch Name") },
+                                placeholder = { Text("e.g. WELLIVOX HQ") },
+                                leadingIcon = { Icon(Icons.Default.Storefront, contentDescription = "Branch Name") },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .testTag("auth_branch_name_field"),
+                                shape = RoundedCornerShape(12.dp),
+                                singleLine = true
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                OutlinedTextField(
+                                    value = signUpBranchLga,
+                                    onValueChange = { signUpBranchLga = it },
+                                    label = { Text("LGA") },
+                                    placeholder = { Text("e.g. Ikeja") },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("auth_branch_lga_field"),
+                                    shape = RoundedCornerShape(12.dp),
+                                    singleLine = true
+                                )
+                                OutlinedTextField(
+                                    value = signUpBranchState,
+                                    onValueChange = { signUpBranchState = it },
+                                    label = { Text("State") },
+                                    placeholder = { Text("e.g. Lagos") },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .testTag("auth_branch_state_field"),
+                                    shape = RoundedCornerShape(12.dp),
+                                    singleLine = true
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(16.dp))
+                            
+                            Card(
+                                colors = CardDefaults.cardColors(
+                                    containerColor = TealPrimary.copy(alpha = 0.15f)
+                                ),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(Icons.Default.VerifiedUser, contentDescription = "Role info", tint = TealPrimary)
+                                    Column {
+                                        Text(
+                                            text = "Role: Branch Manager",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp,
+                                            color = if (isDark) Color.White else Color(0xFF0F172A)
+                                        )
+                                        Text(
+                                            text = "As the registerer, you are designated the Branch Manager and approved automatically.",
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(16.dp))
+                        }
                     }
                     
                     OutlinedTextField(
@@ -315,53 +496,145 @@ fun AuthScreen(
                                             isLoading = false
                                             Toast.makeText(context, "Sign Up Failed: This phone number is already registered by another pharmacist!", Toast.LENGTH_LONG).show()
                                         } else {
-                                            // Real Firebase Sign Up with Verification Send
-                                            auth.createUserWithEmailAndPassword(email, password)
-                                                .addOnCompleteListener { signupResult ->
-                                                    if (signupResult.isSuccessful) {
-                                                        val user = auth.currentUser
-                                                        // Set user name/profile
-                                                        val profileUpdates = com.google.firebase.auth.userProfileChangeRequest {
-                                                            displayName = name.trim()
-                                                        }
-                                                        user?.updateProfile(profileUpdates)?.addOnCompleteListener {
-                                                            // Save pharmacist details to Firestore
-                                                            val devId = context.getSharedPreferences("careflux_prefs", Context.MODE_PRIVATE)
-                                                                .getString("device_uuid", "Unknown") ?: "Unknown"
-                                                            val deviceModel = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
+                                            if (!registerNewBranch) {
+                                                // Join Branch Verification
+                                                val cleanCode = signUpBranchCode.trim().uppercase()
+                                                if (cleanCode.isBlank()) {
+                                                    Toast.makeText(context, "Please enter a valid Branch Code to join", Toast.LENGTH_SHORT).show()
+                                                    isLoading = false
+                                                    return@addOnCompleteListener
+                                                }
+                                                dbFirestore.collection("branches").document(cleanCode).get()
+                                                    .addOnCompleteListener { branchTask ->
+                                                        if (branchTask.isSuccessful && branchTask.result != null && branchTask.result.exists()) {
+                                                            val bName = branchTask.result.getString("name") ?: "Careflux Pharmacy"
                                                             
-                                                            val pharmacistMap = hashMapOf(
-                                                                "uid" to user.uid,
-                                                                "email" to user.email.orEmpty(),
-                                                                "displayName" to name.trim(),
-                                                                "phoneNumber" to normPhone,
-                                                                "deviceId" to devId,
-                                                                "deviceModel" to deviceModel,
-                                                                "registeredAt" to System.currentTimeMillis(),
-                                                                "lastLoginAt" to System.currentTimeMillis()
-                                                            )
-                                                            dbFirestore.collection("registered_pharmacists")
-                                                                .document(user.uid)
-                                                                .set(pharmacistMap)
- 
-                                                            // Send verification email
-                                                            user.sendEmailVerification()
-                                                                .addOnCompleteListener { verifResult ->
-                                                                    isLoading = false
-                                                                    if (verifResult.isSuccessful) {
-                                                                        Toast.makeText(context, "Verification email sent. Please check your inbox.", Toast.LENGTH_LONG).show()
-                                                                        pendingVerificationUser = user
+                                                            // Proceed with creation
+                                                            auth.createUserWithEmailAndPassword(email, password)
+                                                                .addOnCompleteListener { signupResult ->
+                                                                    if (signupResult.isSuccessful) {
+                                                                        val user = auth.currentUser
+                                                                        val profileUpdates = com.google.firebase.auth.userProfileChangeRequest {
+                                                                            displayName = name.trim()
+                                                                        }
+                                                                        user?.updateProfile(profileUpdates)?.addOnCompleteListener {
+                                                                            val devId = context.getSharedPreferences("careflux_prefs", Context.MODE_PRIVATE)
+                                                                                .getString("device_uuid", "Unknown") ?: "Unknown"
+                                                                            val deviceModel = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
+                                                                            
+                                                                            val pharmacistMap = hashMapOf(
+                                                                                "uid" to user.uid,
+                                                                                "email" to user.email.orEmpty(),
+                                                                                "displayName" to name.trim(),
+                                                                                "phoneNumber" to normPhone,
+                                                                                "deviceId" to devId,
+                                                                                "deviceModel" to deviceModel,
+                                                                                "registeredAt" to System.currentTimeMillis(),
+                                                                                "lastLoginAt" to System.currentTimeMillis(),
+                                                                                "branchId" to cleanCode,
+                                                                                "branchName" to bName,
+                                                                                "role" to selectedRole,
+                                                                                "isApproved" to true // Default approved for easy onboarding, toggled by Manager
+                                                                            )
+                                                                            dbFirestore.collection("registered_pharmacists")
+                                                                                .document(user.uid)
+                                                                                .set(pharmacistMap)
+                                                                            
+                                                                            user.sendEmailVerification()
+                                                                                .addOnCompleteListener { verifResult ->
+                                                                                    isLoading = false
+                                                                                    if (verifResult.isSuccessful) {
+                                                                                        Toast.makeText(context, "Verification email sent. Please check your inbox.", Toast.LENGTH_LONG).show()
+                                                                                        pendingVerificationUser = user
+                                                                                    } else {
+                                                                                        Toast.makeText(context, "Created successfully but failed to send email verification.", Toast.LENGTH_SHORT).show()
+                                                                                        pendingVerificationUser = user
+                                                                                    }
+                                                                                }
+                                                                        }
                                                                     } else {
-                                                                        Toast.makeText(context, "Created successfully but failed to send email verification.", Toast.LENGTH_SHORT).show()
-                                                                        pendingVerificationUser = user
+                                                                        isLoading = false
+                                                                        Toast.makeText(context, "Sign Up Failed: ${signupResult.exception?.localizedMessage}", Toast.LENGTH_LONG).show()
                                                                     }
                                                                 }
+                                                        } else {
+                                                            isLoading = false
+                                                            Toast.makeText(context, "Branch Code '$cleanCode' not found. Please contact your Branch Manager.", Toast.LENGTH_LONG).show()
                                                         }
-                                                    } else {
-                                                        isLoading = false
-                                                        Toast.makeText(context, "Sign Up Failed: ${signupResult.exception?.localizedMessage}", Toast.LENGTH_LONG).show()
                                                     }
+                                            } else {
+                                                // Register New Branch
+                                                val cleanBranchName = signUpBranchName.trim()
+                                                val cleanLga = signUpBranchLga.trim().ifBlank { "Ikeja" }
+                                                val cleanState = signUpBranchState.trim().ifBlank { "Lagos" }
+                                                if (cleanBranchName.isBlank()) {
+                                                    Toast.makeText(context, "Please enter a name for the new branch", Toast.LENGTH_SHORT).show()
+                                                    isLoading = false
+                                                    return@addOnCompleteListener
                                                 }
+                                                
+                                                val randomCode = "CF-" + (100000..999999).random().toString()
+                                                
+                                                auth.createUserWithEmailAndPassword(email, password)
+                                                    .addOnCompleteListener { signupResult ->
+                                                        if (signupResult.isSuccessful) {
+                                                            val user = auth.currentUser
+                                                            val profileUpdates = com.google.firebase.auth.userProfileChangeRequest {
+                                                                displayName = name.trim()
+                                                            }
+                                                            user?.updateProfile(profileUpdates)?.addOnCompleteListener {
+                                                                val devId = context.getSharedPreferences("careflux_prefs", Context.MODE_PRIVATE)
+                                                                    .getString("device_uuid", "Unknown") ?: "Unknown"
+                                                                val deviceModel = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
+                                                                
+                                                                // Create Branch document first
+                                                                val branchMap = hashMapOf(
+                                                                    "id" to randomCode,
+                                                                    "name" to cleanBranchName,
+                                                                    "lga" to cleanLga,
+                                                                    "state" to cleanState,
+                                                                    "createdBy" to user.uid,
+                                                                    "createdAt" to System.currentTimeMillis()
+                                                                )
+                                                                dbFirestore.collection("branches").document(randomCode).set(branchMap)
+                                                                
+                                                                // Then create Pharmacist document as Branch Manager
+                                                                val pharmacistMap = hashMapOf(
+                                                                    "uid" to user.uid,
+                                                                    "email" to user.email.orEmpty(),
+                                                                    "displayName" to name.trim(),
+                                                                    "phoneNumber" to normPhone,
+                                                                    "deviceId" to devId,
+                                                                    "deviceModel" to deviceModel,
+                                                                    "registeredAt" to System.currentTimeMillis(),
+                                                                    "lastLoginAt" to System.currentTimeMillis(),
+                                                                    "branchId" to randomCode,
+                                                                    "branchName" to cleanBranchName,
+                                                                    "role" to "Branch Manager",
+                                                                    "isApproved" to true
+                                                                )
+                                                                dbFirestore.collection("registered_pharmacists")
+                                                                    .document(user.uid)
+                                                                    .set(pharmacistMap)
+                                                                
+                                                                user.sendEmailVerification()
+                                                                    .addOnCompleteListener { verifResult ->
+                                                                        isLoading = false
+                                                                        if (verifResult.isSuccessful) {
+                                                                            Toast.makeText(context, "Verification email sent. Your generated Branch Code is $randomCode . Please check your inbox.", Toast.LENGTH_LONG).show()
+                                                                            pendingVerificationUser = user
+                                                                        } else {
+                                                                            Toast.makeText(context, "Created successfully but failed to send email verification. Branch Code: $randomCode", Toast.LENGTH_LONG).show()
+                                                                            pendingVerificationUser = user
+                                                                        }
+                                                                    }
+                                                            }
+                                                        } else {
+                                                            isLoading = false
+                                                            Toast.makeText(context, "Sign Up Failed: ${signupResult.exception?.localizedMessage}", Toast.LENGTH_LONG).show()
+                                                        }
+                                                    }
+                                            }
                                         }
                                     }
                             } else {

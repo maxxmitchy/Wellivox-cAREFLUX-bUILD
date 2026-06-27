@@ -41,13 +41,14 @@ fun CarefluxAITab(
     }
 
     Scaffold(
+        contentWindowInsets = WindowInsets(0.dp),
         floatingActionButton = {
             FloatingActionButton(onClick = { showAddTaskDialog = true }) {
                 Icon(Icons.Filled.Add, "Add Task")
             }
         }
     ) { innerPadding ->
-        Column(modifier = Modifier.fillMaxSize().padding(innerPadding).padding(horizontal = 8.dp)) {
+        Column(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -200,8 +201,57 @@ fun ManualTaskDialog(
     var urgency by remember { mutableStateOf("Medium") }
     var category by remember { mutableStateOf("Manual") }
 
+    var showDiscardConfirm by remember { mutableStateOf(false) }
+
+    val isFormDirty = title.isNotBlank() || desc.isNotBlank()
+
+    if (showDiscardConfirm) {
+        AlertDialog(
+            onDismissRequest = { showDiscardConfirm = false },
+            icon = {
+                Icon(
+                    imageVector = Icons.Filled.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error
+                )
+            },
+            title = {
+                Text(
+                    text = "Unsaved Changes",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = "You have unsaved details in this form. Are you sure you want to discard your progress?",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showDiscardConfirm = false
+                        onDismiss()
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    )
+                ) {
+                    Text("Discard Details")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDiscardConfirm = false }) {
+                    Text("Keep Editing")
+                }
+            }
+        )
+    }
+
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (isFormDirty) showDiscardConfirm = true else onDismiss() },
         title = { Text("Add Custom Task") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -227,7 +277,7 @@ fun ManualTaskDialog(
             ) { Text("Save") }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Cancel") }
+            TextButton(onClick = { if (isFormDirty) showDiscardConfirm = true else onDismiss() }) { Text("Cancel") }
         }
     )
 }

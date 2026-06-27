@@ -9,6 +9,9 @@ interface PharmacyDao {
     @Query("SELECT * FROM operations_tasks ORDER BY isCompleted ASC, createdAt DESC")
     fun getAllOperationTasks(): Flow<List<OperationTask>>
 
+    @Query("SELECT * FROM operations_tasks WHERE id = :id LIMIT 1")
+    suspend fun getOperationTaskById(id: Int): OperationTask?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertOperationTask(task: OperationTask)
 
@@ -48,7 +51,7 @@ interface PharmacyDao {
     suspend fun getInventoryItemById(id: Int): InventoryItem?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertInventoryItem(item: InventoryItem)
+    suspend fun insertInventoryItem(item: InventoryItem): Long
 
     @Update
     suspend fun updateInventoryItem(item: InventoryItem)

@@ -29,15 +29,21 @@ import com.example.ui.theme.*
 import com.google.firebase.firestore.FirebaseFirestore
 import java.text.SimpleDateFormat
 import java.util.*
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.widget.Toast
+import androidx.compose.ui.text.font.FontFamily
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
     val auditLogs by viewModel.adminAuditLogs.collectAsStateWithLifecycle()
     val keyRequests by viewModel.keyRequests.collectAsStateWithLifecycle()
+    val allBranches by viewModel.allBranches.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
-    var selectedSubTab by remember { mutableStateOf(0) } // 0 = Nodes, 1 = LGA Analytics, 2 = Key Requests, 3 = Audit Trail
+    var selectedSubTab by remember { mutableStateOf(0) } // 0 = Nodes, 1 = Pharmacies, 2 = LGA Analytics, 3 = Key Requests, 4 = Audit Trail
     var pharmacistsList by remember { mutableStateOf<List<Map<String, Any>>>(emptyList()) }
     var deviceConfigsList by remember { mutableStateOf<List<Map<String, Any>>>(emptyList()) }
     var isLoadingNodes by remember { mutableStateOf(true) }
@@ -126,7 +132,7 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
 
     // Live query observer of global patients registries
     LaunchedEffect(selectedSubTab) {
-        if (selectedSubTab == 1) {
+        if (selectedSubTab == 2) {
             isLoadingAnalytics = true
             try {
                 val db = FirebaseFirestore.getInstance()
@@ -525,7 +531,7 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
+            .padding(vertical = 16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         // Hero Header (Redesigned Slate-Vibe backdrop)
@@ -670,7 +676,8 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 listOf(
-                    "Node" to Icons.Filled.Store,
+                    "Nodes" to Icons.Filled.Store,
+                    "Pharmacies" to Icons.Filled.MedicalServices,
                     "LGA Analytics" to Icons.Filled.Analytics,
                     "Key Requests" to Icons.Filled.VpnKey,
                     "Audit Trail" to Icons.Filled.HistoryToggleOff
@@ -1557,6 +1564,303 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                 }
             }
         } else if (selectedSubTab == 1) {
+            // --- Pharmacies / Branches Control Deck ---
+            var searchQuery by remember { mutableStateOf("") }
+            var showDeleteDialog by remember { mutableStateOf(false) }
+            var selectedBranchForDelete by remember { mutableStateOf<Map<String, Any>?>(null) }
+            val filteredBranches = remember(allBranches, searchQuery) {
+                if (searchQuery.isBlank()) {
+                    allBranches
+                } else {
+                    allBranches.filter { branch ->
+                        val bName = branch["name"] as? String ?: ""
+                        val bId = branch["id"] as? String ?: ""
+                        val bLga = branch["lga"] as? String ?: ""
+                        val bState = branch["state"] as? String ?: ""
+                        bName.contains(searchQuery, ignoreCase = true) ||
+                        bId.contains(searchQuery, ignoreCase = true) ||
+                        bLga.contains(searchQuery, ignoreCase = true) ||
+                        bState.contains(searchQuery, ignoreCase = true)
+                    }
+                }
+            }
+
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Registered Pharmacy Directory",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = TealPrimary.copy(alpha = 0.15f))
+                    ) {
+                        Text(
+                            text = "${allBranches.size} registered",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TealPrimary,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+                }
+
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = { Text("Search by name, code, LGA, or state...") },
+                    leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = TealPrimary) },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = TealPrimary,
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                    ),
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(Icons.Filled.Clear, contentDescription = "Clear search", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+                )
+
+                if (filteredBranches.isEmpty()) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.12f)),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 40.dp, horizontal = 24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.SearchOff,
+                                contentDescription = null,
+                                tint = TealPrimary,
+                                modifier = Modifier.size(48.dp)
+                            )
+                            Text(
+                                text = "No registered branches found matching your search.",
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    }
+                } else {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        filteredBranches.forEach { branch ->
+                            val bId = branch["id"] as? String ?: "Unknown Code"
+                            val bName = branch["name"] as? String ?: "Unnamed Pharmacy"
+                            val bLga = branch["lga"] as? String ?: "Ikeja"
+                            val bState = branch["state"] as? String ?: "Lagos"
+                            val bCreatedAt = branch["createdAt"] as? Long ?: 0L
+                            val bCreatedBy = branch["createdBy"] as? String ?: ""
+                            
+                            val creationDateStr = if (bCreatedAt > 0L) {
+                                SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()).format(Date(bCreatedAt))
+                            } else "Legendary Node"
+
+                            // Team members count
+                            val staffCount = pharmacistsList.count { (it["branchId"] as? String) == bId }
+
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(16.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+                            ) {
+                                Row(modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
+                                    // Visual color highlight indicator
+                                    Box(
+                                        modifier = Modifier
+                                            .width(4.dp)
+                                            .fillMaxHeight()
+                                            .background(TealPrimary)
+                                    )
+
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(16.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.Top
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = bName,
+                                                    style = MaterialTheme.typography.titleMedium,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = TealPrimary
+                                                )
+                                                Spacer(modifier = Modifier.height(2.dp))
+                                                Text(
+                                                    text = "Established: $creationDateStr",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
+                                                // Copyable Terminal Code pill
+                                                Card(
+                                                    colors = CardDefaults.cardColors(
+                                                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+                                                    ),
+                                                    border = BorderStroke(1.dp, TealPrimary.copy(alpha = 0.4f)),
+                                                    modifier = Modifier.clickable {
+                                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                                        val clip = ClipData.newPlainText("Pharmacy Code", bId)
+                                                        clipboard.setPrimaryClip(clip)
+                                                        Toast.makeText(context, "Code '$bId' copied to clipboard!", Toast.LENGTH_SHORT).show()
+                                                    }
+                                                ) {
+                                                    Row(
+                                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                    ) {
+                                                        Text(
+                                                            text = bId,
+                                                            fontSize = 11.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            fontFamily = FontFamily.Monospace,
+                                                            color = MaterialTheme.colorScheme.onSurface,
+                                                            letterSpacing = 0.5.sp
+                                                        )
+                                                        Icon(
+                                                            imageVector = Icons.Filled.ContentCopy,
+                                                            contentDescription = "Copy code",
+                                                            tint = TealPrimary,
+                                                            modifier = Modifier.size(11.dp)
+                                                        )
+                                                    }
+                                                }
+
+                                                IconButton(
+                                                    onClick = {
+                                                        selectedBranchForDelete = branch
+                                                        showDeleteDialog = true
+                                                    },
+                                                    modifier = Modifier.size(28.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Filled.Delete,
+                                                        contentDescription = "Delete Branch",
+                                                        tint = MaterialTheme.colorScheme.error,
+                                                        modifier = Modifier.size(18.dp)
+                                                    )
+                                                }
+                                            }
+                                        }
+
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                Icon(Icons.Filled.Place, contentDescription = null, tint = TealPrimary, modifier = Modifier.size(14.dp))
+                                                Text(
+                                                    text = "$bLga, $bState",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                )
+                                            }
+
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .background(TealPrimary.copy(alpha = 0.1f))
+                                                    .padding(horizontal = 8.dp, vertical = 2.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Filled.Group,
+                                                    contentDescription = null,
+                                                    tint = TealPrimary,
+                                                    modifier = Modifier.size(12.dp)
+                                                )
+                                                Text(
+                                                    text = "$staffCount team ${if (staffCount == 1) "member" else "members"}",
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = TealPrimary
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (showDeleteDialog && selectedBranchForDelete != null) {
+                    val bId = selectedBranchForDelete!!["id"] as? String ?: ""
+                    val bName = selectedBranchForDelete!!["name"] as? String ?: "this branch"
+                    AlertDialog(
+                        onDismissRequest = {
+                            showDeleteDialog = false
+                            selectedBranchForDelete = null
+                        },
+                        title = { Text("Delete Branch") },
+                        text = { Text("Are you sure you want to delete '$bName' ($bId)? This will delete the branch and remove any linked pharmacists from this branch.") },
+                        confirmButton = {
+                            TextButton(
+                                onClick = {
+                                    viewModel.deleteBranch(bId) { success, msg ->
+                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                        showDeleteDialog = false
+                                        selectedBranchForDelete = null
+                                    }
+                                }
+                            ) {
+                                Text("Delete", color = MaterialTheme.colorScheme.error)
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(
+                                onClick = {
+                                    showDeleteDialog = false
+                                    selectedBranchForDelete = null
+                                }
+                            ) {
+                                Text("Cancel")
+                            }
+                        }
+                    )
+                }
+            }
+        } else if (selectedSubTab == 2) {
             // --- LGA Disease Distribution Analytics Block ---
             var selectedLgaFilter by remember { mutableStateOf("All LGAs") }
             var selectedCategoryFilter by remember { mutableStateOf("All Diseases") }
@@ -2093,7 +2397,7 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                     }
                 }
             }
-        } else if (selectedSubTab == 2) {
+        } else if (selectedSubTab == 3) {
             // --- Key Requests Screen (Interactive Management and Approval) ---
             var requestToApprove by remember { mutableStateOf<Map<String, Any>?>(null) }
             var requestToReject by remember { mutableStateOf<Map<String, Any>?>(null) }

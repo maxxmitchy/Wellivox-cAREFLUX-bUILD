@@ -7,5 +7,6 @@ import androidx.room.PrimaryKey
 data class DailyPrescriptionVolume(
     @PrimaryKey val dateString: String, // format YYYY-MM-DD
     val volume: Int,
-    val notes: String = ""
+    val notes: String = "",
+    val imageUri: String? = null
 )

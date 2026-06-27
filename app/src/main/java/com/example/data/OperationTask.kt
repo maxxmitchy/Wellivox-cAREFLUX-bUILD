@@ -11,5 +11,16 @@ data class OperationTask(
     val urgency: String, // High, Medium, Low
     val category: String, // Manual, AI Insight, Patient Follow-up
     val isCompleted: Boolean = false,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val verifiedBy: String? = null,
+    val verificationNotes: String? = null,
+    val verificationChannel: String? = null,
+    val verificationCustomerName: String? = null,
+    val verifiedAt: Long? = null,
+    val isApproved: Boolean = false,
+    val approvedBy: String? = null,
+    val approvedAt: Long? = null,
+    val approvalNotes: String? = null,
+    val assignedToName: String? = null,
+    val assignedToUid: String? = null
 )

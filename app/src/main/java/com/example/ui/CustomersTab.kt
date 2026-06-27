@@ -145,7 +145,7 @@ fun CustomersTabContent(
             shape = RoundedCornerShape(14.dp),
             singleLine = true,
             colors = OutlinedTextFieldDefaults.colors(
-                unfocusedBorderColor = SlateBorderLight,
+                unfocusedBorderColor = UnfocusedTextFieldBorder,
                 focusedBorderColor = TealPrimary,
                 unfocusedContainerColor = SlateBackgroundLight,
                 focusedContainerColor = TealSurface
@@ -239,7 +239,7 @@ fun CustomersTabContent(
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = TealPrimary,
-                                unfocusedBorderColor = SlateBorderLight
+                                unfocusedBorderColor = UnfocusedTextFieldBorder
                             )
                         )
                         
@@ -584,7 +584,7 @@ fun CustomersTabContent(
                             modifier = Modifier.fillMaxWidth(),
                             colors = OutlinedTextFieldDefaults.colors(
                                 focusedBorderColor = TealPrimary,
-                                unfocusedBorderColor = SlateBorderLight
+                                unfocusedBorderColor = UnfocusedTextFieldBorder
                             )
                         )
 
@@ -846,14 +846,21 @@ fun CustomerCard(
                             }
                         }
                     }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                        modifier = Modifier.padding(vertical = 2.dp)
+                    ) {
                         if (customer.phoneNumber.isNotEmpty()) {
-                            Icon(Icons.Filled.Phone, contentDescription = "Phone", modifier = Modifier.size(12.dp), tint = SlateTextMedium)
-                            Text(customer.phoneNumber, style = MaterialTheme.typography.labelSmall, color = SlateTextMedium)
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Icon(Icons.Filled.Phone, contentDescription = "Phone", modifier = Modifier.size(12.dp), tint = SlateTextMedium)
+                                Text(customer.phoneNumber, style = MaterialTheme.typography.labelSmall, color = SlateTextMedium)
+                            }
                         }
                         if (customer.email.isNotEmpty()) {
-                            Icon(Icons.Filled.Email, contentDescription = "Email", modifier = Modifier.size(12.dp), tint = SlateTextMedium)
-                            Text(customer.email, style = MaterialTheme.typography.labelSmall, color = SlateTextMedium)
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Icon(Icons.Filled.Email, contentDescription = "Email", modifier = Modifier.size(12.dp), tint = SlateTextMedium)
+                                Text(customer.email, style = MaterialTheme.typography.labelSmall, color = SlateTextMedium)
+                            }
                         }
                     }
                     if (customer.notes.isNotEmpty()) {
@@ -868,15 +875,31 @@ fun CustomerCard(
                     Row(
                         modifier = Modifier.padding(top = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Icon(Icons.Filled.Stars, contentDescription = "Loyalty", tint = Color(0xffff8c00), modifier = Modifier.size(14.dp))
-                            Text("${customer.loyaltyPoints} Pts", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                        // Loyalty badge
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color(0xFFFFD700).copy(alpha = 0.15f))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                                Icon(Icons.Filled.Stars, contentDescription = "Loyalty", tint = Color(0xffff8c00), modifier = Modifier.size(12.dp))
+                                Text("${customer.loyaltyPoints} Pts", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color(0xffb26a00))
+                            }
                         }
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Icon(Icons.Filled.LocalFireDepartment, contentDescription = "Streak", tint = Color.Red, modifier = Modifier.size(14.dp))
-                            Text("${customer.refillStreak} Streak", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                        // Streak badge
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(Color.Red.copy(alpha = 0.08f))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                                Icon(Icons.Filled.LocalFireDepartment, contentDescription = "Streak", tint = Color.Red, modifier = Modifier.size(12.dp))
+                                Text("${customer.refillStreak} Streak", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color.Red)
+                            }
                         }
                     }
                 }
@@ -962,22 +985,6 @@ fun CustomerCard(
                         }
                     }
                 }
-                IconButton(onClick = onEditClick, modifier = Modifier.size(32.dp)) {
-                    Icon(
-                        imageVector = Icons.Filled.Edit,
-                        contentDescription = "Edit",
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-                IconButton(onClick = onDeleteClick, modifier = Modifier.size(32.dp)) {
-                    Icon(
-                        imageVector = Icons.Filled.Delete,
-                        contentDescription = "Delete",
-                        tint = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
             }
 
             if (expanded) {
@@ -990,18 +997,37 @@ fun CustomerCard(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = "Active Prescriptions",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = TealTertiary
-                    )
-                    TextButton(onClick = onAddMedClick, modifier = Modifier.height(30.dp)) {
-                        Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Add Med")
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Filled.ReceiptLong,
+                            contentDescription = null,
+                            tint = TealTertiary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = "Active Prescriptions",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = TealTertiary
+                        )
                     }
+                    AssistChip(
+                        onClick = onAddMedClick,
+                        label = { Text("Add Med", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) },
+                        leadingIcon = { Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(14.dp)) },
+                        colors = AssistChipDefaults.assistChipColors(
+                            containerColor = TealPrimary.copy(alpha = 0.08f),
+                            labelColor = TealPrimary,
+                            leadingIconContentColor = TealPrimary
+                        ),
+                        border = BorderStroke(1.dp, TealPrimary.copy(alpha = 0.2f)),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.height(32.dp)
+                    )
                 }
+
+                Spacer(modifier = Modifier.height(12.dp))
 
                 if (customerDdiAlerts.isNotEmpty()) {
                     Card(
@@ -1058,34 +1084,130 @@ fun CustomerCard(
                             // Check stock
                             val stockItem = inventoryMeds.find { it.id == med.inventoryItemId }
                             val stockOk = (stockItem?.stockQuantity ?: 0) >= 1 // minimal check
-                            val costMsg = "Cost: ₦${"%,.2f".format(med.cost)}  •  Due: ${sdf.format(Date(med.nextRefillDate))}"
 
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(SlateBackgroundLight)
-                                    .padding(8.dp)
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surface
+                                ),
+                                border = BorderStroke(1.dp, SlateBorderLight)
                             ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            text = "${med.medicationName} (${med.customDosage})",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            fontWeight = FontWeight.Bold,
-                                            color = TealTertiary
-                                        )
-                                        Text(
-                                            text = costMsg,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = SlateTextMedium
-                                        )
-                                        if (stockItem != null && !stockOk) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    // Header Segment
+                                    Row(
+                                        verticalAlignment = Alignment.Top,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(36.dp)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(TealPrimary.copy(alpha = 0.08f)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.MedicalServices,
+                                                contentDescription = null,
+                                                tint = TealPrimary,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(10.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
                                             Text(
-                                                text = "WARNING: Insufficient stock!",
+                                                text = med.medicationName,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = TealTertiary,
+                                                lineHeight = 18.sp
+                                            )
+                                            if (med.customDosage.isNotEmpty()) {
+                                                Text(
+                                                    text = med.customDosage,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = SlateTextMedium,
+                                                    fontWeight = FontWeight.Medium
+                                                )
+                                            }
+                                        }
+                                        IconButton(
+                                            onClick = { onDelMedClick(med) },
+                                            modifier = Modifier.size(28.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.Close,
+                                                contentDescription = "Remove Medication",
+                                                tint = SlateTextMedium.copy(alpha = 0.7f),
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(10.dp))
+
+                                    // Details Row
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(
+                                                text = "Cost: ",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = SlateTextMedium
+                                            )
+                                            Text(
+                                                text = "₦%,.2f".format(med.cost),
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = TealPrimary
+                                            )
+                                        }
+
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(SlateBackgroundLight)
+                                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                                                Icon(
+                                                    imageVector = Icons.Filled.Event,
+                                                    contentDescription = null,
+                                                    tint = SlateTextMedium,
+                                                    modifier = Modifier.size(12.dp)
+                                                )
+                                                Text(
+                                                    text = "Due: ${sdf.format(Date(med.nextRefillDate))}",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    color = SlateTextMedium
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    if (stockItem != null && !stockOk) {
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(WarningRed.copy(alpha = 0.08f))
+                                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.Warning,
+                                                contentDescription = "Alert",
+                                                tint = WarningRed,
+                                                modifier = Modifier.size(12.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text(
+                                                text = "Insufficient pharmacy inventory stock!",
                                                 style = MaterialTheme.typography.labelSmall,
                                                 color = WarningRed,
                                                 fontWeight = FontWeight.Bold
@@ -1093,18 +1215,41 @@ fun CustomerCard(
                                         }
                                     }
 
-                                    var showWhatsAppTemplatesFor by remember { mutableStateOf<CustomerMedication?>(null) }
-                                    Row {
-                                        Box {
-                                            IconButton(
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    HorizontalDivider(color = SlateBorderLight)
+                                    Spacer(modifier = Modifier.height(8.dp))
+
+                                    // Actions Layout
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        var showWhatsAppTemplatesFor by remember { mutableStateOf<CustomerMedication?>(null) }
+                                        Box(modifier = Modifier.weight(1f)) {
+                                            OutlinedButton(
                                                 onClick = { showWhatsAppTemplatesFor = med },
-                                                modifier = Modifier.size(32.dp)
+                                                shape = RoundedCornerShape(8.dp),
+                                                colors = ButtonDefaults.outlinedButtonColors(
+                                                    contentColor = OKGreen
+                                                ),
+                                                border = BorderStroke(1.dp, OKGreen.copy(alpha = 0.3f)),
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .height(34.dp),
+                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
                                             ) {
                                                 Icon(
                                                     imageVector = Icons.Filled.Message,
-                                                    contentDescription = "WhatsApp Templates",
+                                                    contentDescription = "Send Reminder",
                                                     tint = OKGreen,
-                                                    modifier = Modifier.size(18.dp)
+                                                    modifier = Modifier.size(14.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text(
+                                                    text = "Send Reminder",
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold
                                                 )
                                             }
                                             DropdownMenu(
@@ -1195,7 +1340,7 @@ fun CustomerCard(
                                                     }
                                                 )
                                                 if (customTemplates.isNotEmpty()) {
-                                                    Divider()
+                                                    HorizontalDivider(color = SlateBorderLight)
                                                     customTemplates.forEach { template ->
                                                         DropdownMenuItem(
                                                             text = { Text(template.title) },
@@ -1211,42 +1356,39 @@ fun CustomerCard(
                                                 }
                                             }
                                         }
+
                                         IconButton(
                                             onClick = { sendEmailWalletReminder(context, customer, med, sdf.format(Date(med.nextRefillDate))) },
-                                            modifier = Modifier.size(32.dp)
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(TealPrimary.copy(alpha = 0.05f))
+                                                .size(34.dp)
                                         ) {
                                             Icon(
                                                 imageVector = Icons.Filled.Email,
                                                 contentDescription = "Email",
                                                 tint = TealPrimary,
-                                                modifier = Modifier.size(18.dp)
+                                                modifier = Modifier.size(16.dp)
                                             )
                                         }
-                                    }
-                                    IconButton(
-                                        onClick = { 
-                                            pushDaysText = med.cycleDays.toString()
-                                            medToPushRefill = med
-                                        },
-                                        modifier = Modifier.size(32.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Filled.EventRepeat,
-                                            contentDescription = "Push Refill",
-                                            tint = TealPrimary,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                    }
-                                    IconButton(
-                                        onClick = { onDelMedClick(med) },
-                                        modifier = Modifier.size(32.dp)
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Filled.Close,
-                                            contentDescription = "Remove",
-                                            tint = SlateTextMedium,
-                                            modifier = Modifier.size(16.dp)
-                                        )
+
+                                        IconButton(
+                                            onClick = { 
+                                                pushDaysText = med.cycleDays.toString()
+                                                medToPushRefill = med
+                                            },
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(TealPrimary.copy(alpha = 0.05f))
+                                                .size(34.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.EventRepeat,
+                                                contentDescription = "Push Refill",
+                                                tint = TealPrimary,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -1264,18 +1406,37 @@ fun CustomerCard(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            text = "Clinical Interventions",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = TealTertiary
-                        )
-                        TextButton(onClick = onAddInterventionClick, modifier = Modifier.height(30.dp)) {
-                            Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Add Consult")
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Filled.HealthAndSafety,
+                                contentDescription = null,
+                                tint = TealTertiary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "Clinical Interventions",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = TealTertiary
+                            )
                         }
+                        AssistChip(
+                            onClick = onAddInterventionClick,
+                            label = { Text("Add Consult", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) },
+                            leadingIcon = { Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(14.dp)) },
+                            colors = AssistChipDefaults.assistChipColors(
+                                containerColor = TealPrimary.copy(alpha = 0.08f),
+                                labelColor = TealPrimary,
+                                leadingIconContentColor = TealPrimary
+                            ),
+                            border = BorderStroke(1.dp, TealPrimary.copy(alpha = 0.2f)),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.height(32.dp)
+                        )
                     }
+
+                    Spacer(modifier = Modifier.height(12.dp))
 
                     if (interventions.isEmpty()) {
                         Text(
@@ -1290,65 +1451,175 @@ fun CustomerCard(
                             interventions.forEach { interv ->
                                 val dueStatusColor = if (interv.currentStatus == "Feeling Better") OKGreen else PendingOrange
 
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(SlateBackgroundLight)
-                                        .padding(8.dp)
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = MaterialTheme.colorScheme.surface
+                                    ),
+                                    border = BorderStroke(1.dp, SlateBorderLight)
                                 ) {
-                                    Column(modifier = Modifier.fillMaxWidth()) {
-                                        Text(
-                                            text = "Logged: ${sdf.format(Date(interv.dateAdded))}",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = SlateTextMedium,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        Text(
-                                            text = "Pres: ${interv.presentation}",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = TealTertiary
-                                        )
-                                        Text(
-                                            text = "Rec: ${interv.recommendation}",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = TealTertiary
-                                        )
+                                    Column(modifier = Modifier.padding(12.dp)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(36.dp)
+                                                    .clip(RoundedCornerShape(8.dp))
+                                                    .background(TealPrimary.copy(alpha = 0.08f)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Filled.HealthAndSafety,
+                                                    contentDescription = null,
+                                                    tint = TealPrimary,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.width(10.dp))
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = "Consultation Log",
+                                                    style = MaterialTheme.typography.bodyMedium,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = TealTertiary
+                                                )
+                                                Text(
+                                                    text = "Date: ${sdf.format(Date(interv.dateAdded))}",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = SlateTextMedium,
+                                                    fontWeight = FontWeight.SemiBold
+                                                )
+                                            }
+
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(6.dp))
+                                                    .background(dueStatusColor.copy(alpha = 0.08f))
+                                                    .clickable {
+                                                        val newStatus = if (interv.currentStatus == "Feeling Better") "Follow-up Needed" else "Feeling Better"
+                                                        viewModel.updateClinicalInterventionStatus(interv, newStatus)
+                                                    }
+                                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                                            ) {
+                                                Text(
+                                                    text = interv.currentStatus,
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = dueStatusColor
+                                                )
+                                            }
+                                        }
+
+                                        Spacer(modifier = Modifier.height(10.dp))
+
+                                        Column(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(SlateBackgroundLight)
+                                                .padding(8.dp)
+                                        ) {
+                                            Text(
+                                                text = "Presentation & Symptoms:",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = SlateTextMedium
+                                            )
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Text(
+                                                text = interv.presentation,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = TealTertiary
+                                            )
+                                        }
+
                                         Spacer(modifier = Modifier.height(6.dp))
 
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                            modifier = Modifier.fillMaxWidth()
+                                        Column(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(TealSurface.copy(alpha = 0.3f))
+                                                .padding(8.dp)
                                         ) {
-                                            SuggestionChip(
-                                                onClick = {
-                                                    val newStatus = if (interv.currentStatus == "Feeling Better") "Follow-up Needed" else "Feeling Better"
-                                                    viewModel.updateClinicalInterventionStatus(interv, newStatus)
-                                                },
-                                                label = { Text("Status: ${interv.currentStatus}", color = dueStatusColor) }
+                                            Text(
+                                                text = "Recommendation & Plan:",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = TealPrimary
                                             )
+                                            Spacer(modifier = Modifier.height(2.dp))
+                                            Text(
+                                                text = interv.recommendation,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = TealTertiary
+                                            )
+                                        }
 
-                                            if (interv.currentStatus != "Feeling Better") {
-                                                IconButton(
-                                                    onClick = {
-                                                       viewModel.generateAndSendFollowUp(interv, customer, context)
-                                                    },
-                                                    modifier = Modifier.size(32.dp)
-                                                ) {
-                                                    Icon(
-                                                        imageVector = Icons.Filled.AutoAwesome,
-                                                        contentDescription = "Automated Follow-up",
-                                                        tint = TealPrimary,
-                                                        modifier = Modifier.size(18.dp)
-                                                    )
-                                                }
+                                        if (interv.currentStatus != "Feeling Better") {
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            OutlinedButton(
+                                                onClick = {
+                                                    viewModel.generateAndSendFollowUp(interv, customer, context)
+                                                },
+                                                shape = RoundedCornerShape(8.dp),
+                                                colors = ButtonDefaults.outlinedButtonColors(
+                                                    contentColor = TealPrimary
+                                                ),
+                                                border = BorderStroke(1.dp, TealPrimary.copy(alpha = 0.3f)),
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .height(34.dp),
+                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Filled.AutoAwesome,
+                                                    contentDescription = "Automated Follow-up",
+                                                    modifier = Modifier.size(14.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Text(
+                                                    text = "AI Welfare Check SMS",
+                                                    fontSize = 11.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
                                             }
                                         }
                                     }
                                 }
                             }
+                        }
+                    }
+
+                    // Profile Management Actions
+                    Spacer(modifier = Modifier.height(16.dp))
+                    HorizontalDivider(color = SlateBorderLight)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TextButton(
+                            onClick = onEditClick,
+                            modifier = Modifier.height(36.dp)
+                        ) {
+                            Icon(Icons.Filled.Edit, contentDescription = "Edit Profile", modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Edit Profile", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                        }
+                        Spacer(modifier = Modifier.width(12.dp))
+                        TextButton(
+                            onClick = onDeleteClick,
+                            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                            modifier = Modifier.height(36.dp)
+                        ) {
+                            Icon(Icons.Filled.Delete, contentDescription = "Delete Profile", modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Delete Profile", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -1460,9 +1731,30 @@ fun EditCustomerDialog(
     var cityField by remember { mutableStateOf(customer.city) }
 
     var isError by remember { mutableStateOf(false) }
+    var showDiscardConfirm by remember { mutableStateOf(false) }
+
+    val isFormDirty = name != customer.name ||
+                      phone != customer.phoneNumber ||
+                      email != customer.email ||
+                      notes != customer.notes ||
+                      ageStr != customer.age.toString() ||
+                      gender != customer.gender ||
+                      stateField != customer.state ||
+                      lgaField != customer.lga ||
+                      cityField != customer.city
+
+    if (showDiscardConfirm) {
+        DiscardChangesConfirmationDialog(
+            onConfirmDiscard = {
+                showDiscardConfirm = false
+                onDismiss()
+            },
+            onDismissConfirm = { showDiscardConfirm = false }
+        )
+    }
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (isFormDirty) showDiscardConfirm = true else onDismiss() },
         title = {
             Text("Edit Patient", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         },
@@ -1629,7 +1921,7 @@ fun EditCustomerDialog(
                 }
             }) { Text("Save Changes") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        dismissButton = { TextButton(onClick = { if (isFormDirty) showDiscardConfirm = true else onDismiss() }) { Text("Cancel") } }
     )
 }
 
@@ -1651,9 +1943,30 @@ fun AddCustomerDialog(
     var cityField by remember { mutableStateOf("Ikeja") }
 
     var isError by remember { mutableStateOf(false) }
+    var showDiscardConfirm by remember { mutableStateOf(false) }
+
+    val isFormDirty = name.isNotBlank() ||
+                      phone.isNotBlank() ||
+                      email.isNotBlank() ||
+                      notes.isNotBlank() ||
+                      ageStr != "30" ||
+                      gender != "Male" ||
+                      stateField != "Lagos" ||
+                      lgaField != "Ikeja" ||
+                      cityField != "Ikeja"
+
+    if (showDiscardConfirm) {
+        DiscardChangesConfirmationDialog(
+            onConfirmDiscard = {
+                showDiscardConfirm = false
+                onDismiss()
+            },
+            onDismissConfirm = { showDiscardConfirm = false }
+        )
+    }
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (isFormDirty) showDiscardConfirm = true else onDismiss() },
         title = {
             Text("Add Patient", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         },
@@ -1808,7 +2121,7 @@ fun AddCustomerDialog(
                 }
             }) { Text("Save Patient") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        dismissButton = { TextButton(onClick = { if (isFormDirty) showDiscardConfirm = true else onDismiss() }) { Text("Cancel") } }
     )
 }
 
@@ -1828,6 +2141,21 @@ fun AddPrescriptionDialog(
     var costStr by remember { mutableStateOf("") }
     var daysStr by remember { mutableStateOf("30") }
     var errorMsg by remember { mutableStateOf("") }
+    var showDiscardConfirm by remember { mutableStateOf(false) }
+
+    val isFormDirty = dose.isNotBlank() ||
+                      costStr.isNotBlank() ||
+                      daysStr != "30"
+
+    if (showDiscardConfirm) {
+        DiscardChangesConfirmationDialog(
+            onConfirmDiscard = {
+                showDiscardConfirm = false
+                onDismiss()
+            },
+            onDismissConfirm = { showDiscardConfirm = false }
+        )
+    }
 
     val selectedMed = inventoryMeds.find { it.id == selectedMedId } ?: inventoryMeds.firstOrNull()
     val interactionWarnings = remember(selectedMed, currentMeds) {
@@ -1840,7 +2168,7 @@ fun AddPrescriptionDialog(
     }
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (isFormDirty) showDiscardConfirm = true else onDismiss() },
         title = { Text("Add Med to ${customer.name}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -1952,7 +2280,7 @@ fun AddPrescriptionDialog(
                 }
             }) { Text("Save Rx") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        dismissButton = { TextButton(onClick = { if (isFormDirty) showDiscardConfirm = true else onDismiss() }) { Text("Cancel") } }
     )
 }
 
@@ -1970,9 +2298,24 @@ fun AddInterventionDialog(
     var recommendation by remember { mutableStateOf("") }
 
     var isError by remember { mutableStateOf(false) }
+    var showDiscardConfirm by remember { mutableStateOf(false) }
+
+    val isFormDirty = presentation.isNotBlank() ||
+                      testResults.isNotBlank() ||
+                      recommendation.isNotBlank()
+
+    if (showDiscardConfirm) {
+        DiscardChangesConfirmationDialog(
+            onConfirmDiscard = {
+                showDiscardConfirm = false
+                onDismiss()
+            },
+            onDismissConfirm = { showDiscardConfirm = false }
+        )
+    }
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (isFormDirty) showDiscardConfirm = true else onDismiss() },
         title = {
             Text("Clinical Consult - ${customer.name}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         },
@@ -2000,6 +2343,52 @@ fun AddInterventionDialog(
                 if (presentation.isBlank() || recommendation.isBlank()) isError = true else onConfirm(presentation, testResults, recommendation)
             }) { Text("Save Intervention") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
+        dismissButton = { TextButton(onClick = { if (isFormDirty) showDiscardConfirm = true else onDismiss() }) { Text("Cancel") } }
+    )
+}
+
+@Composable
+fun DiscardChangesConfirmationDialog(
+    onConfirmDiscard: () -> Unit,
+    onDismissConfirm: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismissConfirm,
+        icon = {
+            Icon(
+                imageVector = Icons.Filled.Warning,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error
+            )
+        },
+        title = {
+            Text(
+                text = "Unsaved Changes",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            Text(
+                text = "You have unsaved details in this form. Are you sure you want to discard your progress?",
+                style = MaterialTheme.typography.bodyMedium
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirmDiscard,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError
+                )
+            ) {
+                Text("Discard Details")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismissConfirm) {
+                Text("Keep Editing")
+            }
+        }
     )
 }

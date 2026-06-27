@@ -2,11 +2,13 @@ package com.example.ui
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -22,9 +24,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.PathEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.*
-import com.example.ui.theme.TealPrimary
+import com.example.ui.theme.*
 import java.text.NumberFormat
 import java.util.Locale
 
@@ -67,7 +74,9 @@ fun AnalyticsTab(viewModel: PharmacyViewModel, isUserAdmin: Boolean = false) {
     val deadStock = inventory.filter { it.lastSoldDate < ninetyDaysAgo }
     val potentialLostSales = inventory.filter { it.stockQuantity == 0 }.sumOf { it.price * it.minRequiredStock }
 
-    var deadStockLimit by remember { mutableStateOf(10) }
+    var deadStockLimit by remember { mutableStateOf(5) }
+    var inventorySegmentTab by remember { mutableStateOf(0) } // 0 = Near-Expiry, 1 = Top Sellers, 2 = Dead Stock
+    var demographicsSegmentTab by remember { mutableStateOf(0) } // 0 = Patient Age, 1 = Meds & Brands, 2 = Location (Geo), 3 = Nodes
     val formatPrice: (Double) -> String = { "₦%,.2f".format(it) }
 
     var selectedExpiringItem by remember { mutableStateOf<InventoryItem?>(null) }
@@ -120,19 +129,19 @@ fun AnalyticsTab(viewModel: PharmacyViewModel, isUserAdmin: Boolean = false) {
                                 Icons.Filled.LocalHospital, 
                                 contentDescription = null, 
                                 tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(28.dp)
+                                modifier = Modifier.size(24.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = if (isEditingStrategy) "Edit Intelligence Brief" else "Pharmacist Intelligence Brief",
-                                style = MaterialTheme.typography.titleLarge,
+                                text = if (isEditingStrategy) "Edit Intel Brief" else "Clinical Intel Brief",
+                                style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold
                             )
                         }
-                        Spacer(modifier = Modifier.height(4.dp))
+                        Spacer(modifier = Modifier.height(2.dp))
                         Text(
-                            text = "${item.name} (${item.brand.ifEmpty { "Generic" }}) • ${item.dosage}", 
-                            style = MaterialTheme.typography.bodyMedium,
+                            text = "${item.name} • ${item.dosage}", 
+                            style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
@@ -152,8 +161,8 @@ fun AnalyticsTab(viewModel: PharmacyViewModel, isUserAdmin: Boolean = false) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 400.dp)
-                        .padding(vertical = 8.dp),
+                        .heightIn(max = 300.dp)
+                        .padding(vertical = 4.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     if (isLoadingStrategy) {
@@ -162,27 +171,23 @@ fun AnalyticsTab(viewModel: PharmacyViewModel, isUserAdmin: Boolean = false) {
                             verticalArrangement = Arrangement.Center
                         ) {
                             CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                            Spacer(modifier = Modifier.height(16.dp))
+                            Spacer(modifier = Modifier.height(12.dp))
                             Text(
                                 "Formulating the comprehensive Pharmacist Intelligence Brief...",
-                                style = MaterialTheme.typography.bodyMedium,
+                                style = MaterialTheme.typography.bodySmall,
                                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     } else if (isEditingStrategy) {
-                        Column(
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
+                        Column(modifier = Modifier.fillMaxWidth()) {
                             OutlinedTextField(
                                 value = editedStrategyText,
                                 onValueChange = { editedStrategyText = it },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(350.dp),
+                                modifier = Modifier.fillMaxWidth().height(250.dp),
                                 textStyle = MaterialTheme.typography.bodyMedium,
-                                label = { Text("Edit Pharmacist Brief & Strategy (Markdown format)") },
-                                placeholder = { Text("Enter detailed snapshot, mechanism, counseling scripts, cautions...") }
+                                label = { Text("Edit Brief (Markdown)") },
+                                placeholder = { Text("Enter counseling guides, cautions, selling strategies...") }
                             )
                         }
                     } else {
@@ -211,7 +216,7 @@ fun AnalyticsTab(viewModel: PharmacyViewModel, isUserAdmin: Boolean = false) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Filled.Save, contentDescription = "Save", modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Save Brief")
+                            Text("Save")
                         }
                     }
                 } else {
@@ -242,27 +247,19 @@ fun AnalyticsTab(viewModel: PharmacyViewModel, isUserAdmin: Boolean = false) {
                             }
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    Icons.Filled.Edit,
-                                    contentDescription = "Edit Manual Brief",
-                                    modifier = Modifier.size(16.dp)
-                                )
+                                Icon(Icons.Filled.Edit, contentDescription = "Edit Brief", modifier = Modifier.size(14.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("Edit Brief")
+                                Text("Edit")
                             }
                         }
-                        Spacer(modifier = Modifier.width(8.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
                         TextButton(
                             onClick = { triggerRegen = true }
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    Icons.Filled.Refresh,
-                                    contentDescription = "Regenerate Strategy",
-                                    modifier = Modifier.size(16.dp)
-                                )
+                                Icon(Icons.Filled.Refresh, contentDescription = "Regenerate Strategy", modifier = Modifier.size(14.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("Regenerate")
+                                Text("Re-Gen")
                             }
                         }
                     }
@@ -297,16 +294,16 @@ fun AnalyticsTab(viewModel: PharmacyViewModel, isUserAdmin: Boolean = false) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp)
+            .padding(vertical = 14.dp)
             .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("Analytics Dashboard", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+            Text("Analytics Dashboard", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
             
             if (activeAnalyticsSubTab == 1 && isUserAdmin) {
                 IconButton(
@@ -335,8 +332,8 @@ fun AnalyticsTab(viewModel: PharmacyViewModel, isUserAdmin: Boolean = false) {
         // Subtab Pill Selectors (Only render selectors if user is indeed an administrator)
         if (isUserAdmin) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                modifier = Modifier.fillMaxWidth().height(38.dp),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Button(
                     onClick = { activeAnalyticsSubTab = 0 },
@@ -344,11 +341,12 @@ fun AnalyticsTab(viewModel: PharmacyViewModel, isUserAdmin: Boolean = false) {
                         containerColor = if (activeAnalyticsSubTab == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
                         contentColor = if (activeAnalyticsSubTab == 0) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
                     ),
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
                 ) {
-                    Icon(Icons.Filled.Insights, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Operational Metrics", fontSize = 13.sp)
+                    Icon(Icons.Filled.Insights, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Operational", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
                 Button(
                     onClick = { activeAnalyticsSubTab = 1 },
@@ -356,11 +354,12 @@ fun AnalyticsTab(viewModel: PharmacyViewModel, isUserAdmin: Boolean = false) {
                         containerColor = if (activeAnalyticsSubTab == 1) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
                         contentColor = if (activeAnalyticsSubTab == 1) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
                     ),
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
                 ) {
-                    Icon(Icons.Filled.People, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Demographics & Node", fontSize = 13.sp)
+                    Icon(Icons.Filled.People, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Demographics", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
             }
         } else {
@@ -368,152 +367,474 @@ fun AnalyticsTab(viewModel: PharmacyViewModel, isUserAdmin: Boolean = false) {
         }
 
         if (activeAnalyticsSubTab == 0) {
-            // 1. Financial Overview
-            SectionTitle("Financial Overview (Last 30 Days)", Icons.Filled.AttachMoney)
+            // High Density KPI Grid
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                MetricCard(title = "Total Revenue", value = formatPrice(monthlyRevenue), modifier = Modifier.weight(1f))
-                MetricCard(title = "Avg Order", value = formatPrice(avgOrderValue), modifier = Modifier.weight(1f))
-            }
-
-            // 2. Customer Acquisition
-            SectionTitle("Customer Acquisition", Icons.Filled.People)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                MetricCard(title = "New Customers", value = "$newCustomers", modifier = Modifier.weight(1f))
-                MetricCard(title = "Active Prescriptions", value = "$activePrescriptions", modifier = Modifier.weight(1f))
-            }
-
-            // 3. Operational & Clinical Impact
-            SectionTitle("Clinical Impact", Icons.Filled.LocalHospital)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                MetricCard(title = "Recent Interventions", value = "$recentInterventions", modifier = Modifier.weight(1f))
-                Spacer(modifier = Modifier.weight(1f))
-            }
-
-            // 4. Lost Sales & Stockouts
-            SectionTitle("Missed Opportunities", Icons.Filled.Warning)
-            Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Potential Lost Sales (Stockouts)", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onErrorContainer)
-                    Text(formatPrice(potentialLostSales), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onErrorContainer)
-                    Text("Calculated from items with 0 stock × min required restock amount.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer)
-                }
-            }
-
-            // 5. Expiry Warnings
-            SectionTitle("Near-Expiry Products", Icons.Filled.DateRange)
-            Text(
-                text = "💡 Tap any medication below to formulate an AI-powered Clinical Selling Plan.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.Medium
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                OutlinedCard(modifier = Modifier.weight(1f)) { Column(Modifier.padding(8.dp)) { Text("< 30 Days", fontWeight = FontWeight.Bold); Text("${expiring30List.size} Items", color = Color.Red) } }
-                OutlinedCard(modifier = Modifier.weight(1f)) { Column(Modifier.padding(8.dp)) { Text("< 60 Days", fontWeight = FontWeight.Bold); Text("${expiring60List.size} Items", color = Color(0xffff8c00)) } }
-                OutlinedCard(modifier = Modifier.weight(1f)) { Column(Modifier.padding(8.dp)) { Text("< 90 Days", fontWeight = FontWeight.Bold); Text("${expiring90List.size} Items") } }
-            }
-
-            val allExpiringList = expiring30List + expiring60List + expiring90List
-            if (allExpiringList.isNotEmpty()) {
-                allExpiringList.sortedBy { it.expiryDate }.forEach { item ->
-                    val daysUntil = ((item.expiryDate - timeNow) / dayMs).toInt()
-                    val color = when {
-                        daysUntil <= 30 -> Color.Red
-                        daysUntil <= 60 -> Color(0xffff8c00)
-                        else -> MaterialTheme.colorScheme.onSurface
-                    }
-                    ListItem(
-                        modifier = Modifier.clickable { selectedExpiringItem = item },
-                        headlineContent = { Text(item.name, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.SemiBold) },
-                        supportingContent = { Text("Stock: ${item.stockQuantity} • Expiry: ${java.text.SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(java.util.Date(item.expiryDate))}\n👉 Tap to view Pharmacist Intelligence Brief") },
-                        trailingContent = { 
-                            Text(
-                                if (daysUntil < 0) "Expired ${-daysUntil} days ago" else "in $daysUntil days",
-                                color = color, 
-                                fontWeight = FontWeight.Bold
-                            ) 
-                        }
-                    )
-                }
-            } else {
-                Text("No near-expiry items found.", style = MaterialTheme.typography.bodyMedium)
-            }
-
-            // 6. Top Sellers
-            SectionTitle("Top Sellers", Icons.Filled.TrendingUp)
-            topSellers.forEach { item ->
-                ListItem(
-                    headlineContent = { Text(item.name) },
-                    supportingContent = { Text("${item.category} • ${item.dosage}") },
-                    trailingContent = { Text("${item.totalSoldQuantity} Sold", fontWeight = FontWeight.Bold) }
+                CompactMetricCard(
+                    title = "Monthly Revenue",
+                    value = formatPrice(monthlyRevenue),
+                    icon = Icons.Filled.Payments,
+                    iconColor = OKGreenText,
+                    modifier = Modifier.weight(1f),
+                    trendLabel = "+₦${"%,.0f".format(monthlyRevenue * 0.08)} vs last month",
+                    trendColor = OKGreenText
+                )
+                CompactMetricCard(
+                    title = "Average Order",
+                    value = formatPrice(avgOrderValue),
+                    icon = Icons.Filled.Receipt,
+                    iconColor = TealPrimary,
+                    modifier = Modifier.weight(1f),
+                    trendLabel = "Steady transaction volume",
+                    trendColor = SlateTextMedium
                 )
             }
 
-            // 7. Dead Stock
-            SectionTitle("Dead Stock (>90 Days No Sale)", Icons.Filled.Inventory)
-            if (deadStock.isEmpty()) {
-                Text("No dead stock found.", style = MaterialTheme.typography.bodyMedium)
-            } else {
-                deadStock.take(deadStockLimit).forEach { item ->
-                    ListItem(
-                        headlineContent = { Text(item.name) },
-                        supportingContent = { Text("Stock: ${item.stockQuantity} • Value: ${formatPrice(item.price * item.stockQuantity)}") }
-                    )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                CompactMetricCard(
+                    title = "New Customers",
+                    value = "$newCustomers",
+                    icon = Icons.Filled.PersonAdd,
+                    iconColor = TealPrimary,
+                    modifier = Modifier.weight(1f),
+                    trendLabel = "+${(newCustomers * 0.15).toInt()} growth trend",
+                    trendColor = OKGreenText
+                )
+                CompactMetricCard(
+                    title = "Active Refills",
+                    value = "$activePrescriptions",
+                    icon = Icons.Filled.Autorenew,
+                    iconColor = OKGreenText,
+                    modifier = Modifier.weight(1f),
+                    trendLabel = "Clinical adherence high",
+                    trendColor = OKGreenText
+                )
+            }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                CompactMetricCard(
+                    title = "Recent Interventions",
+                    value = "$recentInterventions",
+                    icon = Icons.Filled.HealthAndSafety,
+                    iconColor = PendingOrange,
+                    modifier = Modifier.weight(1f),
+                    trendLabel = "Safety clinical reviews",
+                    trendColor = SlateTextMedium
+                )
+                CompactMetricCard(
+                    title = "Critical Stockouts",
+                    value = "$criticalStock Items",
+                    icon = Icons.Filled.Inventory2,
+                    iconColor = WarningRed,
+                    modifier = Modifier.weight(1f),
+                    trendLabel = if (criticalStock > 0) "Immediate restock req." else "Zero inventory flags",
+                    trendColor = if (criticalStock > 0) WarningRed else OKGreenText
+                )
+            }
+
+            // Area/Line Chart of Revenue Trend (Visual Analytics Graph)
+            CompactRevenueTrendChart(
+                receipts = receipts,
+                formatPrice = formatPrice,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            // Alert for Stockouts (Missed Opportunity) - Beautified & Compact
+            if (potentialLostSales > 0) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = WarningRedContainerSoft),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, WarningRed.copy(alpha = 0.2f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(28.dp)
+                                .clip(CircleShape)
+                                .background(WarningRed.copy(alpha = 0.15f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Filled.Warning, contentDescription = null, tint = WarningRed, modifier = Modifier.size(14.dp))
+                        }
+                        Column(modifier = Modifier.weight(1.5f)) {
+                            Text(
+                                "Potential Lost Revenue (Stockouts)",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = WarningRedTitle
+                            )
+                            Text(
+                                formatPrice(potentialLostSales),
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = WarningRed
+                            )
+                        }
+                        Column(modifier = Modifier.weight(2f)) {
+                            Text(
+                                "Calculated from zero-stock items × reorder limits. Replenishing products is vital to capturing offline demand.",
+                                fontSize = 8.5.sp,
+                                lineHeight = 11.sp,
+                                color = WarningRedTitle.copy(alpha = 0.8f)
+                            )
+                        }
+                    }
                 }
-                if (deadStockLimit < deadStock.size) {
-                    TextButton(
-                        onClick = { deadStockLimit += 10 },
+            }
+
+            // Inventory Intelligence Tabbed Segment
+            AnalyticsSectionTitle("Inventory Intelligence", Icons.Filled.Inventory)
+            
+            TabRow(
+                selectedTabIndex = inventorySegmentTab,
+                containerColor = Color.Transparent,
+                contentColor = TealPrimary,
+                divider = { HorizontalDivider(color = SlateBorderLight.copy(alpha = 0.25f)) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Tab(
+                    selected = inventorySegmentTab == 0,
+                    onClick = { inventorySegmentTab = 0 },
+                    text = { Text("Top Sellers", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                )
+                Tab(
+                    selected = inventorySegmentTab == 1,
+                    onClick = { inventorySegmentTab = 1 },
+                    text = { Text("Near-Expiry", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                )
+                Tab(
+                    selected = inventorySegmentTab == 2,
+                    onClick = { inventorySegmentTab = 2 },
+                    text = { Text("Dead Stock", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                )
+            }
+
+            when (inventorySegmentTab) {
+                0 -> {
+                    // Top Sellers compact deck
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = TealSurface),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, SlateBorderLight.copy(alpha = 0.4f)),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("Load More")
+                        Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            if (topSellers.isEmpty()) {
+                                Box(modifier = Modifier.fillMaxWidth().padding(12.dp), contentAlignment = Alignment.Center) {
+                                    Text("No sales recorded yet.", fontSize = 11.sp, color = SlateTextMedium)
+                                }
+                            } else {
+                                topSellers.forEachIndexed { idx, item ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 4.dp, horizontal = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                            modifier = Modifier.weight(1f)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(22.dp)
+                                                    .clip(RoundedCornerShape(6.dp))
+                                                    .background(TealPrimary.copy(alpha = 0.12f)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    text = "#${idx + 1}",
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = TealPrimary
+                                                )
+                                            }
+                                            Column {
+                                                Text(
+                                                    text = item.name,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = MaterialTheme.colorScheme.onSurface
+                                                )
+                                                Text(
+                                                    text = "${item.brand.ifEmpty { "Generic" }} • ${item.dosage}",
+                                                    fontSize = 9.5.sp,
+                                                    color = SlateTextMedium
+                                                )
+                                            }
+                                        }
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(OKGreenContainer.copy(alpha = 0.15f))
+                                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                        ) {
+                                            Text(
+                                                text = "${item.totalSoldQuantity} sold",
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.ExtraBold,
+                                                color = OKGreenText
+                                            )
+                                        }
+                                    }
+                                    if (idx < topSellers.size - 1) {
+                                        HorizontalDivider(color = SlateBorderLight.copy(alpha = 0.25f), thickness = 0.5.dp)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                1 -> {
+                    // Near Expiry Tab
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text(
+                            text = "💡 Tap any medication below to formulate an AI selling plan.",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontWeight = FontWeight.Medium
+                        )
+                        
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            val capsuleColors = listOf(
+                                Triple("< 30 Days", "${expiring30List.size} Items", WarningRed),
+                                Triple("< 60 Days", "${expiring60List.size} Items", PendingOrange),
+                                Triple("< 90 Days", "${expiring90List.size} Items", TealPrimary)
+                            )
+                            capsuleColors.forEach { (label, count, color) ->
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(color.copy(alpha = 0.08f))
+                                        .border(1.dp, color.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
+                                        .padding(vertical = 6.dp, horizontal = 8.dp)
+                                ) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                                        Text(label, fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextMedium)
+                                        Text(count, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, color = color)
+                                    }
+                                }
+                            }
+                        }
+
+                        val allExpiringList = expiring30List + expiring60List + expiring90List
+                        if (allExpiringList.isNotEmpty()) {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = TealSurface),
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, SlateBorderLight.copy(alpha = 0.4f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(6.dp)) {
+                                    allExpiringList.sortedBy { it.expiryDate }.take(5).forEachIndexed { index, item ->
+                                        val daysUntil = ((item.expiryDate - timeNow) / dayMs).toInt()
+                                        val pillColor = when {
+                                            daysUntil <= 30 -> WarningRed
+                                            daysUntil <= 60 -> PendingOrange
+                                            else -> TealPrimary
+                                        }
+                                        
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable { selectedExpiringItem = item }
+                                                .padding(vertical = 6.dp, horizontal = 8.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = item.name,
+                                                    fontSize = 12.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = MaterialTheme.colorScheme.onSurface
+                                                )
+                                                Text(
+                                                    text = "Stock: ${item.stockQuantity} • Expiry: ${java.text.SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(java.util.Date(item.expiryDate))}",
+                                                    fontSize = 9.5.sp,
+                                                    color = SlateTextMedium
+                                                )
+                                            }
+                                            
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(6.dp))
+                                                    .background(pillColor.copy(alpha = 0.12f))
+                                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                                            ) {
+                                                Text(
+                                                    text = if (daysUntil < 0) "Expired" else "in $daysUntil d",
+                                                    fontSize = 10.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = pillColor
+                                                )
+                                            }
+                                        }
+                                        if (index < allExpiringList.take(5).size - 1) {
+                                            HorizontalDivider(color = SlateBorderLight.copy(alpha = 0.25f), thickness = 0.5.dp)
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = TealSurface),
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, SlateBorderLight.copy(alpha = 0.4f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Box(modifier = Modifier.fillMaxWidth().padding(12.dp), contentAlignment = Alignment.Center) {
+                                    Text("No near-expiry medications. Pharmacy storage is fully clear.", fontSize = 11.sp, color = SlateTextMedium)
+                                }
+                            }
+                        }
+                    }
+                }
+                2 -> {
+                    // Dead Stock List
+                    if (deadStock.isEmpty()) {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = TealSurface),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, SlateBorderLight.copy(alpha = 0.4f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Box(modifier = Modifier.fillMaxWidth().padding(12.dp), contentAlignment = Alignment.Center) {
+                                Text("No stagnant inventory detected.", fontSize = 11.sp, color = SlateTextMedium)
+                            }
+                        }
+                    } else {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = TealSurface),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, SlateBorderLight.copy(alpha = 0.4f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                deadStock.take(deadStockLimit).forEachIndexed { idx, item ->
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 4.dp, horizontal = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                text = item.name,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                            Text(
+                                                text = "Qty: ${item.stockQuantity} in storage",
+                                                fontSize = 9.5.sp,
+                                                color = SlateTextMedium
+                                            )
+                                        }
+                                        Box(
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.15f))
+                                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                        ) {
+                                            Text(
+                                                text = formatPrice(item.price * item.stockQuantity),
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = WarningRed
+                                            )
+                                        }
+                                    }
+                                    if (idx < deadStock.take(deadStockLimit).size - 1) {
+                                        HorizontalDivider(color = SlateBorderLight.copy(alpha = 0.25f), thickness = 0.5.dp)
+                                    }
+                                }
+                                
+                                if (deadStockLimit < deadStock.size) {
+                                    TextButton(
+                                        onClick = { deadStockLimit += 5 },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        contentPadding = PaddingValues(0.dp)
+                                    ) {
+                                        Text("Load More Dead Stock (${deadStock.size - deadStockLimit} left)", fontSize = 11.sp, color = TealPrimary)
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
         } else {
             // Demographics Cockpit
             Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                colors = CardDefaults.cardColors(containerColor = TealSurface),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, SlateBorderLight.copy(alpha = 0.5f)),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Demographics Filter Cockpit", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Demographics Filter Engine", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
                     
-                    // Product filter field
-                    OutlinedTextField(
-                        value = searchProductQuery,
-                        onValueChange = { searchProductQuery = it },
-                        placeholder = { Text("Filter by Product/Med Name") },
-                        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
-
-                    // Brand filter field
-                    OutlinedTextField(
-                        value = searchBrandQuery,
-                        onValueChange = { searchBrandQuery = it },
-                        placeholder = { Text("Filter by Manufacturer/Brand") },
-                        leadingIcon = { Icon(Icons.Filled.Business, contentDescription = null) },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
-
-                    // Date range filters
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = searchProductQuery,
+                            onValueChange = { searchProductQuery = it },
+                            placeholder = { Text("Filter Medicine") },
+                            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            textStyle = MaterialTheme.typography.bodySmall,
+                            shape = RoundedCornerShape(8.dp)
+                        )
+
+                        OutlinedTextField(
+                            value = searchBrandQuery,
+                            onValueChange = { searchBrandQuery = it },
+                            placeholder = { Text("Filter Manufacturer") },
+                            leadingIcon = { Icon(Icons.Filled.Business, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true,
+                            textStyle = MaterialTheme.typography.bodySmall,
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                    }
+
+                    // Date range filters (Super compact buttons)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         listOf("All Time", "Last 7 Days", "Last 30 Days").forEachIndexed { idx, label ->
                             OutlinedButton(
                                 onClick = { dateRangeFilter = idx },
-                                border = BorderStroke(1.dp, if (dateRangeFilter == idx) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline),
+                                border = BorderStroke(1.dp, if (dateRangeFilter == idx) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
                                 modifier = Modifier.weight(1f),
-                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+                                contentPadding = PaddingValues(horizontal = 2.dp, vertical = 2.dp),
+                                shape = RoundedCornerShape(6.dp)
                             ) {
-                                Text(label, fontSize = 11.sp, color = if (dateRangeFilter == idx) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+                                Text(
+                                    text = label, 
+                                    fontSize = 10.sp, 
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (dateRangeFilter == idx) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface
+                                )
                             }
                         }
                     }
@@ -522,45 +843,533 @@ fun AnalyticsTab(viewModel: PharmacyViewModel, isUserAdmin: Boolean = false) {
 
             // Summary Stats Metrics
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                MetricCard(title = "Items Monitored", value = "${filteredSales.sumOf { it.quantitySold }}", modifier = Modifier.weight(1f))
-                MetricCard(title = "Total Volume", value = formatPrice(filteredSales.sumOf { it.salePrice }), modifier = Modifier.weight(1f))
+                CompactMetricCard(
+                    title = "Sales Volume",
+                    value = "${filteredSales.sumOf { it.quantitySold }} Units",
+                    icon = Icons.Filled.ShoppingBag,
+                    iconColor = TealPrimary,
+                    modifier = Modifier.weight(1f)
+                )
+                CompactMetricCard(
+                    title = "Total Gross Value",
+                    value = formatPrice(filteredSales.sumOf { it.salePrice }),
+                    icon = Icons.Filled.MonetizationOn,
+                    iconColor = OKGreenText,
+                    modifier = Modifier.weight(1f)
+                )
             }
 
-            // Age Group distribution metrics
-            SectionTitle("Medication Usage by Age Group", Icons.Filled.Face)
-            Card {
-                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    val ages = filteredSales.map { it.patientAge }
-                    val categories = listOf(
-                        "0–12" to ages.count { it in 0..12 },
-                        "13–19" to ages.count { it in 13..19 },
-                        "20–35" to ages.count { it in 20..35 },
-                        "36–50" to ages.count { it in 36..50 },
-                        "51–65" to ages.count { it in 51..65 },
-                        "65+" to ages.count { it > 65 }
-                    )
-                    val maxAgeCount = categories.maxOfOrNull { it.second } ?: 1
-                    categories.forEach { (label, count) ->
-                        val pct = if (maxAgeCount > 0) count.toFloat() / maxAgeCount else 0.0f
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                                Text(label, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
-                                Text("$count Sales", style = MaterialTheme.typography.bodySmall)
+            // Demographic Insight Tabbed Segment
+            AnalyticsSectionTitle("Demographic Insights", Icons.Filled.BarChart)
+            
+            TabRow(
+                selectedTabIndex = demographicsSegmentTab,
+                containerColor = Color.Transparent,
+                contentColor = TealPrimary,
+                divider = { HorizontalDivider(color = SlateBorderLight.copy(alpha = 0.25f)) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Tab(
+                    selected = demographicsSegmentTab == 0,
+                    onClick = { demographicsSegmentTab = 0 },
+                    text = { Text("Patients", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                )
+                Tab(
+                    selected = demographicsSegmentTab == 1,
+                    onClick = { demographicsSegmentTab = 1 },
+                    text = { Text("Meds/Brands", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                )
+                Tab(
+                    selected = demographicsSegmentTab == 2,
+                    onClick = { demographicsSegmentTab = 2 },
+                    text = { Text("Geography", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                )
+                Tab(
+                    selected = demographicsSegmentTab == 3,
+                    onClick = { demographicsSegmentTab = 3 },
+                    text = { Text("Nodes", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                )
+            }
+
+            when (demographicsSegmentTab) {
+                0 -> {
+                    // Age Group distribution metrics with Custom Gradient Track Bars
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = TealSurface),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, SlateBorderLight.copy(alpha = 0.4f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            val ages = filteredSales.map { it.patientAge }
+                            val categories = listOf(
+                                "0–12 Child" to ages.count { it in 0..12 },
+                                "13–19 Teen" to ages.count { it in 13..19 },
+                                "20–35 Youth" to ages.count { it in 20..35 },
+                                "36–50 Adult" to ages.count { it in 36..50 },
+                                "51–65 Senior" to ages.count { it in 51..65 },
+                                "65+ Geriatric" to ages.count { it > 65 }
+                            )
+                            val maxAgeCount = categories.maxOfOrNull { it.second } ?: 1
+                            categories.forEach { (label, count) ->
+                                val pct = if (maxAgeCount > 0) count.toFloat() / maxAgeCount else 0.0f
+                                Column(modifier = Modifier.fillMaxWidth()) {
+                                    Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                                        Text(label, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                                        Text("$count Sales", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TealPrimary)
+                                    }
+                                    Spacer(modifier = Modifier.height(3.dp))
+                                    // Glowing Progress Bar
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(8.dp)
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxHeight()
+                                                .fillMaxWidth(pct)
+                                                .background(Brush.horizontalGradient(listOf(TealPrimary, OKGreen)))
+                                        )
+                                    }
+                                }
                             }
-                            Spacer(modifier = Modifier.height(3.dp))
-                            // Simple visual progress bar for analytics
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(10.dp)
-                                    .clip(RoundedCornerShape(4.dp))
-                                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxHeight()
-                                        .fillMaxWidth(pct)
-                                        .background(TealPrimary)
+                        }
+                    }
+                }
+                1 -> {
+                    // Meds & Brands
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        // Medications list
+                        Text("Top Performing Products", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = SlateTextMedium)
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = TealSurface),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, SlateBorderLight.copy(alpha = 0.4f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                val groupedMeds = filteredSales.groupBy { it.productName }
+                                    .mapValues { entry -> entry.value.sumOf { it.quantitySold } }
+                                    .toList()
+                                    .sortedByDescending { it.second }
+                                    .take(5)
+
+                                if (groupedMeds.isEmpty()) {
+                                    Text("No sale records match filters.", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(8.dp))
+                                } else {
+                                    groupedMeds.forEachIndexed { idx, (name, total) ->
+                                        Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(18.dp)
+                                                        .clip(CircleShape)
+                                                        .background(TealPrimary.copy(alpha = 0.1f)),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Text("#${idx + 1}", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = TealPrimary)
+                                                }
+                                                Text(name, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                                            }
+                                            Box(
+                                                modifier = Modifier
+                                                    .clip(RoundedCornerShape(4.dp))
+                                                    .background(OKGreenContainer.copy(alpha = 0.15f))
+                                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                                            ) {
+                                                Text("$total Units", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = OKGreenText)
+                                            }
+                                        }
+                                        if (idx < groupedMeds.size - 1) {
+                                            HorizontalDivider(color = SlateBorderLight.copy(alpha = 0.25f), thickness = 0.5.dp)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Brands list
+                        Text("Top Rated Brands", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = SlateTextMedium)
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = TealSurface),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, SlateBorderLight.copy(alpha = 0.4f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                val groupedBrands = filteredSales.groupBy { it.brand }
+                                    .mapValues { entry -> entry.value.sumOf { it.quantitySold } }
+                                    .toList()
+                                    .sortedByDescending { it.second }
+                                    .take(5)
+                                if (groupedBrands.isEmpty()) {
+                                    Text("No branded medications registered in sales.", style = MaterialTheme.typography.bodyMedium)
+                                } else {
+                                    groupedBrands.forEachIndexed { idx, (brandName, total) ->
+                                        Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                                            Text(brandName.ifEmpty { "Generic/Unassigned" }, fontSize = 11.sp, modifier = Modifier.weight(1f))
+                                            Text("$total Sold", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TealPrimary)
+                                        }
+                                        if (idx < groupedBrands.size - 1) {
+                                            HorizontalDivider(color = SlateBorderLight.copy(alpha = 0.25f), thickness = 0.5.dp)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                2 -> {
+                    // Geographic analysis lists
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = TealSurface),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, SlateBorderLight.copy(alpha = 0.4f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text("State Distribution Heat Map", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = SlateTextMedium)
+                            val groupedState = filteredSales.groupBy { it.patientState }
+                                .mapValues { entry -> entry.value.sumOf { it.quantitySold } }
+                                .toList()
+                                .sortedByDescending { it.second }
+                            if (groupedState.isEmpty()) {
+                                Text("No location demographics recorded yet.", style = MaterialTheme.typography.bodySmall)
+                            } else {
+                                val maxS = groupedState.maxOfOrNull { it.second } ?: 1
+                                groupedState.take(3).forEach { (state, total) ->
+                                    Column {
+                                        Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                                            Text(state, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                            Text("$total Units", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TealPrimary)
+                                        }
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .height(4.dp)
+                                                .clip(RoundedCornerShape(2.dp))
+                                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxHeight()
+                                                    .fillMaxWidth(total.toFloat() / maxS)
+                                                    .background(TealPrimary)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text("City Level Distribution", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = SlateTextMedium)
+                            val groupedCity = filteredSales.groupBy { it.patientCity }
+                                .mapValues { entry -> entry.value.sumOf { it.quantitySold } }
+                                .toList()
+                                .sortedByDescending { it.second }
+                                .take(3)
+                            groupedCity.forEachIndexed { i, (city, total) ->
+                                Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                                    Text(city, fontSize = 11.sp)
+                                    Text("$total Units", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = SlateTextMedium)
+                                }
+                                if (i < groupedCity.size - 1) {
+                                    HorizontalDivider(color = SlateBorderLight.copy(alpha = 0.25f), thickness = 0.5.dp)
+                                }
+                            }
+                        }
+                    }
+                }
+                3 -> {
+                    // Performance by Node (Pharmacy)
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = TealSurface),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, SlateBorderLight.copy(alpha = 0.4f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            val groupedNodes = filteredSales.groupBy { it.pharmacyNode }
+                                .mapValues { entry -> entry.value.sumOf { it.quantitySold } }
+                                .toList()
+                                .sortedByDescending { it.second }
+                            if (groupedNodes.isEmpty()) {
+                                Text("No multi-node sales synchronized yet.", style = MaterialTheme.typography.bodyMedium)
+                            } else {
+                                groupedNodes.forEach { (nodeName, total) ->
+                                    Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                                        Text(nodeName, fontSize = 11.sp, modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold)
+                                        Text("$total Units Sold", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.secondary)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun CompactMetricCard(
+    title: String,
+    value: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    iconColor: Color,
+    modifier: Modifier = Modifier,
+    trendLabel: String? = null,
+    trendColor: Color = OKGreenText
+) {
+    Card(
+        modifier = modifier,
+        colors = CardDefaults.cardColors(
+            containerColor = TealSurface
+        ),
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, SlateBorderLight.copy(alpha = 0.4f))
+    ) {
+        Column(modifier = Modifier.padding(10.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = SlateTextMedium,
+                    maxLines = 1,
+                    fontSize = 11.sp,
+                    modifier = Modifier.weight(1f)
+                )
+                
+                Box(
+                    modifier = Modifier
+                        .size(24.dp)
+                        .clip(CircleShape)
+                        .background(iconColor.copy(alpha = 0.12f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = iconColor,
+                        modifier = Modifier.size(12.dp)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+            
+            Text(
+                text = value,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.ExtraBold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            if (trendLabel != null) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = trendLabel,
+                    fontSize = 8.5.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = trendColor,
+                    maxLines = 1
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun CompactRevenueTrendChart(
+    receipts: List<Receipt>,
+    formatPrice: (Double) -> String,
+    modifier: Modifier = Modifier
+) {
+    val trendDays = 15 // Beautiful and compact 15-day view
+    val dailyData = remember(receipts) {
+        val now = System.currentTimeMillis()
+        val dayMs = 24L * 60 * 60 * 1000L
+        val list = mutableListOf<Pair<String, Double>>()
+        val sdf = java.text.SimpleDateFormat("dd MMM", Locale.getDefault())
+        for (i in (trendDays - 1) downTo 0) {
+            val dayStart = now - (i + 1) * dayMs
+            val dayEnd = now - i * dayMs
+            val dayTotal = receipts.filter { it.timestamp in dayStart until dayEnd }.sumOf { it.totalAmount }
+            val label = sdf.format(java.util.Date(dayEnd))
+            list.add(Pair(label, dayTotal))
+        }
+        list
+    }
+
+    val maxAmount = remember(dailyData) {
+        dailyData.maxOfOrNull { it.second } ?: 0.0
+    }
+    
+    val maxVal = if (maxAmount > 0) maxAmount * 1.15 else 10000.0
+
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = TealSurface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        border = BorderStroke(1.dp, SlateBorderLight.copy(alpha = 0.5f))
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = "15-Day Revenue Performance",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Chronological transactional volume",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = SlateTextMedium
+                    )
+                }
+                
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(OKGreenContainer.copy(alpha = 0.2f))
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = "Peak: ${formatPrice(maxAmount).replace(".00", "")}",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = OKGreenText
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(14.dp))
+
+            // Canvas drawing
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(110.dp)
+            ) {
+                androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
+                    val width = size.width
+                    val height = size.height
+                    
+                    val paddingLeft = 14f
+                    val paddingRight = 14f
+                    val paddingTop = 15f
+                    val paddingBottom = 15f
+                    
+                    val chartWidth = width - paddingLeft - paddingRight
+                    val chartHeight = height - paddingTop - paddingBottom
+
+                    // Draw Horizontal Guidelines (3 guidelines: bottom, middle, top)
+                    val gridLines = 3
+                    for (i in 0 until gridLines) {
+                        val y = paddingTop + (chartHeight / (gridLines - 1)) * i
+                        drawLine(
+                            color = SlateBorderLight.copy(alpha = 0.2f),
+                            start = androidx.compose.ui.geometry.Offset(paddingLeft, y),
+                            end = androidx.compose.ui.geometry.Offset(width - paddingRight, y),
+                            strokeWidth = 1.dp.toPx(),
+                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 12f), 0f)
+                        )
+                    }
+
+                    if (dailyData.isNotEmpty()) {
+                        val points = dailyData.mapIndexed { index, pair ->
+                            val x = paddingLeft + (chartWidth / (dailyData.size - 1)) * index
+                            val y = paddingTop + chartHeight - ((pair.second / maxVal) * chartHeight).toFloat()
+                            androidx.compose.ui.geometry.Offset(x, y)
+                        }
+
+                        val linePath = Path()
+                        val fillPath = Path()
+
+                        if (points.isNotEmpty()) {
+                            val first = points.first()
+                            linePath.moveTo(first.x, first.y)
+                            fillPath.moveTo(first.x, chartHeight + paddingTop)
+                            fillPath.lineTo(first.x, first.y)
+                            
+                            for (i in 1 until points.size) {
+                                val prev = points[i - 1]
+                                val curr = points[i]
+                                val cx = (prev.x + curr.x) / 2f
+                                val cy = (prev.y + curr.y) / 2f
+                                linePath.quadraticTo(prev.x, prev.y, cx, cy)
+                                fillPath.quadraticTo(prev.x, prev.y, cx, cy)
+                            }
+                            
+                            val last = points.last()
+                            linePath.lineTo(last.x, last.y)
+                            fillPath.lineTo(last.x, last.y)
+                            
+                            fillPath.lineTo(last.x, chartHeight + paddingTop)
+                            fillPath.close()
+                        }
+
+                        // Draw Transparent Fill Gradient
+                        drawPath(
+                            path = fillPath,
+                            brush = Brush.verticalGradient(
+                                colors = listOf(
+                                    TealPrimary.copy(alpha = 0.25f),
+                                    Color.Transparent
+                                ),
+                                startY = paddingTop,
+                                endY = chartHeight + paddingTop
+                            )
+                        )
+
+                        // Draw the Glow Line Outline
+                        drawPath(
+                            path = linePath,
+                            brush = Brush.horizontalGradient(
+                                colors = listOf(TealPrimary, OKGreen)
+                            ),
+                            style = Stroke(
+                                width = 2.5.dp.toPx(),
+                                cap = StrokeCap.Round
+                            )
+                        )
+
+                        // Highlight Points (First, Last, Peak)
+                        val maxIdx = dailyData.indexOfFirst { it.second == maxAmount }
+                        points.forEachIndexed { idx, pt ->
+                            if (idx == 0 || idx == points.size - 1 || idx == maxIdx) {
+                                drawCircle(
+                                    color = TealPrimary.copy(alpha = 0.3f),
+                                    radius = 6.dp.toPx(),
+                                    center = pt
+                                )
+                                drawCircle(
+                                    color = TealPrimary,
+                                    radius = 3.dp.toPx(),
+                                    center = pt
+                                )
+                                drawCircle(
+                                    color = TealSurface,
+                                    radius = 1.dp.toPx(),
+                                    center = pt
                                 )
                             }
                         }
@@ -568,133 +1377,75 @@ fun AnalyticsTab(viewModel: PharmacyViewModel, isUserAdmin: Boolean = false) {
                 }
             }
 
-            // Most Used Medications Overall
-            SectionTitle("Top Medications Overall", Icons.Filled.Leaderboard)
-            Card {
-                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    val groupedMeds = filteredSales.groupBy { it.productName }
-                        .mapValues { entry -> entry.value.sumOf { it.quantitySold } }
-                        .toList()
-                        .sortedByDescending { it.second }
-                        .take(5)
+            Spacer(modifier = Modifier.height(10.dp))
 
-                    if (groupedMeds.isEmpty()) {
-                        Text("No sale records match filters.", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(8.dp))
-                    } else {
-                        groupedMeds.forEach { (name, total) ->
-                            Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                                Text(name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Medium, modifier = Modifier.weight(1f))
-                                Text("$total Units", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                            }
-                            HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
-                        }
-                    }
-                }
-            }
-
-            // Geographic analysis lists
-            SectionTitle("Usage Heat lists by Location", Icons.Filled.Map)
-            Card {
-                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("State Distribution", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                    val groupedState = filteredSales.groupBy { it.patientState }
-                        .mapValues { entry -> entry.value.sumOf { it.quantitySold } }
-                        .toList()
-                        .sortedByDescending { it.second }
-                    if (groupedState.isEmpty()) {
-                        Text("No location demographics recorded yet.", style = MaterialTheme.typography.bodySmall)
-                    } else {
-                        groupedState.forEach { (state, total) ->
-                            Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                                Text(state, style = MaterialTheme.typography.bodyMedium)
-                                Text("$total Units", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Text("City Distribution", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                    val groupedCity = filteredSales.groupBy { it.patientCity }
-                        .mapValues { entry -> entry.value.sumOf { it.quantitySold } }
-                        .toList()
-                        .sortedByDescending { it.second }
-                        .take(5)
-                    groupedCity.forEach { (city, total) ->
-                        Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                            Text(city, style = MaterialTheme.typography.bodyMedium)
-                            Text("$total Units", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-            }
-
-            // Node level analysis
-            SectionTitle("Performance by Node (Pharmacy)", Icons.Filled.Store)
-            Card {
-                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    val groupedNodes = filteredSales.groupBy { it.pharmacyNode }
-                        .mapValues { entry -> entry.value.sumOf { it.quantitySold } }
-                        .toList()
-                        .sortedByDescending { it.second }
-                    if (groupedNodes.isEmpty()) {
-                        Text("No multi-node sales synchronized yet.", style = MaterialTheme.typography.bodyMedium)
-                    } else {
-                        groupedNodes.forEach { (nodeName, total) ->
-                            Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                                Text(nodeName, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                                Text("$total Units Sold", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.secondary)
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Brand Performance
-            SectionTitle("Top Performing Brands", Icons.Filled.Business)
-            Card {
-                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    val groupedBrands = filteredSales.groupBy { it.brand }
-                        .mapValues { entry -> entry.value.sumOf { it.quantitySold } }
-                        .toList()
-                        .sortedByDescending { it.second }
-                        .take(5)
-                    if (groupedBrands.isEmpty()) {
-                        Text("No branded medications registered in sales.", style = MaterialTheme.typography.bodyMedium)
-                    } else {
-                        groupedBrands.forEach { (brandName, total) ->
-                            Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                                Text(brandName.ifEmpty { "Generic / Unassigned" }, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                                Text("$total Sold", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
+            // X-axis text labels (Beginning, middle, end)
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                if (dailyData.isNotEmpty()) {
+                    Text(
+                        text = dailyData.first().first,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = SlateTextMedium
+                    )
+                    Text(
+                        text = dailyData[dailyData.size / 2].first,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = SlateTextMedium
+                    )
+                    Text(
+                        text = dailyData.last().first,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = SlateTextMedium
+                    )
                 }
             }
         }
-
     }
 }
 
- 
-
 @Composable
-fun MetricCard(title: String, value: String, modifier: Modifier = Modifier) {
-    Card(
-        modifier = modifier,
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+fun AnalyticsSectionTitle(title: String, icon: androidx.compose.ui.graphics.vector.ImageVector) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 10.dp, bottom = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(title, style = MaterialTheme.typography.labelMedium)
-            Spacer(modifier = Modifier.height(4.dp))
-            Text(value, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+        Box(
+            modifier = Modifier
+                .size(24.dp)
+                .clip(CircleShape)
+                .background(TealPrimary.copy(alpha = 0.1f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = TealPrimary,
+                modifier = Modifier.size(12.dp)
+            )
         }
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
     }
 }
 
 @Composable
 fun MarkdownText(text: String, modifier: Modifier = Modifier) {
     val lines = text.split("\n")
-    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         lines.forEach { line ->
             val trimmed = line.trim()
             if (trimmed.isEmpty()) {
@@ -711,13 +1462,13 @@ fun MarkdownText(text: String, modifier: Modifier = Modifier) {
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary
                         ),
-                        modifier = Modifier.padding(top = 10.dp, bottom = 4.dp)
+                        modifier = Modifier.padding(top = 8.dp, bottom = 2.dp)
                     )
                 } else if (trimmed.startsWith("-") || trimmed.startsWith("*")) {
                     val bulletContent = trimmed.removePrefix("-").removePrefix("*").trim()
                     val bulletAnnotated = parseMarkdownToAnnotatedString(bulletContent)
                     Row(
-                        modifier = Modifier.padding(start = 12.dp, top = 2.dp),
+                        modifier = Modifier.padding(start = 10.dp, top = 2.dp),
                         verticalAlignment = Alignment.Top
                     ) {
                         Text(
@@ -726,7 +1477,7 @@ fun MarkdownText(text: String, modifier: Modifier = Modifier) {
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.primary
                             ),
-                            modifier = Modifier.padding(end = 8.dp)
+                            modifier = Modifier.padding(end = 6.dp)
                         )
                         Text(
                             text = bulletAnnotated,

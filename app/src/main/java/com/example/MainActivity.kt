@@ -33,7 +33,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.*
+import androidx.compose.ui.text.font.*
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -199,6 +200,7 @@ fun PharmacyRootScreen(
     val drawerState = androidx.compose.material3.rememberDrawerState(androidx.compose.material3.DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val inventory by viewModel.inventoryItems.collectAsStateWithLifecycle()
+    val isInventoryLoading by viewModel.isInventoryLoading.collectAsStateWithLifecycle()
     val lowStockMeds by viewModel.lowStockItems.collectAsStateWithLifecycle()
     val volumes by viewModel.prescriptionVolumes.collectAsStateWithLifecycle()
     val alerts by viewModel.customerAlerts.collectAsStateWithLifecycle()
@@ -234,6 +236,12 @@ fun PharmacyRootScreen(
         email == "maduemeziachinedu6@gmail.com"
     }
 
+    LaunchedEffect(currentUser) {
+        if (currentUser != null) {
+            viewModel.handleUserAuthenticated(currentUser)
+        }
+    }
+
     LaunchedEffect(isCarefluxAiEnabled) {
         if (!isCarefluxAiEnabled && activeTab == "ai_tasks") {
             activeTab = "inventory"
@@ -263,6 +271,10 @@ fun PharmacyRootScreen(
     val productsCsvFilePickerLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
     ) { uri: android.net.Uri? ->
+        if (viewModel.currentPharmacistRole.value != "Branch Manager") {
+            Toast.makeText(context, "Access Denied: Only the Branch Manager can perform data imports.", Toast.LENGTH_LONG).show()
+            return@rememberLauncherForActivityResult
+        }
         uri?.let {
             importProductsFromCsv(context, it, viewModel)
         }
@@ -271,6 +283,10 @@ fun PharmacyRootScreen(
     val customersCsvFilePickerLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
     ) { uri: android.net.Uri? ->
+        if (viewModel.currentPharmacistRole.value != "Branch Manager") {
+            Toast.makeText(context, "Access Denied: Only the Branch Manager can perform data imports.", Toast.LENGTH_LONG).show()
+            return@rememberLauncherForActivityResult
+        }
         uri?.let {
             importCustomersFromCsv(context, it, viewModel)
         }
@@ -279,6 +295,10 @@ fun PharmacyRootScreen(
     val medicationsCsvFilePickerLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
     ) { uri: android.net.Uri? ->
+        if (viewModel.currentPharmacistRole.value != "Branch Manager") {
+            Toast.makeText(context, "Access Denied: Only the Branch Manager can perform data imports.", Toast.LENGTH_LONG).show()
+            return@rememberLauncherForActivityResult
+        }
         uri?.let {
             importMedicationsFromCsv(context, it, viewModel)
         }
@@ -313,13 +333,13 @@ fun PharmacyRootScreen(
                 }
                 androidx.compose.material3.HorizontalDivider()
                 androidx.compose.material3.NavigationDrawerItem(
-                    label = { Text("Procurement List") },
+                    label = { Text("Procurement & Stock Transfers") },
                     selected = activeTab == "procurement",
                     onClick = {
                         activeTab = "procurement"
                         scope.launch { drawerState.close() }
                     },
-                    icon = { Icon(Icons.Filled.ShoppingCart, contentDescription = null) },
+                    icon = { Icon(Icons.Filled.LocalShipping, contentDescription = null) },
                     modifier = Modifier.padding(androidx.compose.material3.NavigationDrawerItemDefaults.ItemPadding)
                 )
                 androidx.compose.material3.NavigationDrawerItem(
@@ -372,6 +392,34 @@ fun PharmacyRootScreen(
                         scope.launch { drawerState.close() }
                     },
                     icon = { Icon(Icons.Filled.Storefront, contentDescription = null) },
+                    modifier = Modifier.padding(androidx.compose.material3.NavigationDrawerItemDefaults.ItemPadding)
+                )
+
+                val branchIdVal by viewModel.currentPharmacistBranchId.collectAsStateWithLifecycle()
+                androidx.compose.material3.NavigationDrawerItem(
+                    label = { 
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(if (branchIdVal.isNullOrBlank()) "Branch Setup & Team" else "My Branch Team")
+                            if (branchIdVal.isNullOrBlank()) {
+                                Box(
+                                    modifier = Modifier
+                                        .background(TealPrimary.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text("Setup", color = TealPrimary, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                    },
+                    selected = activeTab == "branch_team",
+                    onClick = {
+                        activeTab = "branch_team"
+                        scope.launch { drawerState.close() }
+                    },
+                    icon = { Icon(Icons.Filled.Group, contentDescription = "Branch Team") },
                     modifier = Modifier.padding(androidx.compose.material3.NavigationDrawerItemDefaults.ItemPadding)
                 )
 
@@ -892,26 +940,54 @@ fun PharmacyRootScreen(
             )
         }
 
-        // --- Low Stock Broadcaster ---
-        val isCoreTab = activeTab in listOf("inventory", "volumes", "customers", "ai_tasks")
-        if (isCoreTab && lowStockMeds.isNotEmpty()) {
-            LowStockBanner(
-                lowStockCount = lowStockMeds.size,
-                onClick = { activeTab = "inventory" }
-            )
-            Spacer(modifier = Modifier.height(12.dp))
-        }
-
-        // --- Quick Stats Overview Widgets ---
+        // --- Dashboard / Stats Section (Collapsible) ---
+        val isCoreTab = activeTab == "inventory"
         if (isCoreTab) {
-            val pendingRefills = customerMeds.count { it.nextRefillDate < System.currentTimeMillis() + (7L * 24 * 60 * 60 * 1000) }
-            StatsSection(
+            var isDashboardExpanded by remember { mutableStateOf(false) }
+            val pendingRefills = remember(customerMeds) {
+                customerMeds.count { it.nextRefillDate < System.currentTimeMillis() + (7L * 24 * 60 * 60 * 1000) }
+            }
+
+            // Compact/Expandable Dashboard Toggle Bar
+            CompactDashboardStatsBar(
                 medsCount = inventory.size,
                 lowStockCount = lowStockMeds.size,
                 todayVolume = volumes.firstOrNull()?.volume ?: 0,
-                pendingAlerts = pendingRefills
+                pendingAlerts = pendingRefills,
+                isExpanded = isDashboardExpanded,
+                onToggleExpand = { isDashboardExpanded = !isDashboardExpanded }
             )
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // Expandable full widgets with sleek animated slide/fade transitions
+            androidx.compose.animation.AnimatedVisibility(
+                visible = isDashboardExpanded,
+                enter = androidx.compose.animation.expandVertically(
+                    animationSpec = androidx.compose.animation.core.tween(300)
+                ) + androidx.compose.animation.fadeIn(),
+                exit = androidx.compose.animation.shrinkVertically(
+                    animationSpec = androidx.compose.animation.core.tween(250)
+                ) + androidx.compose.animation.fadeOut()
+            ) {
+                Column {
+                    if (lowStockMeds.isNotEmpty()) {
+                        LowStockBanner(
+                            lowStockCount = lowStockMeds.size,
+                            onClick = { isDashboardExpanded = false }
+                        )
+                        Spacer(modifier = Modifier.height(10.dp))
+                    }
+
+                    StatsSection(
+                        medsCount = inventory.size,
+                        lowStockCount = lowStockMeds.size,
+                        todayVolume = volumes.firstOrNull()?.volume ?: 0,
+                        pendingAlerts = pendingRefills,
+                        onLowStockClick = { activeTab = "procurement" }
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
+            }
         }
 
         // --- Dynamic Content Zone ---
@@ -923,6 +999,7 @@ fun PharmacyRootScreen(
             when (activeTab) {
                 "inventory" -> InventoryTabContent(
                     inventory = inventory,
+                    isLoading = isInventoryLoading,
                     onMedSelect = { selectedMedForEdit = it },
                     onAddNewClick = { showAddMedDialog = true },
                     onDeleteClick = { viewModel.deleteInventory(it) },
@@ -930,7 +1007,15 @@ fun PharmacyRootScreen(
                         viewModel.updateStockLevel(item, item.stockQuantity + 10)
                         Toast.makeText(context, "Added 10 units to ${item.name}", Toast.LENGTH_SHORT).show()
                     },
-                    onAddToCart = { selectedMedForCart = it }
+                    onAddToCart = { item ->
+                        if (item.stockQuantity <= 0) {
+                            Toast.makeText(context, "Cannot add to cart: ${item.name} is out of stock!", Toast.LENGTH_LONG).show()
+                        } else if (item.price <= 0.0) {
+                            Toast.makeText(context, "Cannot add to cart: ${item.name} has no price configured!", Toast.LENGTH_LONG).show()
+                        } else {
+                            selectedMedForCart = item
+                        }
+                    }
                 )
                 "volumes" -> VolumesTabContent(
                     volumes = volumes,
@@ -952,7 +1037,8 @@ fun PharmacyRootScreen(
                     context = context
                 )
                 "procurement" -> com.example.ui.ProcurementTabContent(
-                    inventory = inventory
+                    inventory = inventory,
+                    viewModel = viewModel
                 )
                 "ai_tasks" -> com.example.ui.CarefluxAITab(
                     inventory = inventory,
@@ -1011,21 +1097,26 @@ fun PharmacyRootScreen(
                         for (item in cartItems) {
                             val inv = item.inventoryItem
                             viewModel.recordMedicationSale(item, customer)
-                            viewModel.addOrUpdateInventory(
-                                id = inv.id,
-                                name = inv.name,
-                                dosage = inv.dosage,
-                                currentStock = (inv.stockQuantity - item.quantity).coerceAtLeast(0),
-                                minStock = inv.minRequiredStock,
-                                category = inv.category,
-                                price = inv.price,
-                                updateStockStats = true,
-                                addedQty = item.quantity
-                            )
+                            scope.launch {
+                                val latestInv = viewModel.repository.getInventoryItemById(inv.id)
+                                val currentStockInDb = latestInv?.stockQuantity ?: (inv.stockQuantity - item.quantity).coerceAtLeast(0)
+                                viewModel.addOrUpdateInventory(
+                                    id = inv.id,
+                                    name = inv.name,
+                                    dosage = inv.dosage,
+                                    currentStock = currentStockInDb,
+                                    minStock = inv.minRequiredStock,
+                                    category = inv.category,
+                                    price = inv.price,
+                                    updateStockStats = true,
+                                    addedQty = item.quantity
+                                )
+                            }
                         }
                         viewModel.clearCart()
                         activeTab = "inventory"
                     },
+                    onClearCart = { viewModel.clearCartAndRestoreStock() },
                     context = context
                 )
                 "receipts" -> com.example.ui.ReceiptsTab(
@@ -1044,6 +1135,7 @@ fun PharmacyRootScreen(
                 "pharmacy_triage" -> com.example.ui.PharmacyTriageTabContent(viewModel = viewModel)
                 "admin_dashboard" -> com.example.ui.AdminDashboardScreen(viewModel = viewModel)
                 "rescue_marketplace" -> com.example.ui.RescueMarketplaceScreen(viewModel = viewModel)
+                "branch_team" -> com.example.ui.BranchTeamTab(viewModel = viewModel)
             }
         }
 
@@ -1092,6 +1184,7 @@ fun PharmacyRootScreen(
     selectedMedForEdit?.let { item ->
         EditStockQuantityDialog(
             item = item,
+            viewModel = viewModel,
             onDismiss = { selectedMedForEdit = null },
             onConfirm = { name, dosage, stock, minStock, category, price, expiryDate, batch, supplier, imageUri, unitForm, brand ->
                 viewModel.addOrUpdateInventory(name = name, dosage = dosage, currentStock = stock, minStock = minStock, category = category, price = price, id = item.id, expiryDate = expiryDate, batchNumber = batch, supplier = supplier, imageUri = imageUri, unitForm = unitForm, brand = brand)
@@ -1104,8 +1197,8 @@ fun PharmacyRootScreen(
     if (showLogVolumeDialog) {
         LogVolumeDialog(
             onDismiss = { showLogVolumeDialog = false },
-            onConfirm = { date, count, notes ->
-                viewModel.logPrescriptionVolume(date, count, notes)
+            onConfirm = { date, count, notes, imgUri ->
+                viewModel.logPrescriptionVolume(date, count, notes, imgUri)
                 showLogVolumeDialog = false
             }
         )
@@ -1401,7 +1494,8 @@ fun StatsSection(
     medsCount: Int,
     lowStockCount: Int,
     todayVolume: Int,
-    pendingAlerts: Int
+    pendingAlerts: Int,
+    onLowStockClick: () -> Unit = {}
 ) {
     Row(
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1428,6 +1522,7 @@ fun StatsSection(
             textColor = if (lowStockCount > 0) WarningRed else TealPrimary,
             subTextColor = if (lowStockCount > 0) WarningRedTitle else SlateTextMedium,
             highlight = lowStockCount > 0,
+            onClick = onLowStockClick,
             modifier = Modifier.weight(1f)
         )
         StatBox(
@@ -1466,10 +1561,11 @@ fun StatBox(
     textColor: Color,
     subTextColor: Color,
     highlight: Boolean = false,
+    onClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Card(
-        modifier = modifier,
+        modifier = if (onClick != null) modifier.clickable { onClick() } else modifier,
         shape = RoundedCornerShape(24.dp), // Spec rounded-[28px] matching, 24dp fits perfectly on mobile
         colors = CardDefaults.cardColors(
             containerColor = bgColor
@@ -1653,6 +1749,7 @@ fun TabButton(
 @Composable
 fun InventoryTabContent(
     inventory: List<InventoryItem>,
+    isLoading: Boolean = false,
     onMedSelect: (InventoryItem) -> Unit,
     onAddNewClick: () -> Unit,
     onDeleteClick: (InventoryItem) -> Unit,
@@ -1662,6 +1759,7 @@ fun InventoryTabContent(
     var searchQuery by remember { mutableStateOf("") }
     var filterCategory by remember { mutableStateOf("All") }
     var showOnlyLowStock by remember { mutableStateOf(false) }
+    var itemToDeleteConfirm by remember { mutableStateOf<InventoryItem?>(null) }
 
     val categories = remember(inventory) {
         listOf("All") + inventory.map { it.category }.distinct().sorted()
@@ -1677,30 +1775,120 @@ fun InventoryTabContent(
         }
     }
 
+    if (itemToDeleteConfirm != null) {
+        AlertDialog(
+            onDismissRequest = { itemToDeleteConfirm = null },
+            icon = {
+                Icon(
+                    imageVector = Icons.Filled.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(32.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "Confirm Delete Product",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            },
+            text = {
+                Text(
+                    text = "Are you sure you want to completely remove \"${itemToDeleteConfirm?.name}\" from the pharmacy inventory? This action is irreversible and will permanently delete all logs of its stock levels.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        itemToDeleteConfirm?.let { onDeleteClick(it) }
+                        itemToDeleteConfirm = null
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    ),
+                    modifier = Modifier.testTag("confirm_delete_button")
+                ) {
+                    Text("Delete Product")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { itemToDeleteConfirm = null },
+                    modifier = Modifier.testTag("cancel_delete_button")
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
-            // Search Input
-            OutlinedTextField(
+            // Search Input (Using BasicTextField for robust vertical alignment and clipping-free 48dp height styling)
+            androidx.compose.foundation.text.BasicTextField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
-                placeholder = { Text("Search meds...", fontSize = 14.sp) },
-                leadingIcon = { Icon(Icons.Filled.Search, contentDescription = "Search", modifier = Modifier.size(18.dp)) },
-                singleLine = true,
-                shape = RoundedCornerShape(12.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    unfocusedContainerColor = MaterialTheme.colorScheme.surface
+                textStyle = MaterialTheme.typography.bodyMedium.copy(
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontSize = 14.sp
                 ),
+                singleLine = true,
+                cursorBrush = androidx.compose.ui.graphics.SolidColor(MaterialTheme.colorScheme.primary),
                 modifier = Modifier
                     .weight(1f)
-                    .height(52.dp)
-                    .testTag("med_search_input")
+                    .height(48.dp)
+                    .testTag("med_search_input"),
+                decorationBox = { innerTextField ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(
+                                color = MaterialTheme.colorScheme.surface,
+                                shape = RoundedCornerShape(10.dp)
+                            )
+                            .border(
+                                width = 1.dp,
+                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
+                                shape = RoundedCornerShape(10.dp)
+                            )
+                            .padding(horizontal = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Search,
+                            contentDescription = "Search",
+                            tint = MaterialTheme.colorScheme.outline,
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Box(
+                            modifier = Modifier.weight(1f),
+                            contentAlignment = Alignment.CenterStart
+                        ) {
+                            if (searchQuery.isEmpty()) {
+                                Text(
+                                    text = "Search meds...",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.7f),
+                                    fontSize = 13.sp
+                                )
+                            }
+                            innerTextField()
+                        }
+                    }
+                }
             )
 
-            // Add Med FAB icon button
+            // Add Med button (Cohesive 48dp size)
             IconButton(
                 onClick = onAddNewClick,
                 colors = IconButtonDefaults.iconButtonColors(
@@ -1708,62 +1896,137 @@ fun InventoryTabContent(
                     contentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 ),
                 modifier = Modifier
-                    .size(52.dp)
-                    .clip(RoundedCornerShape(12.dp))
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(10.dp))
                     .testTag("add_item_button")
             ) {
                 Icon(Icons.Filled.Add, contentDescription = "Add New Medicine")
             }
         }
 
-        Spacer(modifier = Modifier.height(10.dp))
-
-        // Filters Pill Row
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Category scroll dropdown simulation or label
-            Text(
-                text = "Filter:",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.outline
-            )
-
-            // Category select scroll row
-            CustomScrollableFilterRow(
-                categories = categories,
-                selectedCategory = filterCategory,
-                onSelected = { filterCategory = it }
-            )
-        }
-
-        Spacer(modifier = Modifier.height(6.dp))
-
-        // Checkbox filter low stock list
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .clickable { showOnlyLowStock = !showOnlyLowStock }
-                .padding(vertical = 4.dp)
-        ) {
-            Checkbox(
-                checked = showOnlyLowStock,
-                onCheckedChange = { showOnlyLowStock = it },
-                colors = CheckboxDefaults.colors(checkedColor = WarningRed)
-            )
-            Text(
-                text = "Show Only Low Stock Warnings",
-                style = MaterialTheme.typography.bodySmall,
-                fontWeight = FontWeight.Bold,
-                color = if (showOnlyLowStock) WarningRed else MaterialTheme.colorScheme.onSurface
-            )
-        }
-
         Spacer(modifier = Modifier.height(8.dp))
 
-        if (filteredList.isEmpty()) {
+        // Unified Horizontal Filter Ribbon (saves an entire line!)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Filter:",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.outline,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(end = 2.dp)
+            )
+
+            androidx.compose.foundation.lazy.LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
+                // Interactive warning low-stock chip
+                item {
+                    val activeLowStock = showOnlyLowStock
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(
+                                if (activeLowStock) WarningRed 
+                                else WarningRed.copy(alpha = 0.08f)
+                            )
+                            .border(
+                                width = 1.dp,
+                                color = if (activeLowStock) Color.Transparent else WarningRed.copy(alpha = 0.2f),
+                                shape = RoundedCornerShape(10.dp)
+                            )
+                            .clickable { showOnlyLowStock = !showOnlyLowStock }
+                            .padding(horizontal = 12.dp, vertical = 7.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Icon(
+                                imageVector = Icons.Filled.Warning,
+                                contentDescription = null,
+                                tint = if (activeLowStock) Color.White else WarningRed,
+                                modifier = Modifier.size(12.dp)
+                            )
+                            Text(
+                                text = "Low Stock",
+                                color = if (activeLowStock) Color.White else WarningRed,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+                }
+
+                // Ribbon Divider
+                item {
+                    Box(
+                        modifier = Modifier
+                            .width(1.dp)
+                            .height(20.dp)
+                            .background(SlateBorderLight)
+                    )
+                }
+
+                // Category badges
+                items(categories) { cat ->
+                    val isSelected = cat == filterCategory
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(
+                                if (isSelected) TealPrimary 
+                                else SlateBackgroundLight
+                            )
+                            .border(
+                                width = 1.dp,
+                                color = if (isSelected) Color.Transparent else SlateBorderLight,
+                                shape = RoundedCornerShape(10.dp)
+                            )
+                            .clickable { filterCategory = cat }
+                            .padding(horizontal = 14.dp, vertical = 7.dp)
+                    ) {
+                        Text(
+                            text = cat,
+                            color = if (isSelected) Color.White 
+                                    else SlateTextMedium,
+                            fontSize = 12.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+
+        if (isLoading) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(32.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    androidx.compose.material3.CircularProgressIndicator(
+                        color = MaterialTheme.colorScheme.primary,
+                        strokeWidth = 3.dp,
+                        modifier = Modifier.size(44.dp)
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "Loading Stock Data...",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                    )
+                }
+            }
+        } else if (filteredList.isEmpty()) {
             EmptyStatePlaceholder(
                 message = "No matching medicines in stock logs.",
                 tip = "Tap the + button to catalog a new medication line."
@@ -1777,7 +2040,7 @@ fun InventoryTabContent(
                     InventoryCard(
                         item = item,
                         onClick = { onMedSelect(item) },
-                        onDelete = { onDeleteClick(item) },
+                        onDelete = { itemToDeleteConfirm = item },
                         onIncrementTen = { onIncrementClick(item) },
                         onAddToCart = { onAddToCart(item) }
                     )
@@ -2007,6 +2270,15 @@ fun VolumesTabContent(
     onLogVolumeClick: () -> Unit,
     onDeleteVolume: (DailyPrescriptionVolume) -> Unit
 ) {
+    var selectedVolumeLogForDetails by remember { mutableStateOf<DailyPrescriptionVolume?>(null) }
+
+    if (selectedVolumeLogForDetails != null) {
+        VolumeLogDetailsDialog(
+            log = selectedVolumeLogForDetails!!,
+            onDismiss = { selectedVolumeLogForDetails = null }
+        )
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -2066,7 +2338,11 @@ fun VolumesTabContent(
                 modifier = Modifier.fillMaxSize()
             ) {
                 items(volumes) { log ->
-                    VolumeLogCard(log = log, onDelete = { onDeleteVolume(log) })
+                    VolumeLogCard(
+                        log = log,
+                        onDelete = { onDeleteVolume(log) },
+                        onCardClick = { selectedVolumeLogForDetails = log }
+                    )
                 }
             }
         }
@@ -2173,7 +2449,8 @@ fun CustomPrescriptionVolumeChart(volumes: List<DailyPrescriptionVolume>) {
 @Composable
 fun VolumeLogCard(
     log: DailyPrescriptionVolume,
-    onDelete: () -> Unit
+    onDelete: () -> Unit,
+    onCardClick: () -> Unit
 ) {
     Card(
         shape = RoundedCornerShape(16.dp),
@@ -2187,6 +2464,7 @@ fun VolumeLogCard(
                 color = SlateBorderLight,
                 shape = RoundedCornerShape(16.dp)
             )
+            .clickable(onClick = onCardClick)
     ) {
         Row(
             modifier = Modifier
@@ -2212,12 +2490,23 @@ fun VolumeLogCard(
             Spacer(modifier = Modifier.width(12.dp))
 
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = log.dateString,
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = log.dateString,
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    if (log.imageUri != null) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Icon(
+                            imageVector = Icons.Filled.Attachment,
+                            contentDescription = "Has image attachment",
+                            tint = TealPrimary,
+                            modifier = Modifier.size(14.dp)
+                        )
+                    }
+                }
                 if (log.notes.isNotEmpty()) {
                     Text(
                         text = log.notes,
@@ -2239,7 +2528,9 @@ fun VolumeLogCard(
             Spacer(modifier = Modifier.width(8.dp))
 
             IconButton(
-                onClick = onDelete,
+                onClick = {
+                    onDelete()
+                },
                 modifier = Modifier.size(32.dp)
             ) {
                 Icon(
@@ -2248,6 +2539,382 @@ fun VolumeLogCard(
                     tint = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
                     modifier = Modifier.size(16.dp)
                 )
+            }
+        }
+    }
+}
+
+@Composable
+fun VolumeLogDetailsDialog(
+    log: DailyPrescriptionVolume,
+    onDismiss: () -> Unit
+) {
+    var showLightbox by remember { mutableStateOf(false) }
+
+    if (showLightbox && log.imageUri != null) {
+        VolumeLogImageLightbox(
+            imageUri = log.imageUri,
+            onDismiss = { showLightbox = false }
+        )
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Filled.CalendarToday,
+                        contentDescription = null,
+                        tint = TealPrimary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = log.dateString,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(OKGreenContainer)
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                ) {
+                    Text(
+                        text = "${log.volume} Rx",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = TealPrimary
+                    )
+                }
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Peak Efficiency Rating Banner
+                val workloadText = when {
+                    log.volume < 10 -> "Light Shift Demand"
+                    log.volume <= 25 -> "Highly Efficient Coverage"
+                    else -> "Extremely Busy Workflow Peak"
+                }
+                val workloadColor = when {
+                    log.volume < 10 -> MaterialTheme.colorScheme.outline
+                    log.volume <= 25 -> OKGreen
+                    else -> Color(0xFFE65100)
+                }
+                val workloadBg = when {
+                    log.volume < 10 -> MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)
+                    log.volume <= 25 -> OKGreenContainer
+                    else -> Color(0xFFFFE0B2)
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(workloadBg)
+                        .padding(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Verified,
+                        contentDescription = null,
+                        tint = workloadColor,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = workloadText,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Bold,
+                        color = workloadColor
+                    )
+                }
+
+                // Image/Attachment Section
+                if (log.imageUri != null) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            text = "SHIFT ATTACHMENT",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(180.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .border(1.dp, SlateBorderLight, RoundedCornerShape(12.dp))
+                                .clickable { showLightbox = true },
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                        ) {
+                            Box(modifier = Modifier.fillMaxSize()) {
+                                coil.compose.AsyncImage(
+                                    model = log.imageUri,
+                                    contentDescription = "Prescription report photo",
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                                )
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.BottomEnd)
+                                        .padding(8.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(Color.Black.copy(alpha = 0.6f))
+                                        .padding(horizontal = 6.dp, vertical = 4.dp)
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = Icons.Filled.ZoomIn,
+                                            contentDescription = "Zoom",
+                                            tint = Color.White,
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text(
+                                            text = "Tap to enlarge",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = Color.White
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Notes Section
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "SHIFT LOG REPORT (MARKDOWN)",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+                    if (log.notes.isBlank()) {
+                        Text(
+                            text = "No shift report notes captured for this shift.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontStyle = FontStyle.Italic,
+                            color = SlateTextMedium
+                        )
+                    } else {
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(1.dp, SlateBorderLight, RoundedCornerShape(12.dp))
+                        ) {
+                            Box(modifier = Modifier.padding(12.dp)) {
+                                CompactMarkdownView(text = log.notes)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onDismiss) {
+                Text("Close Details")
+            }
+        }
+    )
+}
+
+@Composable
+fun VolumeLogImageLightbox(
+    imageUri: String,
+    onDismiss: () -> Unit
+) {
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = onDismiss
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(1.2f)
+                .clip(RoundedCornerShape(16.dp))
+                .background(Color.Black)
+                .border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(16.dp))
+                .clickable { onDismiss() },
+            contentAlignment = Alignment.Center
+        ) {
+            coil.compose.AsyncImage(
+                model = imageUri,
+                contentDescription = "Enlarged Shift Photo",
+                modifier = Modifier.fillMaxSize(),
+                contentScale = androidx.compose.ui.layout.ContentScale.Fit
+            )
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(8.dp)
+                    .background(Color.Black.copy(alpha = 0.6f), CircleShape)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Close,
+                    contentDescription = "Close zoom",
+                    tint = Color.White
+                )
+            }
+        }
+    }
+}
+
+fun parseMarkdownToAnnotatedString(text: String, primaryColor: Color): AnnotatedString {
+    return buildAnnotatedString {
+        var i = 0
+        while (i < text.length) {
+            if (text.startsWith("**", i)) {
+                val end = text.indexOf("**", i + 2)
+                if (end != -1) {
+                    withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+                        append(text.substring(i + 2, end))
+                    }
+                    i = end + 2
+                } else {
+                    append("**")
+                    i += 2
+                }
+            } else if (text.startsWith("*", i)) {
+                val end = text.indexOf("*", i + 1)
+                if (end != -1) {
+                    withStyle(SpanStyle(fontStyle = FontStyle.Italic)) {
+                        append(text.substring(i + 1, end))
+                    }
+                    i = end + 1
+                } else {
+                    append("*")
+                    i += 1
+                }
+            } else if (text.startsWith("`", i)) {
+                val end = text.indexOf("`", i + 1)
+                if (end != -1) {
+                    withStyle(SpanStyle(
+                        fontFamily = FontFamily.Monospace,
+                        background = primaryColor.copy(alpha = 0.1f),
+                        color = primaryColor
+                    )) {
+                        append(text.substring(i + 1, end))
+                    }
+                    i = end + 1
+                } else {
+                    append("`")
+                    i += 1
+                }
+            } else {
+                append(text[i])
+                i++
+            }
+        }
+    }
+}
+
+@Composable
+fun CompactMarkdownView(text: String) {
+    val lines = text.split("\n")
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        lines.forEach { line ->
+            val trimmed = line.trim()
+            when {
+                trimmed.startsWith("### ") -> {
+                    Text(
+                        text = parseMarkdownToAnnotatedString(trimmed.removePrefix("### "), MaterialTheme.colorScheme.primary),
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
+                    )
+                }
+                trimmed.startsWith("## ") -> {
+                    Text(
+                        text = parseMarkdownToAnnotatedString(trimmed.removePrefix("## "), MaterialTheme.colorScheme.primary),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(top = 6.dp, bottom = 3.dp)
+                    )
+                }
+                trimmed.startsWith("# ") -> {
+                    Text(
+                        text = parseMarkdownToAnnotatedString(trimmed.removePrefix("# "), MaterialTheme.colorScheme.primary),
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Black,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)
+                    )
+                }
+                trimmed.startsWith("- ") || trimmed.startsWith("* ") -> {
+                    val listContent = if (trimmed.startsWith("- ")) trimmed.removePrefix("- ") else trimmed.removePrefix("* ")
+                    Row(
+                        modifier = Modifier.padding(start = 8.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Text(
+                            text = "•",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.secondary,
+                            modifier = Modifier.padding(end = 8.dp)
+                        )
+                        Text(
+                            text = parseMarkdownToAnnotatedString(listContent, MaterialTheme.colorScheme.primary),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+                trimmed.startsWith("> ") -> {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp, horizontal = 4.dp)
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.05f), RoundedCornerShape(4.dp))
+                            .border(
+                                width = 2.dp,
+                                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
+                                shape = RoundedCornerShape(topStart = 4.dp, bottomStart = 4.dp)
+                            )
+                            .padding(8.dp)
+                    ) {
+                        Text(
+                            text = parseMarkdownToAnnotatedString(trimmed.removePrefix("> "), MaterialTheme.colorScheme.primary),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontStyle = FontStyle.Italic,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                else -> {
+                    if (trimmed.isNotEmpty()) {
+                        Text(
+                            text = parseMarkdownToAnnotatedString(trimmed, MaterialTheme.colorScheme.primary),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    } else {
+                        Spacer(modifier = Modifier.height(4.dp))
+                    }
+                }
             }
         }
     }
@@ -2358,9 +3025,33 @@ fun AddEditMedDialog(
     val categoriesList = listOf("Antibiotic", "Analgesic", "Antidiabetic", "Cardiology", "Respiratory", "Antimalarial", "PEP", "Antihypertensives", "Vitamins", "Other")
 
     var isError by remember { mutableStateOf(false) }
+    var showDiscardConfirm by remember { mutableStateOf(false) }
+
+    val isFormDirty = name.isNotBlank() ||
+                      brand.isNotBlank() ||
+                      dosage != "500mg" ||
+                      unitForm.isNotBlank() ||
+                      stock != "50" ||
+                      minStock != "15" ||
+                      category != "Antibiotic" ||
+                      price != "0.0" ||
+                      expiryDateStr.isNotBlank() ||
+                      batchNumber.isNotBlank() ||
+                      supplier.isNotBlank() ||
+                      imageUri != null
+
+    if (showDiscardConfirm) {
+        DiscardChangesConfirmationDialog(
+            onConfirmDiscard = {
+                showDiscardConfirm = false
+                onDismiss()
+            },
+            onDismissConfirm = { showDiscardConfirm = false }
+        )
+    }
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (isFormDirty) showDiscardConfirm = true else onDismiss() },
         title = {
             Text(
                 text = "New Medication Record",
@@ -2546,7 +3237,7 @@ fun AddEditMedDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(onClick = { if (isFormDirty) showDiscardConfirm = true else onDismiss() }) {
                 Text("Cancel")
             }
         }
@@ -2559,6 +3250,7 @@ fun AddEditMedDialog(
 @Composable
 fun EditStockQuantityDialog(
     item: InventoryItem,
+    viewModel: PharmacyViewModel,
     onDismiss: () -> Unit,
     onConfirm: (String, String, Int, Int, String, Double, Long?, String, String, String?, String, String) -> Unit
 ) {
@@ -2737,6 +3429,227 @@ fun EditStockQuantityDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                Spacer(modifier = Modifier.height(16.dp))
+                HorizontalDivider(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f))
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "COMPLIANCE STOCK MANAGEMENT",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.sp,
+                    color = Color(0xFF10B981),
+                    letterSpacing = 1.sp
+                )
+                Text(
+                    text = "Log immutable transactions for transfers, returns, or spoilage write-offs.",
+                    fontSize = 10.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                var showTransferForm by remember { mutableStateOf(false) }
+                var showReturnForm by remember { mutableStateOf(false) }
+                var showWriteoffForm by remember { mutableStateOf(false) }
+
+                // 1. Branch Transfer Form
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().clickable { showTransferForm = !showTransferForm },
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.SwapHoriz, contentDescription = null, tint = Color(0xFF10B981))
+                                Text("Inter-Branch Stock Transfer", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            }
+                            Icon(if (showTransferForm) Icons.Default.ExpandLess else Icons.Default.ExpandMore, contentDescription = null)
+                        }
+                        if (showTransferForm) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            var destinationBranch by remember { mutableStateOf("") }
+                            var transferQty by remember { mutableStateOf("") }
+                            var transferReason by remember { mutableStateOf("") }
+
+                            OutlinedTextField(
+                                value = destinationBranch,
+                                onValueChange = { destinationBranch = it },
+                                label = { Text("Destination Branch Code/Name") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            OutlinedTextField(
+                                value = transferQty,
+                                onValueChange = { transferQty = it },
+                                label = { Text("Quantity to Transfer") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            OutlinedTextField(
+                                value = transferReason,
+                                onValueChange = { transferReason = it },
+                                label = { Text("Authorized Reason / Approval Ref") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Button(
+                                onClick = {
+                                    val qty = transferQty.toIntOrNull() ?: 0
+                                    if (destinationBranch.isBlank() || qty <= 0 || transferReason.isBlank()) {
+                                        android.widget.Toast.makeText(appContext, "Please enter all transfer parameters", android.widget.Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        viewModel.performBranchTransfer(item, qty, destinationBranch, transferReason)
+                                        showTransferForm = false
+                                        stock = (item.stockQuantity - qty).coerceAtLeast(0).toString()
+                                    }
+                                },
+                                modifier = Modifier.align(Alignment.End),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981))
+                            ) {
+                                Text("Execute Transfer", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            }
+                        }
+                    }
+                }
+
+                // 2. Customer Return Form
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().clickable { showReturnForm = !showReturnForm },
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.KeyboardReturn, contentDescription = null, tint = Color(0xFF10B981))
+                                Text("Customer Product Return", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            }
+                            Icon(if (showReturnForm) Icons.Default.ExpandLess else Icons.Default.ExpandMore, contentDescription = null)
+                        }
+                        if (showReturnForm) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            var customerName by remember { mutableStateOf("") }
+                            var returnQty by remember { mutableStateOf("") }
+                            var returnReason by remember { mutableStateOf("") }
+
+                            OutlinedTextField(
+                                value = customerName,
+                                onValueChange = { customerName = it },
+                                label = { Text("Customer Name / Receipt Info") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            OutlinedTextField(
+                                value = returnQty,
+                                onValueChange = { returnQty = it },
+                                label = { Text("Returned Quantity") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            OutlinedTextField(
+                                value = returnReason,
+                                onValueChange = { returnReason = it },
+                                label = { Text("Return Dispensation Justification") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Button(
+                                onClick = {
+                                    val qty = returnQty.toIntOrNull() ?: 0
+                                    if (customerName.isBlank() || qty <= 0 || returnReason.isBlank()) {
+                                        android.widget.Toast.makeText(appContext, "Please enter all return parameters", android.widget.Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        viewModel.performReturn(item, qty, customerName, returnReason)
+                                        showReturnForm = false
+                                        stock = (item.stockQuantity + qty).toString()
+                                    }
+                                },
+                                modifier = Modifier.align(Alignment.End),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981))
+                            ) {
+                                Text("Log Return", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            }
+                        }
+                    }
+                }
+
+                // 3. Expiry / Damaged Write-off Form
+                Card(
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().clickable { showWriteoffForm = !showWriteoffForm },
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.DeleteForever, contentDescription = null, tint = Color(0xFF10B981))
+                                Text("Expiry / Spoilage Write-Off", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            }
+                            Icon(if (showWriteoffForm) Icons.Default.ExpandLess else Icons.Default.ExpandMore, contentDescription = null)
+                        }
+                        if (showWriteoffForm) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            var writeoffQty by remember { mutableStateOf("") }
+                            var writeoffReason by remember { mutableStateOf("") }
+
+                            OutlinedTextField(
+                                value = writeoffQty,
+                                onValueChange = { writeoffQty = it },
+                                label = { Text("Quantity to Write Off") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            OutlinedTextField(
+                                value = writeoffReason,
+                                onValueChange = { writeoffReason = it },
+                                label = { Text("Spoilage / Damage Audit Documentation") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Button(
+                                onClick = {
+                                    val qty = writeoffQty.toIntOrNull() ?: 0
+                                    if (qty <= 0 || writeoffReason.isBlank()) {
+                                        android.widget.Toast.makeText(appContext, "Please enter write-off metrics and justification", android.widget.Toast.LENGTH_SHORT).show()
+                                    } else {
+                                        viewModel.performExpiryWriteOff(item, qty, writeoffReason)
+                                        showWriteoffForm = false
+                                        stock = (item.stockQuantity - qty).coerceAtLeast(0).toString()
+                                    }
+                                },
+                                modifier = Modifier.align(Alignment.End),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981))
+                            ) {
+                                Text("Log Stock Loss", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            }
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
@@ -2772,29 +3685,70 @@ fun EditStockQuantityDialog(
 // ==========================================
 // DIALOG: 3. Log Daily Volume Dialog
 // ==========================================
+// ==========================================
+// DIALOG: 3. Log Daily Volume Dialog
+// ==========================================
 @Composable
 fun LogVolumeDialog(
     onDismiss: () -> Unit,
-    onConfirm: (String, Int, String) -> Unit
+    onConfirm: (String, Int, String, String?) -> Unit
 ) {
+    val appContext = LocalContext.current
     val sdf = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()) }
     var dateString by remember { mutableStateOf(sdf.format(Date())) }
     var volumeString by remember { mutableStateOf("") }
     var notes by remember { mutableStateOf("") }
+    var imageUri by remember { mutableStateOf<String?>(null) }
 
     var isError by remember { mutableStateOf(false) }
+    var showDiscardConfirm by remember { mutableStateOf(false) }
+
+    val imageLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
+        contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
+    ) { uri: android.net.Uri? ->
+        if (uri != null) {
+            val savedUri = saveImageToInternalStorage(appContext, uri)
+            imageUri = savedUri?.toString()
+        }
+    }
+
+    val isFormDirty = volumeString.isNotBlank() || notes.isNotBlank() || imageUri != null
+
+    if (showDiscardConfirm) {
+        DiscardChangesConfirmationDialog(
+            onConfirmDiscard = {
+                showDiscardConfirm = false
+                onDismiss()
+            },
+            onDismissConfirm = { showDiscardConfirm = false }
+        )
+    }
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (isFormDirty) showDiscardConfirm = true else onDismiss() },
         title = {
-            Text(
-                text = "Log Daily Shift Rx Volume",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Filled.DriveFileRenameOutline,
+                    contentDescription = null,
+                    tint = TealPrimary,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Log Daily Shift Rx Volume",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 if (isError) {
                     Text(
                         text = "A valid prescription count is required.",
@@ -2808,6 +3762,7 @@ fun LogVolumeDialog(
                     onValueChange = { dateString = it },
                     label = { Text("Date (YYYY-MM-DD)") },
                     singleLine = true,
+                    leadingIcon = { Icon(Icons.Filled.DateRange, contentDescription = null, tint = TealPrimary) },
                     modifier = Modifier.fillMaxWidth()
                 )
 
@@ -2817,16 +3772,158 @@ fun LogVolumeDialog(
                     label = { Text("Prescriptions Filled (Count)") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     singleLine = true,
+                    leadingIcon = { Icon(Icons.Filled.Tag, contentDescription = null, tint = TealPrimary) },
                     modifier = Modifier.fillMaxWidth()
                 )
 
                 OutlinedTextField(
                     value = notes,
                     onValueChange = { notes = it },
-                    label = { Text("Shift Notes (Optional)") },
-                    maxLines = 2,
+                    label = { Text("Shift Notes (Markdown Supported!)") },
+                    placeholder = { Text("Use **bold**, # titles, - bullet points...") },
+                    maxLines = 8,
+                    leadingIcon = { Icon(Icons.Filled.EditNote, contentDescription = null, tint = TealPrimary) },
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                // Live Markdown Preview Card
+                if (notes.isNotBlank()) {
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = "Live Markdown Preview",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = TealPrimary
+                            )
+                            Text(
+                                text = "Rich Formatting Active",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontStyle = FontStyle.Italic,
+                                color = OKGreen
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                            ),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(1.dp, SlateBorderLight, RoundedCornerShape(12.dp))
+                        ) {
+                            Box(modifier = Modifier.padding(10.dp)) {
+                                CompactMarkdownView(text = notes)
+                            }
+                        }
+                    }
+                }
+
+                // Photo attachment section
+                Text(
+                    text = "Shift Image Attachment (Optional)",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.outline
+                )
+
+                if (imageUri == null) {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f)),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(80.dp)
+                            .border(
+                                width = 1.dp,
+                                color = SlateBorderLight,
+                                shape = RoundedCornerShape(12.dp)
+                            ),
+                        onClick = { imageLauncher.launch("image/*") }
+                    ) {
+                        Column(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.Center,
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.AddAPhoto,
+                                contentDescription = null,
+                                tint = TealPrimary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Choose Report Photo from Device",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = SlateTextMedium,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+
+                    // Pre-made clinical templates for instant evaluation/convenience
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "Or attach pre-set clinical mock template:",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        val templates = listOf(
+                            "📝 Report" to "https://picsum.photos/id/201/600/400",
+                            "📊 Chart" to "https://picsum.photos/id/180/600/400",
+                            "🖥️ Log" to "https://picsum.photos/id/60/600/400"
+                        )
+                        templates.forEach { (label, url) ->
+                            AssistChip(
+                                onClick = { imageUri = url },
+                                label = { Text(label, style = MaterialTheme.typography.labelSmall) },
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                        }
+                    }
+                } else {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(130.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .border(1.dp, SlateBorderLight, RoundedCornerShape(12.dp))
+                    ) {
+                        Box(modifier = Modifier.fillMaxSize()) {
+                            coil.compose.AsyncImage(
+                                model = imageUri,
+                                contentDescription = "Selected photo",
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                            )
+                            IconButton(
+                                onClick = { imageUri = null },
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(8.dp)
+                                    .background(Color.Black.copy(alpha = 0.6f), CircleShape)
+                                    .size(28.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Delete,
+                                    contentDescription = "Remove photo",
+                                    tint = Color.White,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            }
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
@@ -2836,7 +3933,7 @@ fun LogVolumeDialog(
                     if (count == null || count < 0) {
                         isError = true
                     } else {
-                        onConfirm(dateString, count, notes)
+                        onConfirm(dateString, count, notes, imageUri)
                     }
                 }
             ) {
@@ -2844,8 +3941,54 @@ fun LogVolumeDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(onClick = { if (isFormDirty) showDiscardConfirm = true else onDismiss() }) {
                 Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+fun DiscardChangesConfirmationDialog(
+    onConfirmDiscard: () -> Unit,
+    onDismissConfirm: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismissConfirm,
+        icon = {
+            Icon(
+                imageVector = Icons.Filled.Warning,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error
+            )
+        },
+        title = {
+            Text(
+                text = "Unsaved Changes",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+        },
+        text = {
+            Text(
+                text = "You have unsaved details in this form. Are you sure you want to discard your progress?",
+                style = MaterialTheme.typography.bodyMedium
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = onConfirmDiscard,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError
+                )
+            ) {
+                Text("Discard Details")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismissConfirm) {
+                Text("Keep Editing")
             }
         }
     )
@@ -3373,6 +4516,15 @@ fun AddToCartDialog(
     }
 
     var useRecommendation by remember { mutableStateOf(recommendation != null) }
+    val confirmedItem = if (recommendation != null && useRecommendation) recommendation else item
+    val qParsed = quantity.toIntOrNull()
+
+    val errorMessage = when {
+        quantity.isBlank() -> "Please enter a quantity"
+        qParsed == null || qParsed <= 0 -> "Quantity must be greater than 0"
+        qParsed > confirmedItem.stockQuantity -> "Exceeds available stock (${confirmedItem.stockQuantity} available)"
+        else -> null
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -3383,6 +4535,7 @@ fun AddToCartDialog(
             Column {
                 Text("Item: ${item.name}", style = MaterialTheme.typography.bodyMedium)
                 Text("Price: ₦${"%,.2f".format(item.price)}", style = MaterialTheme.typography.bodyMedium)
+                Text("Available Stock: ${confirmedItem.stockQuantity}", style = MaterialTheme.typography.bodySmall, color = AppThemeManager.slateTextMedium)
                 
                 if (recommendation != null) {
                     Spacer(modifier = Modifier.height(16.dp))
@@ -3411,16 +4564,29 @@ fun AddToCartDialog(
                     onValueChange = { quantity = it },
                     label = { Text("Quantity") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true
+                    isError = errorMessage != null,
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
                 )
+                if (errorMessage != null) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = errorMessage,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
             }
         },
         confirmButton = {
-            Button(onClick = {
-                val q = quantity.toIntOrNull() ?: 1
-                val confirmedItem = if (recommendation != null && useRecommendation) recommendation else item
-                onConfirm(confirmedItem, q)
-            }) { Text("Add") }
+            Button(
+                onClick = {
+                    if (qParsed != null && errorMessage == null) {
+                        onConfirm(confirmedItem, qParsed)
+                    }
+                },
+                enabled = errorMessage == null
+            ) { Text("Add") }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }
@@ -3437,6 +4603,7 @@ fun CartTabContent(
     onRemoveItem: (Int) -> Unit,
     onNeedRefillChange: (Int, Boolean) -> Unit,
     onCheckout: (Customer?, Double, String, Boolean, String) -> Unit,
+    onClearCart: () -> Unit,
     context: android.content.Context
 ) {
     var selectedCustomer by remember { mutableStateOf<Customer?>(null) }
@@ -3445,7 +4612,17 @@ fun CartTabContent(
     var deliveryAddress by remember { mutableStateOf("") }
     var paymentMethod by remember { mutableStateOf("Cash") }
 
-    val deliveryFee = deliveryFeeString.toDoubleOrNull() ?: 0.0
+    // Dynamic delivery check state
+    var needsDelivery by remember { mutableStateOf(false) }
+
+    LaunchedEffect(deliveryFeeString) {
+        val parsedFee = deliveryFeeString.toDoubleOrNull() ?: 0.0
+        if (parsedFee > 0.0) {
+            needsDelivery = true
+        }
+    }
+
+    val deliveryFee = if (needsDelivery) (deliveryFeeString.toDoubleOrNull() ?: 0.0) else 0.0
     val subtotal = cartItems.sumOf { it.inventoryItem.price * it.quantity }
     val total = subtotal + deliveryFee
 
@@ -3454,18 +4631,149 @@ fun CartTabContent(
         com.example.data.ClinicalDdiEngine.checkInteractions(names)
     }
 
+    var showClearCartConfirm by remember { mutableStateOf(false) }
+
+    if (showClearCartConfirm) {
+        AlertDialog(
+            onDismissRequest = { showClearCartConfirm = false },
+            icon = {
+                Icon(
+                    imageVector = Icons.Filled.DeleteSweep,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(36.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "Clear Cart?",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Text(
+                    text = "Are you sure you want to remove all items from your current cart? This will also return their quantities back to the stock.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onClearCart()
+                        showClearCartConfirm = false
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    ),
+                    modifier = Modifier.testTag("confirm_clear_cart_button")
+                ) {
+                    Text("Clear Cart")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showClearCartConfirm = false },
+                    modifier = Modifier.testTag("cancel_clear_cart_button")
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
     Column(modifier = Modifier.fillMaxSize().padding(bottom = 16.dp)) {
         if (cartItems.isEmpty()) {
-            Text("Current Cart", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Spacer(modifier = Modifier.height(16.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(bottom = 12.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.ShoppingBag,
+                    contentDescription = null,
+                    tint = TealPrimary,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Current Cart",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+            }
             EmptyStatePlaceholder(message = "Cart is empty", tip = "Add items from the Stock tab.")
             return
         }
 
-        LazyColumn(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
             item {
-                Text("Current Cart", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Spacer(modifier = Modifier.height(16.dp))
+                Row(
+                    verticalAlignment = Alignment.Top,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 12.dp)
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Filled.ShoppingBag,
+                                contentDescription = null,
+                                tint = TealPrimary,
+                                modifier = Modifier.size(26.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                "Current Cart",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                        Text(
+                            text = "Review items and select distribution parameters",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = AppThemeManager.slateTextMedium
+                        )
+                    }
+                    
+                    Column(horizontalAlignment = Alignment.End) {
+                        // Clear Cart button
+                        androidx.compose.material3.TextButton(
+                            onClick = { showClearCartConfirm = true },
+                            colors = androidx.compose.material3.ButtonDefaults.textButtonColors(
+                                contentColor = MaterialTheme.colorScheme.error
+                            ),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                            modifier = Modifier.height(32.dp).testTag("clear_cart_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Delete,
+                                contentDescription = "Clear all",
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Clear Cart", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        // Cute pill showing total items inside the cart
+                        androidx.compose.material3.Surface(
+                            color = TealPrimary.copy(alpha = 0.15f),
+                            shape = RoundedCornerShape(20.dp)
+                        ) {
+                            Text(
+                                text = "${cartItems.size} ${if (cartItems.size == 1) "Med" else "Meds"}",
+                                color = TealPrimary,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+                }
 
                 if (cartWarnings.isNotEmpty()) {
                     Card(
@@ -3475,33 +4783,33 @@ fun CartTabContent(
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(bottom = 16.dp)
+                            .padding(bottom = 12.dp)
                             .border(1.dp, MaterialTheme.colorScheme.error, RoundedCornerShape(12.dp))
                     ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
+                        Column(modifier = Modifier.padding(14.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
                                     imageVector = Icons.Filled.Warning,
                                     contentDescription = "Dispensing Warning Icon",
                                     tint = MaterialTheme.colorScheme.error,
-                                    modifier = Modifier.size(24.dp)
+                                    modifier = Modifier.size(20.dp)
                                 )
-                                Spacer(modifier = Modifier.width(10.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
                                 Text(
-                                    text = "Dispensing Contraindication Warning!",
+                                    text = "Clinical Contraindication Warning!",
                                     style = MaterialTheme.typography.titleSmall,
                                     color = MaterialTheme.colorScheme.onErrorContainer,
                                     fontWeight = FontWeight.Bold
                                 )
                             }
-                            Spacer(modifier = Modifier.height(8.dp))
+                            Spacer(modifier = Modifier.height(6.dp))
                             cartWarnings.forEach { warning ->
                                 Text(
                                     text = warning,
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onErrorContainer,
                                     lineHeight = 16.sp,
-                                    modifier = Modifier.padding(vertical = 4.dp)
+                                    modifier = Modifier.padding(vertical = 2.dp)
                                 )
                             }
                         }
@@ -3511,103 +4819,426 @@ fun CartTabContent(
 
             items(cartItems) { item ->
                 Card(
-                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                    colors = CardDefaults.cardColors(containerColor = SlateBackgroundLight)
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    shape = RoundedCornerShape(16.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, AppThemeManager.slateBorderLight)
                 ) {
-                    Row(
-                        modifier = Modifier.padding(16.dp).fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text(item.inventoryItem.name, fontWeight = FontWeight.Bold)
-                            Text("Qty: ${item.quantity} x ₦${"%,.2f".format(item.inventoryItem.price)}")
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Checkbox(checked = item.needsRefill, onCheckedChange = { onNeedRefillChange(item.inventoryItem.id, it) })
-                                Text("Create Refill/Active Med", style = MaterialTheme.typography.bodySmall)
+                    Column(modifier = Modifier.padding(14.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            // Weight-allocated column to prevent text overlapping or text break-ups
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = item.inventoryItem.name,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "Unit Cost: ₦${"%,.2f".format(item.inventoryItem.price)}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = AppThemeManager.slateTextMedium
+                                )
+                                Text(
+                                    text = "Quantity Selected: ${item.quantity}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = AppThemeManager.slateTextMedium,
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+
+                            // Dynamic, highly structured Price & Delete Column
+                            Column(
+                                horizontalAlignment = Alignment.End,
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                IconButton(
+                                    onClick = { onRemoveItem(item.inventoryItem.id) },
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                        .background(MaterialTheme.colorScheme.error.copy(alpha = 0.1f), CircleShape)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Delete,
+                                        contentDescription = "Remove",
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "₦${"%,.2f".format(item.inventoryItem.price * item.quantity)}",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TealPrimary
+                                )
                             }
                         }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("₦${"%,.2f".format(item.inventoryItem.price * item.quantity)}", fontWeight = FontWeight.SemiBold)
-                            IconButton(onClick = { onRemoveItem(item.inventoryItem.id) }) {
-                                Icon(Icons.Filled.Delete, contentDescription = "Remove", tint = Color.Red)
+
+                        Spacer(modifier = Modifier.height(8.dp))
+                        HorizontalDivider(color = AppThemeManager.slateBorderLight.copy(alpha = 0.5f))
+
+                        // Custom Interactive Clickable Refill Toggle Chip
+                        androidx.compose.material3.Surface(
+                            onClick = { onNeedRefillChange(item.inventoryItem.id, !item.needsRefill) },
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (item.needsRefill) TealPrimary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f),
+                            border = androidx.compose.foundation.BorderStroke(
+                                width = 1.dp,
+                                color = if (item.needsRefill) TealPrimary.copy(alpha = 0.4f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.2f)
+                            ),
+                            modifier = Modifier
+                                .padding(top = 8.dp)
+                                .align(Alignment.Start)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+                            ) {
+                                Icon(
+                                    imageVector = if (item.needsRefill) Icons.Filled.CheckCircle else Icons.Filled.RadioButtonUnchecked,
+                                    contentDescription = null,
+                                    tint = if (item.needsRefill) TealPrimary else AppThemeManager.slateTextMedium,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Continuous Rx Auto-Refill Active",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Medium,
+                                    color = if (item.needsRefill) TealPrimary else AppThemeManager.slateTextMedium
+                                )
                             }
                         }
                     }
                 }
             }
-            
+
             item {
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(6.dp))
 
-                OutlinedTextField(
-                    value = deliveryFeeString,
-                    onValueChange = onDeliveryFeeChange,
-                    label = { Text("Delivery Fee (₦)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                OutlinedTextField(
-                    value = deliveryAddress,
-                    onValueChange = { deliveryAddress = it },
-                    label = { Text("Delivery Address (Optional)") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                OutlinedTextField(
-                    value = paymentMethod,
-                    onValueChange = { paymentMethod = it },
-                    label = { Text("Payment Method") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-
-                // Customer Selection
-                @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
-                androidx.compose.material3.ExposedDropdownMenuBox(
-                    expanded = expanded,
-                    onExpandedChange = { expanded = it },
-                    modifier = Modifier.fillMaxWidth()
+                // Unified settings card of dispatch configuration
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, AppThemeManager.slateBorderLight)
                 ) {
-                    OutlinedTextField(
-                        value = selectedCustomer?.name ?: "Assign to Customer (Optional)",
-                        onValueChange = {},
-                        readOnly = true,
-                        modifier = Modifier.fillMaxWidth().menuAnchor(androidx.compose.material3.MenuAnchorType.PrimaryNotEditable, true),
-                        trailingIcon = { androidx.compose.material3.ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-                        colors = androidx.compose.material3.ExposedDropdownMenuDefaults.outlinedTextFieldColors()
-                    )
-                    ExposedDropdownMenu(
-                        expanded = expanded,
-                        onDismissRequest = { expanded = false }
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
-                        DropdownMenuItem(text = { Text("None") }, onClick = { selectedCustomer = null; expanded = false })
-                        customers.forEach { cust ->
-                            DropdownMenuItem(text = { Text(cust.name) }, onClick = { selectedCustomer = cust; expanded = false })
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Filled.Settings,
+                                contentDescription = null,
+                                tint = TealPrimary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "LOGISTICS & DISPATCH SETTINGS",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                        }
+
+                        // Logistics delivery toggle switch using beautiful custom selection chips
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            val modes = listOf(
+                                false to "In-Store Pickup",
+                                true to "Home Delivery"
+                            )
+                            modes.forEach { (isDelivery, label) ->
+                                val isSelected = needsDelivery == isDelivery
+                                androidx.compose.material3.Surface(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(44.dp),
+                                    shape = RoundedCornerShape(10.dp),
+                                    color = if (isSelected) TealPrimary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f),
+                                    border = androidx.compose.foundation.BorderStroke(
+                                        width = 1.dp,
+                                        color = if (isSelected) TealPrimary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                                    ),
+                                    onClick = {
+                                        needsDelivery = isDelivery
+                                        if (!isDelivery) {
+                                            onDeliveryFeeChange("0")
+                                        } else if (deliveryFeeString.isEmpty() || deliveryFeeString == "0") {
+                                            onDeliveryFeeChange("1500") // set standard delivery fee
+                                        }
+                                    }
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxSize(),
+                                        horizontalArrangement = Arrangement.Center,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = if (isDelivery) Icons.Filled.LocalShipping else Icons.Filled.ShoppingBag,
+                                            contentDescription = null,
+                                            tint = if (isSelected) TealPrimary else AppThemeManager.slateTextMedium,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = label,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                            color = if (isSelected) TealPrimary else AppThemeManager.slateTextMedium
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // Input fields specifically for Active Shipping Address if shipping is needed
+                        if (needsDelivery) {
+                            OutlinedTextField(
+                                value = deliveryFeeString,
+                                onValueChange = onDeliveryFeeChange,
+                                label = { Text("Delivery Courier Fee (₦)") },
+                                leadingIcon = { Icon(Icons.Filled.LocalShipping, contentDescription = null, tint = TealPrimary) },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                shape = RoundedCornerShape(12.dp),
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+
+                            OutlinedTextField(
+                                value = deliveryAddress,
+                                onValueChange = { deliveryAddress = it },
+                                label = { Text("Client Destination Address") },
+                                placeholder = { Text("Specify complete street shipping location") },
+                                leadingIcon = { Icon(Icons.Filled.Place, contentDescription = null, tint = TealPrimary) },
+                                shape = RoundedCornerShape(12.dp),
+                                isError = deliveryAddress.isBlank(),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+
+                        HorizontalDivider(color = AppThemeManager.slateBorderLight.copy(alpha = 0.5f))
+
+                        // Interactive payment selectors using choice pills
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                text = "Select Financial Settlement Mode",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                val paymentModes = listOf("Cash", "Transfer", "POS")
+                                paymentModes.forEach { payMode ->
+                                    val isSelected = paymentMethod == payMode
+                                    androidx.compose.material3.Surface(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .height(44.dp),
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = if (isSelected) TealPrimary.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f),
+                                        border = androidx.compose.foundation.BorderStroke(
+                                            width = 1.dp,
+                                            color = if (isSelected) TealPrimary else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f)
+                                        ),
+                                        onClick = { paymentMethod = payMode }
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxSize(),
+                                            horizontalArrangement = Arrangement.Center,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                imageVector = if (isSelected) Icons.Filled.CheckCircle else Icons.Filled.Payment,
+                                                contentDescription = null,
+                                                tint = if (isSelected) TealPrimary else AppThemeManager.slateTextMedium,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                text = payMode,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                                color = if (isSelected) TealPrimary else AppThemeManager.slateTextMedium
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        HorizontalDivider(color = AppThemeManager.slateBorderLight.copy(alpha = 0.5f))
+
+                        // Customer Selection Dropdown
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                text = "Client Account Association",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                            @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+                            androidx.compose.material3.ExposedDropdownMenuBox(
+                                expanded = expanded,
+                                onExpandedChange = { expanded = it },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                OutlinedTextField(
+                                    value = selectedCustomer?.name ?: "No Account Tagged (Walk-in)",
+                                    onValueChange = {},
+                                    readOnly = true,
+                                    leadingIcon = { Icon(Icons.Filled.Person, contentDescription = null, tint = TealPrimary) },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .menuAnchor(androidx.compose.material3.MenuAnchorType.PrimaryNotEditable, true),
+                                    trailingIcon = { androidx.compose.material3.ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = androidx.compose.material3.ExposedDropdownMenuDefaults.outlinedTextFieldColors()
+                                )
+                                ExposedDropdownMenu(
+                                    expanded = expanded,
+                                    onDismissRequest = { expanded = false }
+                                ) {
+                                    DropdownMenuItem(
+                                        text = { Text("Walk-in Customer / Cash Sale") },
+                                        onClick = { selectedCustomer = null; expanded = false }
+                                    )
+                                    customers.forEach { cust ->
+                                        DropdownMenuItem(
+                                            text = { Text(cust.name) },
+                                            leadingIcon = { Icon(Icons.Filled.Person, contentDescription = null, tint = TealPrimary) },
+                                            onClick = { selectedCustomer = cust; expanded = false }
+                                        )
+                                    }
+                                }
+                            }
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
-                Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = TealSurface)) {
+                // Sleek Ledger / Paper-style billing transaction card
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, AppThemeManager.slateBorderLight, RoundedCornerShape(16.dp)),
+                    colors = CardDefaults.cardColors(containerColor = TealSurface),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Subtotal: ₦${"%,.2f".format(subtotal)}")
-                        Text("Delivery: ₦${"%,.2f".format(deliveryFee)}")
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                        Text("Total: ₦${"%,.2f".format(total)}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Filled.ReceiptLong,
+                                contentDescription = null,
+                                tint = TealPrimary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                "DISPENSING TRANSACTION BREAKDOWN",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        
+                        Spacer(modifier = Modifier.height(12.dp))
+                        
+                        Row(
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Medications Subtotal", style = MaterialTheme.typography.bodySmall, color = AppThemeManager.slateTextMedium)
+                            Text("₦${"%,.2f".format(subtotal)}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
+                        }
+                        
+                        Spacer(modifier = Modifier.height(6.dp))
+                        
+                        Row(
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Delivery Surcharge", style = MaterialTheme.typography.bodySmall, color = AppThemeManager.slateTextMedium)
+                            Text("₦${"%,.2f".format(deliveryFee)}", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
+                        }
+                        
+                        HorizontalDivider(
+                            modifier = Modifier.padding(vertical = 12.dp),
+                            color = AppThemeManager.slateBorderLight.copy(alpha = 0.5f)
+                        )
+                        
+                        Row(
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                "Total Due",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                "₦${"%,.2f".format(total)}",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Black,
+                                color = if (total > 0.0) OKGreen else TealPrimary
+                            )
+                        }
+
+                        // Instant User Input Verification Warnings
+                        if (needsDelivery && deliveryAddress.isBlank()) {
+                            Spacer(modifier = Modifier.height(14.dp))
+                            androidx.compose.material3.Surface(
+                                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.4f),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Warning,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "Please complete client destination address to dispatch",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onErrorContainer,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(16.dp))
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Multi-Mode double checkout action grid
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    androidx.compose.material3.Button(
                         onClick = {
                             val (invoiceUri, invoiceFileName) = com.example.DocumentGenerator.generateDocument(
                                 context = context,
@@ -3617,7 +5248,7 @@ fun CartTabContent(
                                 totalAmount = total,
                                 customerName = selectedCustomer?.name ?: "Guest",
                                 customerPhone = selectedCustomer?.phoneNumber ?: "+234 000 000 0000",
-                                deliveryAddress = deliveryAddress
+                                deliveryAddress = if (needsDelivery) deliveryAddress else "In-Store Pickup"
                             )
                             if (invoiceUri != null) {
                                 val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
@@ -3632,12 +5263,36 @@ fun CartTabContent(
                             }
                             onCheckout(selectedCustomer, total, invoiceFileName ?: "", true, "Pending")
                         },
-                        modifier = Modifier.weight(1f)
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onSecondaryContainer
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(50.dp)
                     ) {
-                        Text("Send Invoice", style = MaterialTheme.typography.bodySmall)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Send,
+                                contentDescription = null,
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                "Send Invoice",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                            )
+                        }
                     }
 
-                    Button(
+                    androidx.compose.material3.Button(
                         onClick = {
                             val (_, receiptFileName) = com.example.DocumentGenerator.generateDocument(
                                 context = context,
@@ -3647,14 +5302,37 @@ fun CartTabContent(
                                 totalAmount = total,
                                 customerName = selectedCustomer?.name ?: "Guest",
                                 customerPhone = selectedCustomer?.phoneNumber ?: "+234 000 000 0000",
-                                deliveryAddress = deliveryAddress
+                                deliveryAddress = if (needsDelivery) deliveryAddress else "In-Store Pickup"
                             )
                             onCheckout(selectedCustomer, total, receiptFileName ?: "", false, "Paid")
                             Toast.makeText(context, "Sale completed", Toast.LENGTH_SHORT).show()
                         },
-                        modifier = Modifier.weight(1f)
+                        enabled = !needsDelivery || deliveryAddress.isNotBlank(),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = TealPrimary,
+                            contentColor = Color.Black
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(50.dp)
                     ) {
-                        Text("Pay (Checkout)", style = MaterialTheme.typography.bodySmall)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.CheckCircle,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                "Finalize Sale",
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 }
             }
@@ -3773,6 +5451,134 @@ fun DataHubOptionItem(
                         Text("Import", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun CompactDashboardStatsBar(
+    medsCount: Int,
+    lowStockCount: Int,
+    todayVolume: Int,
+    pendingAlerts: Int,
+    isExpanded: Boolean,
+    onToggleExpand: () -> Unit
+) {
+    androidx.compose.material3.Card(
+        shape = RoundedCornerShape(12.dp),
+        colors = androidx.compose.material3.CardDefaults.cardColors(
+            containerColor = SlateBackgroundLight
+        ),
+        border = androidx.compose.foundation.BorderStroke(1.dp, SlateBorderLight),
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onToggleExpand() }
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            // Stats summary grouping
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                // Indicator 1: Tracked
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Icon(
+                        imageVector = Icons.Filled.HealthAndSafety,
+                        contentDescription = null,
+                        tint = TealPrimary,
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Text(
+                        text = medsCount.toString(),
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Bold,
+                        color = TealTertiary
+                    )
+                }
+                
+                // Divider dot
+                Text("•", color = SlateTextMedium.copy(alpha = 0.5f), fontSize = 10.sp)
+
+                // Indicator 2: Low Stock
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Icon(
+                        imageVector = Icons.Filled.Warning,
+                        contentDescription = null,
+                        tint = if (lowStockCount > 0) WarningRed else SlateTextMedium,
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Text(
+                        text = lowStockCount.toString(),
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Bold,
+                        color = if (lowStockCount > 0) WarningRed else TealTertiary
+                    )
+                }
+
+                // Divider dot
+                Text("•", color = SlateTextMedium.copy(alpha = 0.5f), fontSize = 10.sp)
+
+                // Indicator 3: Today's Volume
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Icon(
+                        imageVector = Icons.Filled.ReceiptLong,
+                        contentDescription = null,
+                        tint = TealPrimary,
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Text(
+                        text = todayVolume.toString(),
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Bold,
+                        color = TealTertiary
+                    )
+                }
+
+                // Divider dot
+                Text("•", color = SlateTextMedium.copy(alpha = 0.5f), fontSize = 10.sp)
+
+                // Indicator 4: Pending Alerts
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Icon(
+                        imageVector = Icons.Filled.SmsFailed,
+                        contentDescription = null,
+                        tint = PendingOrange,
+                        modifier = Modifier.size(15.dp)
+                    )
+                    Text(
+                        text = pendingAlerts.toString(),
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Bold,
+                        color = TealTertiary
+                    )
+                }
+            }
+
+            // Expand/Collapse Label and Arrow Action
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Text(
+                    text = if (isExpanded) "Hide" else "Stats",
+                    color = TealPrimary,
+                    style = MaterialTheme.typography.labelSmall,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 11.sp
+                )
+                Icon(
+                    imageVector = if (isExpanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                    contentDescription = if (isExpanded) "Collapse" else "Expand",
+                    tint = TealPrimary,
+                    modifier = Modifier.size(18.dp)
+                )
             }
         }
     }
