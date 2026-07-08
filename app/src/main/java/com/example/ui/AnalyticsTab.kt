@@ -43,6 +43,7 @@ fun AnalyticsTab(viewModel: PharmacyViewModel, isUserAdmin: Boolean = false) {
     val receipts by viewModel.receipts.collectAsStateWithLifecycle()
     val customerMeds by viewModel.customerMedications.collectAsStateWithLifecycle()
     val interventions by viewModel.clinicalInterventions.collectAsStateWithLifecycle()
+    val medicationSales by viewModel.medicationSales.collectAsStateWithLifecycle()
 
     val timeNow = System.currentTimeMillis()
     val dayMs = 24L * 60 * 60 * 1000L
@@ -200,6 +201,207 @@ fun AnalyticsTab(viewModel: PharmacyViewModel, isUserAdmin: Boolean = false) {
                                 text = generatedStrategyText,
                                 modifier = Modifier.fillMaxWidth()
                             )
+
+                            Spacer(modifier = Modifier.height(16.dp))
+                            HorizontalDivider(color = SlateBorderLight)
+                            Spacer(modifier = Modifier.height(12.dp))
+
+                            Text(
+                                "FEFO Action Center (Rescue & Campaigns)",
+                                fontWeight = FontWeight.Bold,
+                                style = MaterialTheme.typography.titleSmall,
+                                color = TealTertiary,
+                                modifier = Modifier.padding(bottom = 8.dp)
+                            )
+
+                            // Math
+                            val recentSales = medicationSales.filter { it.productName.equals(item.name, ignoreCase = true) && it.dateSold >= (System.currentTimeMillis() - 90L * dayMs) }
+                            val totalSoldIn90Days = recentSales.sumOf { it.quantitySold }
+                            val velocityPerDay = totalSoldIn90Days.toDouble() / 90.0
+                            val daysRemaining = maxOf(1L, (item.expiryDate - System.currentTimeMillis()) / dayMs)
+                            val predictedSalesBeforeExpiry = velocityPerDay * daysRemaining
+                            val wasteRunway = maxOf(0.0, item.stockQuantity.toDouble() - predictedSalesBeforeExpiry)
+                            val wasteValue = wasteRunway * item.price
+
+                            // Waste Runway Analysis Card
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = if (wasteRunway > 0) WarningRedContainerSoft else TealSurface),
+                                border = BorderStroke(1.dp, if (wasteRunway > 0) WarningRed.copy(alpha = 0.5f) else TealPrimary.copy(alpha = 0.3f)),
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(
+                                            imageVector = if (wasteRunway > 0) Icons.Filled.TrendingDown else Icons.Filled.CheckCircle,
+                                            contentDescription = null,
+                                            tint = if (wasteRunway > 0) WarningRed else OKGreen,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text(
+                                            text = "Waste Runway Analysis",
+                                            fontWeight = FontWeight.Bold,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = if (wasteRunway > 0) WarningRedTitle else TealTertiary
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(6.dp))
+                                    Text(
+                                        text = "Shelf Velocity: ${"%.2f".format(velocityPerDay * 30.0)} units/month",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = SlateTextMedium
+                                    )
+                                    Text(
+                                        text = "Predicted Sales: ${predictedSalesBeforeExpiry.toInt()} units before expiry",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = SlateTextMedium
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    if (wasteRunway > 0) {
+                                        Text(
+                                            text = "⚠️ Projected Unsold Expired Stock: ${wasteRunway.toInt()} units",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = WarningRed
+                                        )
+                                        Text(
+                                            text = "Projected Financial Loss: ₦${"%,.2f".format(wasteValue)}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = WarningRed
+                                        )
+                                    } else {
+                                        Text(
+                                            text = "✅ Current velocity is sufficient to clear all stock before expiry.",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = OKGreen
+                                        )
+                                    }
+                                }
+                            }
+
+                            // TIER 1: INTERNAL WHATSAPP CAMPAIGN DRIVE
+                            val chronicPatients = customers.filter { cust -> customerMeds.any { med -> med.customerId == cust.id && med.medicationName.contains(item.name, ignoreCase = true) } }
+                            val discountPercent = when {
+                                daysRemaining <= 30 -> 40
+                                daysRemaining <= 60 -> 25
+                                else -> 15
+                            }
+                            val campaignMsg = "Hello! This is Careflux Pharmacy. To thank you for being a valued customer, we are offering an exclusive compliance promotion! Refill your prescription for ${item.name} today and receive an immediate ${discountPercent}% discount! Reply to lock in your discount."
+
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = TealSurface),
+                                border = BorderStroke(1.dp, SlateBorderLight),
+                                modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text(
+                                        "Tier 1: Internal Patient Refill Drive",
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = TealTertiary
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        "Found ${chronicPatients.size} registered chronic patient(s) on this medication.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = SlateTextMedium
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Button(
+                                        onClick = {
+                                            if (chronicPatients.isNotEmpty()) {
+                                                val patient = chronicPatients.first()
+                                                val encoded = android.net.Uri.encode("Hello ${patient.name}, $campaignMsg")
+                                                val url = "https://api.whatsapp.com/send?phone=${patient.phoneNumber.trim().replace("[^0-9]".toRegex(), "")}&text=$encoded"
+                                                val wpIntent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
+                                                try {
+                                                    context.startActivity(wpIntent)
+                                                } catch (e: Exception) {
+                                                    android.widget.Toast.makeText(context, "WhatsApp seems missing.", android.widget.Toast.LENGTH_SHORT).show()
+                                                }
+                                            } else {
+                                                val encoded = android.net.Uri.encode(campaignMsg)
+                                                val url = "https://api.whatsapp.com/send?text=$encoded"
+                                                val wpIntent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
+                                                try {
+                                                    context.startActivity(wpIntent)
+                                                } catch (e: Exception) {
+                                                    android.widget.Toast.makeText(context, "WhatsApp seems missing.", android.widget.Toast.LENGTH_SHORT).show()
+                                                }
+                                            }
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF25D366)),
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Icon(Icons.Filled.Share, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Launch WhatsApp Refill Campaign (${discountPercent}% Off)", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+
+                            // TIER 2: PUBLIC RESCUE MARKETPLACE LISTING
+                            val priceMultiplier = when {
+                                daysRemaining <= 30 -> 0.40
+                                daysRemaining <= 60 -> 0.60
+                                else -> 0.80
+                            }
+                            val suggestedPrice = item.price * priceMultiplier
+
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = TealSurface),
+                                border = BorderStroke(1.dp, SlateBorderLight),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text(
+                                        "Tier 2: Public Rescue Marketplace Pool",
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = TealTertiary
+                                    )
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        "List surplus stock instantly on the Rescue Marketplace to sell to other branches or hospitals.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = SlateTextMedium
+                                    )
+                                    Text(
+                                        "Suggested Price: ₦${"%,.2f".format(suggestedPrice)} (based on shelf life)",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = TealPrimary
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Button(
+                                        onClick = {
+                                            viewModel.createRescueListing(
+                                                inv = item,
+                                                qty = item.stockQuantity,
+                                                price = suggestedPrice,
+                                                commPercentage = 10.0,
+                                                durationDays = daysRemaining.toInt()
+                                            )
+                                            android.widget.Toast.makeText(
+                                                context,
+                                                "Posted ${item.stockQuantity} units of ${item.name} to Rescue Marketplace for ₦${"%,.0f".format(suggestedPrice)}!",
+                                                android.widget.Toast.LENGTH_LONG
+                                            ).show()
+                                            selectedExpiringItem = null
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = TealPrimary, contentColor = Color.Black),
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Icon(Icons.Filled.Store, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Post to Rescue Marketplace", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -267,8 +469,6 @@ fun AnalyticsTab(viewModel: PharmacyViewModel, isUserAdmin: Boolean = false) {
             }
         )
     }
-
-    val medicationSales by viewModel.medicationSales.collectAsStateWithLifecycle()
 
     var activeAnalyticsSubTab by remember { mutableStateOf(0) } // 0 = Operational Metrics, 1 = Demographics Insights
 

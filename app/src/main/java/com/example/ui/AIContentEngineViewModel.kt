@@ -31,7 +31,8 @@ data class CarouselSlide(
     val heading: String,
     val text: String,
     val keyPoints: List<String>,
-    val recommendedProducts: List<String>? = null
+    val recommendedProducts: List<String>? = null,
+    val imageUri: String? = null
 )
 
 enum class PromoUiMode {
@@ -144,7 +145,7 @@ class AIContentEngineViewModel(private val repository: PharmacyRepository) : Vie
     fun viewHistoryItem(carousel: AICarousel) {
         val slides = parseSlides(carousel.slidesJson)
         val response = CarouselResponse(carousel.topicTitle, carousel.caption, slides)
-        _uiState.value = ContentEngineState.Success(response, carousel.visualTheme)
+        _uiState.value = ContentEngineState.Success(response, carousel.visualTheme, carousel.id)
     }
 
     fun deleteCarousel(carousel: AICarousel) {
@@ -164,6 +165,189 @@ class AIContentEngineViewModel(private val repository: PharmacyRepository) : Vie
                 newSlides[slideIndex] = updatedSlide
                 val updatedCarousel = currentState.carousel.copy(slides = newSlides)
                 _uiState.value = currentState.copy(carousel = updatedCarousel)
+                
+                val carouselId = currentState.carouselId
+                if (carouselId != null) {
+                    viewModelScope.launch {
+                        try {
+                            val slidesJson = slidesAdapter.toJson(newSlides)
+                            val updatedCarouselDb = AICarousel(
+                                id = carouselId,
+                                topicTitle = currentState.carousel.topicTitle,
+                                caption = currentState.carousel.caption,
+                                slidesJson = slidesJson,
+                                visualTheme = currentState.theme
+                            )
+                            repository.insertAICarousel(updatedCarouselDb)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fun updateCarouselMeta(newTitle: String, newCaption: String) {
+        val currentState = _uiState.value
+        if (currentState is ContentEngineState.Success) {
+            val updatedCarousel = currentState.carousel.copy(topicTitle = newTitle, caption = newCaption)
+            _uiState.value = currentState.copy(carousel = updatedCarousel)
+            
+            val carouselId = currentState.carouselId
+            if (carouselId != null) {
+                viewModelScope.launch {
+                    try {
+                        val slidesJson = slidesAdapter.toJson(updatedCarousel.slides)
+                        val updatedCarouselDb = AICarousel(
+                            id = carouselId,
+                            topicTitle = newTitle,
+                            caption = newCaption,
+                            slidesJson = slidesJson,
+                            visualTheme = currentState.theme
+                        )
+                        repository.insertAICarousel(updatedCarouselDb)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+            }
+        }
+    }
+
+    fun moveSlide(slideIndex: Int, direction: Int) {
+        val currentState = _uiState.value
+        if (currentState is ContentEngineState.Success) {
+            val newSlides = currentState.carousel.slides.toMutableList()
+            val targetIndex = slideIndex + direction
+            if (slideIndex in newSlides.indices && targetIndex in newSlides.indices) {
+                val slide = newSlides.removeAt(slideIndex)
+                newSlides.add(targetIndex, slide)
+                val adjustedSlides = newSlides.mapIndexed { i, s -> s.copy(slideNumber = i + 1) }
+                val updatedCarousel = currentState.carousel.copy(slides = adjustedSlides)
+                _uiState.value = currentState.copy(carousel = updatedCarousel)
+                
+                val carouselId = currentState.carouselId
+                if (carouselId != null) {
+                    viewModelScope.launch {
+                        try {
+                            val slidesJson = slidesAdapter.toJson(adjustedSlides)
+                            val updatedCarouselDb = AICarousel(
+                                id = carouselId,
+                                topicTitle = currentState.carousel.topicTitle,
+                                caption = currentState.carousel.caption,
+                                slidesJson = slidesJson,
+                                visualTheme = currentState.theme
+                            )
+                            repository.insertAICarousel(updatedCarouselDb)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fun addSlide() {
+        val currentState = _uiState.value
+        if (currentState is ContentEngineState.Success) {
+            val newSlides = currentState.carousel.slides.toMutableList()
+            val newSlideNumber = newSlides.size + 1
+            val newSlide = CarouselSlide(
+                slideNumber = newSlideNumber,
+                heading = "New Slide Title",
+                text = "Add details or explanations here.",
+                keyPoints = listOf("Key point 1"),
+                recommendedProducts = emptyList()
+            )
+            newSlides.add(newSlide)
+            val updatedCarousel = currentState.carousel.copy(slides = newSlides)
+            _uiState.value = currentState.copy(carousel = updatedCarousel)
+            
+            val carouselId = currentState.carouselId
+            if (carouselId != null) {
+                viewModelScope.launch {
+                    try {
+                        val slidesJson = slidesAdapter.toJson(newSlides)
+                        val updatedCarouselDb = AICarousel(
+                            id = carouselId,
+                            topicTitle = currentState.carousel.topicTitle,
+                            caption = currentState.carousel.caption,
+                            slidesJson = slidesJson,
+                            visualTheme = currentState.theme
+                        )
+                        repository.insertAICarousel(updatedCarouselDb)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+            }
+        }
+    }
+
+    fun deleteSlide(slideIndex: Int) {
+        val currentState = _uiState.value
+        if (currentState is ContentEngineState.Success) {
+            val newSlides = currentState.carousel.slides.toMutableList()
+            if (slideIndex in newSlides.indices) {
+                newSlides.removeAt(slideIndex)
+                val adjustedSlides = newSlides.mapIndexed { i, s -> s.copy(slideNumber = i + 1) }
+                val updatedCarousel = currentState.carousel.copy(slides = adjustedSlides)
+                _uiState.value = currentState.copy(carousel = updatedCarousel)
+                
+                val carouselId = currentState.carouselId
+                if (carouselId != null) {
+                    viewModelScope.launch {
+                        try {
+                            val slidesJson = slidesAdapter.toJson(adjustedSlides)
+                            val updatedCarouselDb = AICarousel(
+                                id = carouselId,
+                                topicTitle = currentState.carousel.topicTitle,
+                                caption = currentState.carousel.caption,
+                                slidesJson = slidesJson,
+                                visualTheme = currentState.theme
+                            )
+                            repository.insertAICarousel(updatedCarouselDb)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fun duplicateSlide(slideIndex: Int) {
+        val currentState = _uiState.value
+        if (currentState is ContentEngineState.Success) {
+            val newSlides = currentState.carousel.slides.toMutableList()
+            if (slideIndex in newSlides.indices) {
+                val original = newSlides[slideIndex]
+                val copy = original.copy(heading = "${original.heading} (Copy)")
+                newSlides.add(slideIndex + 1, copy)
+                val adjustedSlides = newSlides.mapIndexed { i, s -> s.copy(slideNumber = i + 1) }
+                val updatedCarousel = currentState.carousel.copy(slides = adjustedSlides)
+                _uiState.value = currentState.copy(carousel = updatedCarousel)
+                
+                val carouselId = currentState.carouselId
+                if (carouselId != null) {
+                    viewModelScope.launch {
+                        try {
+                            val slidesJson = slidesAdapter.toJson(adjustedSlides)
+                            val updatedCarouselDb = AICarousel(
+                                id = carouselId,
+                                topicTitle = currentState.carousel.topicTitle,
+                                caption = currentState.carousel.caption,
+                                slidesJson = slidesJson,
+                                visualTheme = currentState.theme
+                            )
+                            repository.insertAICarousel(updatedCarouselDb)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
+                }
             }
         }
     }
@@ -278,8 +462,8 @@ class AIContentEngineViewModel(private val repository: PharmacyRepository) : Vie
                         slidesJson = slidesJson,
                         visualTheme = theme
                     )
-                    repository.insertAICarousel(newCarousel)
-                    _uiState.value = ContentEngineState.Success(carouselResponse, theme)
+                    val insertedId = repository.insertAICarousel(newCarousel).toInt()
+                    _uiState.value = ContentEngineState.Success(carouselResponse, theme, insertedId)
                 } else {
                     _uiState.value = ContentEngineState.Error("Failed to parse AI response.")
                 }
@@ -338,14 +522,15 @@ class AIContentEngineViewModel(private val repository: PharmacyRepository) : Vie
                         slidesJson = slidesJson,
                         visualTheme = current.theme
                     )
-                    repository.insertAICarousel(newCarousel)
+                    val insertedId = repository.insertAICarousel(newCarousel).toInt()
                     _uiState.value = ContentEngineState.Success(
                         CarouselResponse(
                             topicTitle = newCarousel.topicTitle,
                             caption = newCarousel.caption,
                             slides = current.slides
                         ),
-                        current.theme
+                        current.theme,
+                        insertedId
                     )
                 } catch (e: Exception) {
                     _uiState.value = ContentEngineState.Error("Failed to save custom carousel: ${e.message}")
@@ -360,7 +545,7 @@ sealed class ContentEngineState {
     object SelectStrategy : ContentEngineState()
     data class SelectSpecificProducts(val inventory: List<com.example.data.InventoryItem>, val selectedIds: Set<Int>) : ContentEngineState()
     data class Generating(val message: String) : ContentEngineState()
-    data class Success(val carousel: CarouselResponse, val theme: String) : ContentEngineState()
+    data class Success(val carousel: CarouselResponse, val theme: String, val carouselId: Int? = null) : ContentEngineState()
     data class Error(val message: String) : ContentEngineState()
     data class ManualCreation(
         val topicTitle: String = "",

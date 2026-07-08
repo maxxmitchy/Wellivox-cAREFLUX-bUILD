@@ -7,6 +7,9 @@ import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -54,6 +57,7 @@ fun CustomersTabContent(
     context: Context
 ) {
     var searchQuery by remember { mutableStateOf("") }
+    var activeSubTab by remember { mutableStateOf(0) } // 0 = Patient Ledger, 1 = Refill Command Center
     var customerToDelete by remember { mutableStateOf<Customer?>(null) }
     val customTemplates by viewModel.customTemplates.collectAsStateWithLifecycle()
     val coroutineScope = rememberCoroutineScope()
@@ -98,7 +102,7 @@ fun CustomersTabContent(
             horizontalArrangement = Arrangement.SpaceBetween,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 8.dp)
+                .padding(bottom = 0.dp)
         ) {
             Column(
                 modifier = Modifier
@@ -130,29 +134,84 @@ fun CustomersTabContent(
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = { searchQuery = it },
+        // Professional Pill Tab Row
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(52.dp),
-            placeholder = { Text("Search by name or phone...", color = SlateTextMedium, fontSize = 14.sp) },
-            leadingIcon = {
-                Icon(Icons.Filled.Search, contentDescription = "Search", tint = SlateTextMedium, modifier = Modifier.size(20.dp))
-            },
-            shape = RoundedCornerShape(14.dp),
-            singleLine = true,
-            colors = OutlinedTextFieldDefaults.colors(
-                unfocusedBorderColor = UnfocusedTextFieldBorder,
-                focusedBorderColor = TealPrimary,
-                unfocusedContainerColor = SlateBackgroundLight,
-                focusedContainerColor = TealSurface
+                .horizontalScroll(rememberScrollState())
+                .padding(bottom = 0.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            AssistChip(
+                onClick = { activeSubTab = 0 },
+                label = { Text("Patient Roster (${customers.size})", fontSize = 12.sp) },
+                colors = AssistChipDefaults.assistChipColors(
+                    containerColor = if (activeSubTab == 0) TealSurface else Color.Transparent,
+                    labelColor = if (activeSubTab == 0) TealPrimary else SlateTextMedium
+                ),
+                border = BorderStroke(
+                    width = 1.dp,
+                    color = if (activeSubTab == 0) TealPrimary else SlateBorderLight.copy(alpha = 0.5f)
+                )
             )
-        )
+            AssistChip(
+                onClick = { activeSubTab = 1 },
+                label = {
+                    val pendingCount = customerMeds.count { it.cycleDays > 0 && it.nextRefillDate <= System.currentTimeMillis() + 7 * 24 * 60 * 60 * 1000L }
+                    Text("Refill Command Center ($pendingCount)", fontSize = 12.sp)
+                },
+                colors = AssistChipDefaults.assistChipColors(
+                    containerColor = if (activeSubTab == 1) TealSurface else Color.Transparent,
+                    labelColor = if (activeSubTab == 1) TealPrimary else SlateTextMedium
+                ),
+                border = BorderStroke(
+                    width = 1.dp,
+                    color = if (activeSubTab == 1) TealPrimary else SlateBorderLight.copy(alpha = 0.5f)
+                )
+            )
+            AssistChip(
+                onClick = { activeSubTab = 2 },
+                label = {
+                    val followUpsCount = clinicalInterventions.count { it.currentStatus == "Pending" }
+                    Text("Clinical Follow-ups ($followUpsCount)", fontSize = 12.sp)
+                },
+                colors = AssistChipDefaults.assistChipColors(
+                    containerColor = if (activeSubTab == 2) TealSurface else Color.Transparent,
+                    labelColor = if (activeSubTab == 2) TealPrimary else SlateTextMedium
+                ),
+                border = BorderStroke(
+                    width = 1.dp,
+                    color = if (activeSubTab == 2) TealPrimary else SlateBorderLight.copy(alpha = 0.5f)
+                )
+            )
+        }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(8.dp))
+
+        if (activeSubTab == 0) {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(52.dp),
+                placeholder = { Text("Search by name or phone...", color = SlateTextMedium, fontSize = 14.sp) },
+                leadingIcon = {
+                    Icon(Icons.Filled.Search, contentDescription = "Search", tint = SlateTextMedium, modifier = Modifier.size(20.dp))
+                },
+                shape = RoundedCornerShape(14.dp),
+                singleLine = true,
+                colors = OutlinedTextFieldDefaults.colors(
+                    unfocusedBorderColor = UnfocusedTextFieldBorder,
+                    focusedBorderColor = TealPrimary,
+                    unfocusedContainerColor = SlateBackgroundLight,
+                    focusedContainerColor = TealSurface
+                )
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
 
         // Global Network Registry Search (Consent Handshake)
         var isGlobalSearchExpanded by remember { mutableStateOf(false) }
@@ -169,12 +228,12 @@ fun CustomersTabContent(
         
         Card(
             shape = RoundedCornerShape(14.dp),
-            colors = CardDefaults.cardColors(containerColor = if (isGlobalSearchExpanded) TealSurface.copy(alpha = 0.5f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f)),
+            colors = CardDefaults.cardColors(containerColor = if (isGlobalSearchExpanded) TealSurface else SlateBackgroundLight),
             modifier = Modifier
                 .fillMaxWidth()
                 .border(
                     width = 1.dp,
-                    color = if (isGlobalSearchExpanded) TealPrimary.copy(alpha = 0.4f) else SlateBorderLight.copy(alpha = 0.5f),
+                    color = if (isGlobalSearchExpanded) TealPrimary else SlateBorderLight,
                     shape = RoundedCornerShape(14.dp)
                 )
         ) {
@@ -691,14 +750,14 @@ fun CustomersTabContent(
             )
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
         if (filteredCustomers.isEmpty()) {
             EmptyCustomerPlaceholder()
         } else {
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.weight(1f).fillMaxWidth()
             ) {
                 items(filteredCustomers) { customer ->
                     val meds = customerMeds.filter { it.customerId == customer.id }
@@ -719,7 +778,22 @@ fun CustomersTabContent(
                 }
             }
         }
+    } else if (activeSubTab == 1) {
+        RefillCommandCenter(
+            customers = customers,
+            customerMeds = customerMeds,
+            viewModel = viewModel,
+            context = context
+        )
+    } else {
+        ClinicalFollowUpsQueue(
+            customers = customers,
+            clinicalInterventions = clinicalInterventions,
+            viewModel = viewModel,
+            context = context
+        )
     }
+}
 }
 
 @Composable
@@ -742,9 +816,9 @@ fun CustomerCard(
     var pushDaysText by remember { mutableStateOf("") }
     val customTemplates by viewModel.customTemplates.collectAsStateWithLifecycle()
 
-    val customerDdiAlerts = remember(medications) {
+    val customerDdiAlerts = remember(medications, customer) {
         val names = medications.map { it.medicationName }
-        com.example.data.ClinicalDdiEngine.checkInteractions(names)
+        com.example.data.ClinicalDdiEngine.checkInteractions(names, customer)
     }
 
     if (medToPushRefill != null) {
@@ -830,6 +904,22 @@ fun CustomerCard(
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = TealTertiary
+                        )
+                        // NDPA Shield Badge
+                        SuggestionChip(
+                            onClick = {},
+                            label = { 
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Icon(Icons.Filled.Security, contentDescription = null, modifier = Modifier.size(10.dp), tint = MaterialTheme.colorScheme.primary)
+                                    Text("NDPA Compliant", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                }
+                            },
+                            colors = SuggestionChipDefaults.suggestionChipColors(
+                                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
+                                labelColor = MaterialTheme.colorScheme.primary
+                            ),
+                            border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
+                            modifier = Modifier.height(18.dp).padding(start = 4.dp)
                         )
                         if (customerDdiAlerts.isNotEmpty()) {
                             Badge(
@@ -991,6 +1081,99 @@ fun CustomerCard(
                 Spacer(modifier = Modifier.height(16.dp))
                 HorizontalDivider(color = SlateBorderLight)
                 Spacer(modifier = Modifier.height(12.dp))
+
+                // Demographic & NDPA Consent Section
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, SlateBorderLight),
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Filled.VerifiedUser, contentDescription = null, tint = TealPrimary, modifier = Modifier.size(16.dp))
+                            Text("Demographics & NDPA Consent Logs", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = TealTertiary)
+                        }
+                        
+                        Spacer(modifier = Modifier.height(8.dp))
+                        
+                        // Row 1: Demographics
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column {
+                                Text("Demographics", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextMedium)
+                                Text("Age: ${customer.age} | Gender: ${customer.gender}", fontSize = 10.sp, color = TealTertiary)
+                                Text("Location: ${customer.city}, ${customer.lga}, ${customer.state} State", fontSize = 10.sp, color = TealTertiary)
+                            }
+                            
+                            // Last Updated Stamp
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text("Consent Updated", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextMedium)
+                                val sdf = java.text.SimpleDateFormat("dd MMM yyyy HH:mm", java.util.Locale.getDefault())
+                                Text(sdf.format(java.util.Date(customer.consentLastUpdated)), fontSize = 10.sp, color = TealTertiary)
+                                Text("Via: ${customer.consentChannel}", fontSize = 9.sp, fontWeight = FontWeight.SemiBold, color = SlateTextMedium)
+                            }
+                        }
+                        
+                        Spacer(modifier = Modifier.height(8.dp))
+                        HorizontalDivider(color = SlateBorderLight.copy(alpha = 0.5f))
+                        Spacer(modifier = Modifier.height(8.dp))
+                        
+                        // Consent Grid (Section 26 compliance audit trail)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            // Local Processing
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Icon(
+                                        imageVector = if (customer.consentPrescriptionTracking) Icons.Filled.CheckCircle else Icons.Filled.Cancel,
+                                        contentDescription = null,
+                                        tint = if (customer.consentPrescriptionTracking) OKGreen else Color.Red,
+                                        modifier = Modifier.size(12.dp)
+                                    )
+                                    Text("Clinical Presc.", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = TealTertiary)
+                                }
+                                Text("Local database interactions", fontSize = 8.sp, color = SlateTextMedium, lineHeight = 10.sp)
+                            }
+                            
+                            // SMS Reminders
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Icon(
+                                        imageVector = if (customer.consentSmsRefills) Icons.Filled.CheckCircle else Icons.Filled.Cancel,
+                                        contentDescription = null,
+                                        tint = if (customer.consentSmsRefills) OKGreen else Color.Red,
+                                        modifier = Modifier.size(12.dp)
+                                    )
+                                    Text("SMS Alerts", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = TealTertiary)
+                                }
+                                Text("WhatsApp/SMS refill reminders", fontSize = 8.sp, color = SlateTextMedium, lineHeight = 10.sp)
+                            }
+                            
+                            // Multi-node sync
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Icon(
+                                        imageVector = if (customer.consentCloudSync) Icons.Filled.CheckCircle else Icons.Filled.Cancel,
+                                        contentDescription = null,
+                                        tint = if (customer.consentCloudSync) OKGreen else Color.Red,
+                                        modifier = Modifier.size(12.dp)
+                                    )
+                                    Text("Global Sync", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = TealTertiary)
+                                }
+                                Text("Shared clinic network syncing", fontSize = 8.sp, color = SlateTextMedium, lineHeight = 10.sp)
+                            }
+                        }
+                    }
+                }
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1261,6 +1444,7 @@ fun CustomerCard(
                                                     onClick = {
                                                         showWhatsAppTemplatesFor = null
                                                         sendWhatsAppWalletReminder(context, customer, med, sdf.format(Date(med.nextRefillDate)))
+                                                        viewModel.activePostDispatchConfirm.value = com.example.ui.PostDispatchConfirmData(customer, med)
                                                     }
                                                 )
                                                 DropdownMenuItem(
@@ -1277,6 +1461,7 @@ fun CustomerCard(
                                                             )
                                                             if (success) {
                                                                 Toast.makeText(context, "Direct Refill SMS dispatched via Termii to ${customer.name}!", Toast.LENGTH_LONG).show()
+                                                                viewModel.activePostDispatchConfirm.value = com.example.ui.PostDispatchConfirmData(customer, med)
                                                             } else {
                                                                 Toast.makeText(context, "Direct SMS gateway failed. Check Termii API setup.", Toast.LENGTH_LONG).show()
                                                             }
@@ -1724,11 +1909,18 @@ fun EditCustomerDialog(
     var notes by remember { mutableStateOf(customer.notes) }
 
     var isExpanded by remember { mutableStateOf(false) }
+    var isNdpaExpanded by remember { mutableStateOf(false) }
     var ageStr by remember { mutableStateOf(customer.age.toString()) }
     var gender by remember { mutableStateOf(customer.gender) }
     var stateField by remember { mutableStateOf(customer.state) }
     var lgaField by remember { mutableStateOf(customer.lga) }
     var cityField by remember { mutableStateOf(customer.city) }
+
+    // NDPA States
+    var consentPrescriptionTracking by remember { mutableStateOf(customer.consentPrescriptionTracking) }
+    var consentSmsRefills by remember { mutableStateOf(customer.consentSmsRefills) }
+    var consentCloudSync by remember { mutableStateOf(customer.consentCloudSync) }
+    var consentChannel by remember { mutableStateOf(customer.consentChannel) }
 
     var isError by remember { mutableStateOf(false) }
     var showDiscardConfirm by remember { mutableStateOf(false) }
@@ -1741,7 +1933,11 @@ fun EditCustomerDialog(
                       gender != customer.gender ||
                       stateField != customer.state ||
                       lgaField != customer.lga ||
-                      cityField != customer.city
+                      cityField != customer.city ||
+                      consentPrescriptionTracking != customer.consentPrescriptionTracking ||
+                      consentSmsRefills != customer.consentSmsRefills ||
+                      consentCloudSync != customer.consentCloudSync ||
+                      consentChannel != customer.consentChannel
 
     if (showDiscardConfirm) {
         DiscardChangesConfirmationDialog(
@@ -1759,7 +1955,10 @@ fun EditCustomerDialog(
             Text("Edit Patient", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
                 if (isError) {
                     Text("Name and phone are required.", color = Color.Red, style = MaterialTheme.typography.bodySmall)
                 }
@@ -1893,6 +2092,145 @@ fun EditCustomerDialog(
                                     singleLine = true,
                                     modifier = Modifier.weight(1f)
                                 )
+                            }
+                        }
+                    }
+                }
+
+                // NDPA Consent Expandable Accordion
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.12f), RoundedCornerShape(8.dp))
+                        .clickable { isNdpaExpanded = !isNdpaExpanded }
+                        .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f))
+                        .padding(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Filled.Security,
+                                contentDescription = null,
+                                tint = TealPrimary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "NDPA Data Protection & Consent",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        Icon(
+                            imageVector = if (isNdpaExpanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                            contentDescription = if (isNdpaExpanded) "Collapse" else "Expand",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    if (isNdpaExpanded) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = "Under the Nigeria Data Protection Act (NDPA) 2023, the patient must authorize clinical record-keeping, messaging, and multi-node cloud syncing.",
+                                    fontSize = 10.sp,
+                                    lineHeight = 13.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(8.dp)
+                                )
+                            }
+                            
+                            // Switch 1: Prescription Tracking
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(0.8f)) {
+                                    Text("Local Clinical Processing", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                    Text("Permits logging medications & running clinical drug interaction checks locally.", fontSize = 9.sp, lineHeight = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Switch(
+                                    checked = consentPrescriptionTracking,
+                                    onCheckedChange = { consentPrescriptionTracking = it }
+                                )
+                            }
+                            
+                            // Switch 2: SMS Refill Alerts
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(0.8f)) {
+                                    Text("WhatsApp & SMS Refill Alerts", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                    Text("Permits sending automatic SMS notifications for drug refills and dose reminders.", fontSize = 9.sp, lineHeight = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Switch(
+                                    checked = consentSmsRefills,
+                                    onCheckedChange = { consentSmsRefills = it }
+                                )
+                            }
+                            
+                            // Switch 3: Multi-Branch Cloud Sync
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(0.8f)) {
+                                    Text("Global Care-Node Syncing", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                    Text("Permits secure, encrypted syncing with global clinical nodes.", fontSize = 9.sp, lineHeight = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Switch(
+                                    checked = consentCloudSync,
+                                    onCheckedChange = { consentCloudSync = it }
+                                )
+                            }
+                            
+                            // Consent collection channel
+                            Column {
+                                Text(
+                                    text = "Consent Collection Channel",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    listOf("Verbal Consent", "OTP Verified", "Written Sheet").forEach { ch ->
+                                        val isSel = consentChannel == ch
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(if (isSel) TealPrimary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                                                .clickable { consentChannel = ch }
+                                                .padding(vertical = 6.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = ch,
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isSel) Color.Black else MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
@@ -1915,7 +2253,12 @@ fun EditCustomerDialog(
                             gender = gender,
                             state = stateField,
                             lga = lgaField,
-                            city = cityField
+                            city = cityField,
+                            consentPrescriptionTracking = consentPrescriptionTracking,
+                            consentSmsRefills = consentSmsRefills,
+                            consentCloudSync = consentCloudSync,
+                            consentChannel = consentChannel,
+                            consentLastUpdated = System.currentTimeMillis()
                         )
                     )
                 }
@@ -1928,7 +2271,7 @@ fun EditCustomerDialog(
 @Composable
 fun AddCustomerDialog(
     onDismiss: () -> Unit,
-    onConfirm: (String, String, String, String, Int, String, String, String, String) -> Unit
+    onConfirm: (String, String, String, String, Int, String, String, String, String, Boolean, Boolean, Boolean, String) -> Unit
 ) {
     var name by remember { mutableStateOf("") }
     var phone by remember { mutableStateOf("") }
@@ -1936,11 +2279,18 @@ fun AddCustomerDialog(
     var notes by remember { mutableStateOf("") }
 
     var isExpanded by remember { mutableStateOf(false) }
+    var isNdpaExpanded by remember { mutableStateOf(false) }
     var ageStr by remember { mutableStateOf("30") }
     var gender by remember { mutableStateOf("Male") }
     var stateField by remember { mutableStateOf("Lagos") }
     var lgaField by remember { mutableStateOf("Ikeja") }
     var cityField by remember { mutableStateOf("Ikeja") }
+
+    // NDPA States
+    var consentPrescriptionTracking by remember { mutableStateOf(true) }
+    var consentSmsRefills by remember { mutableStateOf(false) }
+    var consentCloudSync by remember { mutableStateOf(false) }
+    var consentChannel by remember { mutableStateOf("Verbal Consent") }
 
     var isError by remember { mutableStateOf(false) }
     var showDiscardConfirm by remember { mutableStateOf(false) }
@@ -1953,7 +2303,11 @@ fun AddCustomerDialog(
                       gender != "Male" ||
                       stateField != "Lagos" ||
                       lgaField != "Ikeja" ||
-                      cityField != "Ikeja"
+                      cityField != "Ikeja" ||
+                      !consentPrescriptionTracking ||
+                      consentSmsRefills ||
+                      consentCloudSync ||
+                      consentChannel != "Verbal Consent"
 
     if (showDiscardConfirm) {
         DiscardChangesConfirmationDialog(
@@ -1971,7 +2325,10 @@ fun AddCustomerDialog(
             Text("Add Patient", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(
+                modifier = Modifier.verticalScroll(androidx.compose.foundation.rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
                 if (isError) {
                     Text("Name and phone are required.", color = Color.Red, style = MaterialTheme.typography.bodySmall)
                 }
@@ -2109,6 +2466,145 @@ fun AddCustomerDialog(
                         }
                     }
                 }
+
+                // NDPA Consent Expandable Accordion
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.12f), RoundedCornerShape(8.dp))
+                        .clickable { isNdpaExpanded = !isNdpaExpanded }
+                        .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f))
+                        .padding(12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Filled.Security,
+                                contentDescription = null,
+                                tint = TealPrimary,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "NDPA Data Protection & Consent",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                        Icon(
+                            imageVector = if (isNdpaExpanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                            contentDescription = if (isNdpaExpanded) "Collapse" else "Expand",
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    if (isNdpaExpanded) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = "Under the Nigeria Data Protection Act (NDPA) 2023, the patient must authorize clinical record-keeping, messaging, and multi-node cloud syncing.",
+                                    fontSize = 10.sp,
+                                    lineHeight = 13.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(8.dp)
+                                )
+                            }
+                            
+                            // Switch 1: Prescription Tracking
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(0.8f)) {
+                                    Text("Local Clinical Processing", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                    Text("Permits logging medications & running clinical drug interaction checks locally.", fontSize = 9.sp, lineHeight = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Switch(
+                                    checked = consentPrescriptionTracking,
+                                    onCheckedChange = { consentPrescriptionTracking = it }
+                                )
+                            }
+                            
+                            // Switch 2: SMS Refill Alerts
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(0.8f)) {
+                                    Text("WhatsApp & SMS Refill Alerts", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                    Text("Permits sending automatic SMS notifications for drug refills and dose reminders.", fontSize = 9.sp, lineHeight = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Switch(
+                                    checked = consentSmsRefills,
+                                    onCheckedChange = { consentSmsRefills = it }
+                                )
+                            }
+                            
+                            // Switch 3: Multi-Branch Cloud Sync
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(0.8f)) {
+                                    Text("Global Care-Node Syncing", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                    Text("Permits secure, encrypted syncing with global clinical nodes.", fontSize = 9.sp, lineHeight = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Switch(
+                                    checked = consentCloudSync,
+                                    onCheckedChange = { consentCloudSync = it }
+                                )
+                            }
+                            
+                            // Consent collection channel
+                            Column {
+                                Text(
+                                    text = "Consent Collection Channel",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    listOf("Verbal Consent", "OTP Verified", "Written Sheet").forEach { ch ->
+                                        val isSel = consentChannel == ch
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(if (isSel) TealPrimary else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                                                .clickable { consentChannel = ch }
+                                                .padding(vertical = 6.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Text(
+                                                text = ch,
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isSel) Color.Black else MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
@@ -2117,7 +2613,10 @@ fun AddCustomerDialog(
                     isError = true
                 } else {
                     val ageNum = ageStr.toIntOrNull() ?: 30
-                    onConfirm(name, phone, email, notes, ageNum, gender, stateField, lgaField, cityField)
+                    onConfirm(
+                        name, phone, email, notes, ageNum, gender, stateField, lgaField, cityField,
+                        consentPrescriptionTracking, consentSmsRefills, consentCloudSync, consentChannel
+                    )
                 }
             }) { Text("Save Patient") }
         },
@@ -2158,10 +2657,10 @@ fun AddPrescriptionDialog(
     }
 
     val selectedMed = inventoryMeds.find { it.id == selectedMedId } ?: inventoryMeds.firstOrNull()
-    val interactionWarnings = remember(selectedMed, currentMeds) {
+    val interactionWarnings = remember(selectedMed, currentMeds, customer) {
         if (selectedMed != null && currentMeds.isNotEmpty()) {
             val allNames = currentMeds.map { it.medicationName } + selectedMed.name
-            com.example.data.ClinicalDdiEngine.checkInteractions(allNames)
+            com.example.data.ClinicalDdiEngine.checkInteractions(allNames, customer)
         } else {
             emptyList()
         }
@@ -2391,4 +2890,598 @@ fun DiscardChangesConfirmationDialog(
             }
         }
     )
+}
+
+@Composable
+fun RefillCommandCenter(
+    customers: List<Customer>,
+    customerMeds: List<CustomerMedication>,
+    viewModel: PharmacyViewModel,
+    context: Context
+) {
+    val coroutineScope = rememberCoroutineScope()
+    
+    // Filter medications with refills due within 7 days or overdue
+    val now = System.currentTimeMillis()
+    val sevenDaysFromNow = now + 7L * 24 * 60 * 60 * 1000
+    val chronicMedsDue = remember(customerMeds) {
+        customerMeds.filter { it.cycleDays > 0 && it.nextRefillDate <= sevenDaysFromNow }
+            .sortedBy { it.nextRefillDate }
+    }
+
+    // Keep track of selected refills for bulk action
+    val selectedRefills = remember { mutableStateMapOf<Int, Boolean>() }
+
+    // Bulk Sending State
+    var isSendingBulk by remember { mutableStateOf(false) }
+    var bulkSentCount by remember { mutableStateOf(0) }
+    var bulkTotalCount by remember { mutableStateOf(0) }
+
+    // WhatsApp Sequencer State
+    var showWhatsAppSequencer by remember { mutableStateOf(false) }
+    var sequencerIndicesBySelection by remember { mutableStateOf<List<CustomerMedication>>(emptyList()) }
+    var currentSequencerStep by remember { mutableStateOf(0) }
+
+    // Trigger update of selection on data change
+    LaunchedEffect(chronicMedsDue) {
+        selectedRefills.clear()
+        chronicMedsDue.forEach { selectedRefills[it.id] = true } // default select all
+    }
+
+    if (showWhatsAppSequencer && sequencerIndicesBySelection.isNotEmpty()) {
+        val currentMed = sequencerIndicesBySelection.getOrNull(currentSequencerStep)
+        val currentCustomer = currentMed?.let { med -> customers.find { it.id == med.customerId } }
+
+        if (currentMed != null && currentCustomer != null) {
+            val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(currentMed.nextRefillDate))
+            val messageText = "Hello ${currentCustomer.name}, just a friendly clinical reminder that your chronic refill for ${currentMed.medicationName} (${currentMed.customDosage}) is due on $dateStr. The estimated cost is ₦${String.format("%,.2f", currentMed.cost)}. Please ready your wallet and let us know if you need delivery! - Careflux Pharmacy"
+
+            AlertDialog(
+                onDismissRequest = { showWhatsAppSequencer = false },
+                icon = { Icon(Icons.Filled.Chat, contentDescription = null, tint = TealPrimary, modifier = Modifier.size(36.dp)) },
+                title = { Text("WhatsApp Refill Sequencer", fontWeight = FontWeight.Bold) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        LinearProgressIndicator(
+                            progress = { (currentSequencerStep + 1).toFloat() / sequencerIndicesBySelection.size },
+                            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp)),
+                            color = TealPrimary,
+                            trackColor = SlateBorderLight
+                        )
+                        Text(
+                            text = "Patient ${currentSequencerStep + 1} of ${sequencerIndicesBySelection.size}",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = TealPrimary
+                        )
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = SlateBackgroundLight),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Text("To: ${currentCustomer.name}", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                Text("Phone: ${currentCustomer.phoneNumber}", fontSize = 12.sp, color = SlateTextMedium)
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(messageText, fontSize = 12.sp, lineHeight = 16.sp)
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            val encodedMsg = Uri.encode(messageText)
+                            val wpUrl = "https://api.whatsapp.com/send?phone=${currentCustomer.phoneNumber.trim().replace("[^0-9]".toRegex(), "")}&text=$encodedMsg"
+                            val wpIntent = Intent(Intent.ACTION_VIEW, Uri.parse(wpUrl))
+                            context.startActivity(wpIntent)
+
+                            if (currentSequencerStep < sequencerIndicesBySelection.size - 1) {
+                                currentSequencerStep++
+                            } else {
+                                showWhatsAppSequencer = false
+                                Toast.makeText(context, "Completed WhatsApp Refill Reminder sequence!", Toast.LENGTH_LONG).show()
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = TealPrimary, contentColor = Color.Black)
+                    ) {
+                        Text(if (currentSequencerStep < sequencerIndicesBySelection.size - 1) "Launch Chat & Next" else "Launch Chat & Finish", fontWeight = FontWeight.Bold)
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            if (currentSequencerStep < sequencerIndicesBySelection.size - 1) {
+                                currentSequencerStep++
+                            } else {
+                                showWhatsAppSequencer = false
+                            }
+                        }
+                    ) {
+                        Text("Skip Step")
+                    }
+                }
+            )
+        }
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        if (chronicMedsDue.isEmpty()) {
+            Spacer(modifier = Modifier.height(32.dp))
+            EmptyStatePlaceholder(
+                message = "Zero Pending Refills Found",
+                tip = "Chronic patients whose medication refills are due within 7 days or are overdue will populate here automatically."
+            )
+            return
+        }
+
+        // Bulk Control Panel
+        val selectedIds = chronicMedsDue.filter { selectedRefills[it.id] == true }
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = TealSurface.copy(alpha = 0.3f)),
+            border = BorderStroke(1.dp, TealPrimary.copy(alpha = 0.3f)),
+            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "${selectedIds.size} Refills Selected",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = TealPrimary
+                        )
+                        Text(
+                            text = "Across ${selectedIds.distinctBy { it.customerId }.size} unique patients",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = SlateTextMedium
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(
+                            onClick = { chronicMedsDue.forEach { selectedRefills[it.id] = true } }
+                        ) {
+                            Text("Select All", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                        TextButton(
+                            onClick = { selectedRefills.clear() }
+                        ) {
+                            Text("Deselect All", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                if (isSendingBulk) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        LinearProgressIndicator(
+                            progress = { bulkSentCount.toFloat() / bulkTotalCount },
+                            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(4.dp)),
+                            color = TealPrimary,
+                            trackColor = SlateBorderLight
+                        )
+                        Text(
+                            text = "Dispatching Termii SMS: $bulkSentCount / $bulkTotalCount completed...",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                if (selectedIds.isEmpty()) return@Button
+                                isSendingBulk = true
+                                bulkSentCount = 0
+                                bulkTotalCount = selectedIds.size
+
+                                coroutineScope.launch {
+                                    for (med in selectedIds) {
+                                        val customer = customers.find { it.id == med.customerId }
+                                        if (customer != null) {
+                                            val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(med.nextRefillDate))
+                                            val success = viewModel.sendTermiiRefillReminderSms(
+                                                patientName = customer.name,
+                                                phone = customer.phoneNumber,
+                                                medicationName = med.medicationName,
+                                                dateStr = dateStr,
+                                                cost = med.cost
+                                            )
+                                            if (success) {
+                                                bulkSentCount++
+                                            }
+                                        }
+                                    }
+                                    isSendingBulk = false
+                                    Toast.makeText(context, "Bulk SMS Refill Dispatch complete! Sent $bulkSentCount / $bulkTotalCount.", Toast.LENGTH_LONG).show()
+                                    selectedRefills.clear()
+                                }
+                            },
+                            enabled = selectedIds.isNotEmpty(),
+                            colors = ButtonDefaults.buttonColors(containerColor = TealPrimary, contentColor = Color.Black),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Filled.FlashOn, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Bulk SMS via Termii", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        Button(
+                            onClick = {
+                                if (selectedIds.isEmpty()) return@Button
+                                sequencerIndicesBySelection = chronicMedsDue.filter { selectedRefills[it.id] == true }
+                                currentSequencerStep = 0
+                                showWhatsAppSequencer = true
+                            },
+                            enabled = selectedIds.isNotEmpty(),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Filled.Chat, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("WhatsApp Sequence", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Active Due List
+        LazyColumn(
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.weight(1f).fillMaxWidth()
+        ) {
+            items(chronicMedsDue) { med ->
+                val customer = customers.find { it.id == med.customerId }
+                val isSelected = selectedRefills[med.id] == true
+                
+                if (customer != null) {
+                    val isOverdue = med.nextRefillDate < now
+                    val daysDiff = ((med.nextRefillDate - now) / (1000 * 60 * 60 * 24)).toInt()
+
+                    Card(
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isSelected) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.05f)
+                        ),
+                        border = BorderStroke(
+                            width = 1.dp,
+                            color = if (isSelected) TealPrimary.copy(alpha = 0.4f) else SlateBorderLight.copy(alpha = 0.1f)
+                        ),
+                        modifier = Modifier.fillMaxWidth().clickable {
+                            selectedRefills[med.id] = !isSelected
+                        }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Checkbox(
+                                checked = isSelected,
+                                onCheckedChange = { selectedRefills[med.id] = it },
+                                colors = CheckboxDefaults.colors(checkedColor = TealPrimary)
+                            )
+
+                            Spacer(modifier = Modifier.width(8.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        text = customer.name,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    // Status Badge
+                                    if (isOverdue) {
+                                        Card(
+                                            shape = RoundedCornerShape(4.dp),
+                                            colors = CardDefaults.cardColors(containerColor = Color.Red.copy(alpha = 0.15f))
+                                        ) {
+                                            Text(
+                                                text = "OVERDUE",
+                                                color = Color.Red,
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    } else {
+                                        Card(
+                                            shape = RoundedCornerShape(4.dp),
+                                            colors = CardDefaults.cardColors(containerColor = Color.Yellow.copy(alpha = 0.15f))
+                                        ) {
+                                            Text(
+                                                text = "DUE IN $daysDiff DAYS",
+                                                color = Color(0xFFD4AF37),
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(4.dp))
+
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    Text(
+                                        text = med.medicationName,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = TealPrimary
+                                    )
+                                    Text(
+                                        text = med.customDosage,
+                                        fontSize = 11.sp,
+                                        color = SlateTextMedium
+                                    )
+                                    Text(
+                                        text = "₦${String.format("%,.0f", med.cost)}",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                }
+
+                                Text(
+                                    text = "Next Refill Due: ${SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(med.nextRefillDate))}",
+                                    fontSize = 10.sp,
+                                    color = SlateTextMedium
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun EmptyStatePlaceholder(message: String, tip: String) {
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(24.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Notifications,
+                contentDescription = null,
+                tint = SlateTextMedium,
+                modifier = Modifier.size(48.dp)
+            )
+            Text(
+                text = message,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = tip,
+                style = MaterialTheme.typography.bodySmall,
+                color = SlateTextMedium,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 24.dp)
+            )
+        }
+    }
+}
+
+@Composable
+fun ClinicalFollowUpsQueue(
+    customers: List<com.example.data.Customer>,
+    clinicalInterventions: List<com.example.data.ClinicalIntervention>,
+    viewModel: com.example.ui.PharmacyViewModel,
+    context: android.content.Context
+) {
+    val pendingInterventions = remember(clinicalInterventions) {
+        clinicalInterventions.sortedByDescending { it.dateAdded }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(vertical = 4.dp)
+    ) {
+        Text(
+            text = "Clinical Follow-ups Queue",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = TealTertiary
+        )
+        Text(
+            text = "Track patient recovery progress, answer inquiries, or trigger doctor escalations",
+            style = MaterialTheme.typography.bodySmall,
+            color = SlateTextMedium,
+            modifier = Modifier.padding(bottom = 12.dp)
+        )
+
+        if (pendingInterventions.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 40.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = TealPrimary, modifier = Modifier.size(48.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("No clinical follow-ups currently scheduled", style = MaterialTheme.typography.bodyMedium, color = SlateTextMedium)
+                }
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                items(pendingInterventions) { interv ->
+                    val customer = customers.find { it.id == interv.customerId }
+                    val sdf = java.text.SimpleDateFormat("MMM dd, yyyy", java.util.Locale.getDefault())
+                    val dateStr = sdf.format(java.util.Date(interv.dateAdded))
+
+                    if (customer != null) {
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (interv.currentStatus == "Pending") TealSurface.copy(alpha = 0.3f) else SlateBackgroundLight.copy(alpha = 0.5f)
+                            ),
+                            border = BorderStroke(
+                                width = 1.dp,
+                                color = if (interv.currentStatus == "Pending") TealPrimary.copy(alpha = 0.3f) else SlateBorderLight.copy(alpha = 0.5f)
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.Top
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = customer.name,
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = TealTertiary
+                                        )
+                                        Text(
+                                            text = "Phone: ${customer.phoneNumber}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = SlateTextMedium
+                                        )
+                                    }
+
+                                    val isPending = interv.currentStatus == "Pending"
+                                    SuggestionChip(
+                                        onClick = {},
+                                        colors = SuggestionChipDefaults.suggestionChipColors(
+                                            containerColor = if (isPending) WarningRedContainerSoft else TealSurface,
+                                            labelColor = if (isPending) WarningRed else OKGreen
+                                        ),
+                                        label = {
+                                            Text(
+                                                text = if (isPending) "Pending Follow-up" else "Resolved",
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 11.sp
+                                            )
+                                        }
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                Text(
+                                    text = interv.presentation,
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = TealTertiary
+                                )
+
+                                if (interv.testResults.isNotBlank()) {
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "Symptoms Checked: ${interv.testResults}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = SlateTextMedium
+                                    )
+                                }
+
+                                if (interv.recommendation.isNotBlank()) {
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = interv.recommendation,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = SlateTextMedium,
+                                        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.height(8.dp))
+                                HorizontalDivider(color = SlateBorderLight.copy(alpha = 0.5f))
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = "Scheduled: $dateStr",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = SlateTextMedium
+                                    )
+
+                                    if (interv.currentStatus == "Pending") {
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            TextButton(
+                                                onClick = {
+                                                    viewModel.updateClinicalInterventionStatus(interv, "Feeling Better")
+                                                    android.widget.Toast.makeText(context, "Patient recovery marked as resolved!", android.widget.Toast.LENGTH_SHORT).show()
+                                                }
+                                            ) {
+                                                Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text("Mark Resolved", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                            }
+
+                                            Button(
+                                                onClick = {
+                                                    val conditionClean = interv.presentation.replace("Triage: ", "")
+                                                    val draftMessage = "Hi ${customer.name}, just checking in from Careflux Pharmacy regarding your screening for $conditionClean a few days ago. How are you feeling today? Are your symptoms improving, or do you need further support or custom advice?"
+                                                    val encodedMsg = android.net.Uri.encode(draftMessage)
+                                                    val wpUrl = "https://api.whatsapp.com/send?phone=${customer.phoneNumber.trim().replace("[^0-9]".toRegex(), "")}&text=$encodedMsg"
+                                                    val wpIntent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(wpUrl))
+                                                    try {
+                                                        context.startActivity(wpIntent)
+                                                    } catch (e: Exception) {
+                                                        android.widget.Toast.makeText(context, "WhatsApp is not installed.", android.widget.Toast.LENGTH_SHORT).show()
+                                                    }
+                                                },
+                                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF25D366)),
+                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                                                shape = RoundedCornerShape(8.dp)
+                                            ) {
+                                                Icon(Icons.Filled.Chat, contentDescription = null, tint = Color.White, modifier = Modifier.size(14.dp))
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text("WhatsApp Triage Follow-up", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                            }
+                                        }
+                                    } else {
+                                        Text(
+                                            text = "Closed Protocol",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = OKGreen
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }

@@ -1,0 +1,669 @@
+Pharmacy Name	Type	Phone	Address	Area/LGA	Verification Status	Live-Verified
+Ayom Pharmacy	Retail	0803 374 1361	16 Adewunmi Adu Street, Off Jibowu Road, U-Turn Bus stop	Abule Egba	Verified	Verified from published directory
+DrugMaster Pharmacy	Retail	0708 937 3692	1 Prince Adesua Street, Abule Egba	Abule Egba	Verified	Verified from published directory
+Fiasmad Pharmacy	Retail	0803 325 5444	98 Agbe Road, U-Turn Bus stop	Abule Egba	Verified	Verified from published directory
+Health Save Pharmacy	Retail	0810 276 8363	5 Baba Egba Street, Ile Iwe Bus Stop, Meran, Lagos	Abule Egba	Verified	Verified from published directory
+Josfekmart Pharmacy & Store	Retail	0802 491 9520	146 Ekoro Road, Ekoro Junction, Abule Egba	Abule Egba	Verified	Verified from published directory
+Jubilant Pharmacy	Retail	0805 513 2851	Ahmadiyya Bus stop, Lagos-Abeokuta Expressway	Abule Egba	Verified	Verified from published directory
+KallyCare Pharmacy	Retail	0806 631 2098	116/118 Ekoro Road, Abule Egba	Abule Egba	Verified	Verified from published directory
+Nikub Triumph Pharmacy	Retail	0802 526 7678	Ahmed Mohammed Way, Abule Egba, Lagos	Abule Egba	Verified	Verified from published directory
+Ramsgate Pharmacy	Retail	0807 089 2803	Beside Uptown Hospital, Ijaiye Bus stop, Lagos-Abeokuta Expressway	Abule Egba	Verified	Verified from published directory
+Tito B. Pharmacy	Retail	0807 928 7553	53 Charity Road, New Oko Oba, Abule Egba	Abule Egba	Verified	Verified from published directory
+Drugrite Pharmacy	Retail	0805 674 8647	3 Agbado Station Road, Ijaiye Bus stop, Agbado	Agbado	Verified	Verified from published directory
+Abek Pharmacy	Retail	0808 430 0136	143 Ipaja Road, Agbotikuyo Bus stop, Agege	Agege	Verified	Verified from published directory
+Atidam Pharmacy	Retail	0803 337 8445	1 Olayiwola Street, Charity Road, Oko Oba, Agege	Agege	Verified	Verified from published directory
+Beginning & End Pharmacy	Retail	0805 937 9672	1 Church Street by Elere Police Station, Agege	Agege	Verified	Verified from published directory
+Ca & Jo Pharmacy	Retail	0803 437 3075	1 Alfa-Nla Road, Agege	Agege	Verified	Verified from published directory
+Cimis Pharmacy	Retail	0803 778 4608	32 Adealu Street, Adealu, Agege	Agege	Verified	Verified from published directory
+Drug for All Pharmacy	Retail	0803 505 8640	70 Amoo Street, Orile-Agege	Agege	Verified	Verified from published directory
+Ebechi Pharmacy	Retail	0812 566 1819	21 Balogun Street, Pen-Cinema, Moshalashi, Agege	Agege	Verified	Verified from published directory
+Hycax Pharmacy	Retail	0806 345 7903	37 Alfa-Nla Street, Agege	Agege	Verified	Verified from published directory
+Ify Peters Pharmacy	Retail	0806 982 4993	224 Old Ipaja Road, Mulero Bus-stop, Agege	Agege	Verified	Verified from published directory
+Jaybion Pharmacy	Retail	0802 322 9843	Suite A, Bola Tinubu Shopping Complex, Agege	Agege	Verified	Verified from published directory
+Kanymed Pharmacy	Retail	0905 691 0133	1 Oko Oba Road, Banko Plaza, Agege	Agege	Verified	Verified from published directory
+Letonia Pharmacy	Retail	0803 392 2445	65 Alfa-Nla Street, Agege	Agege	Verified	Verified from published directory
+Makbi Pharmacy	Retail	0816 501 8825 / 0703 022 2035	2 Jaiye Olowu Street, Opp Swipha, Dopemu, Agege	Agege	Verified	Verified from published directory
+Metro Plus Pharmacy	Retail	0703 890 2557	24 Ogunnaike Street, Adealu, Agege	Agege	Verified	Verified from published directory
+Monmak Global Resources	Retail	0812 554 4135	2 Ayige Street, Orile Agege	Agege	Verified	Verified from published directory
+Mooveon Pharmacy	Retail	Not listed	30 Iju Road, Pen Cinema, Agege	Agege	Needs phone verification	
+OTS Pharmacy	Retail	0812 554 4135	2 Ayige Street, Orile Agege	Agege	Verified	Verified from published directory
+Pambonac Pharmacy	Retail	0818 182 5176	112 Old Abeokuta Road, Agege	Agege	Verified	Verified from published directory
+Petmaur Pharmacy	Retail	0905 191 9024	Block A, Suite 4, Bola Tinubu Shopping Complex, Agege	Agege	Verified	Verified from published directory
+Prognosy Pharmacy	Retail	0909 864 1641	359 Old Agege Motor Road, Oko Oba, Agege	Agege	Verified	Verified from published directory
+Prophilax Pharmacy	Retail	0703 122 1056	148 Off Oniwaya Road, Agege	Agege	Verified	Verified from published directory
+Ransomed Pharmacy	Retail	0803 669 1177	1 Babs Ogunwole Street, Oko Oba, Agege	Agege	Verified	Verified from published directory
+Samtex Pharmacy	Retail	0803 722 3000	24 Ayige Road, Funmilayo Street, Agege	Agege	Verified	Verified from published directory
+Skills Global Care Pharmacy	Retail	0708 463 7410	2A Shitta Street, Dopemu, Agege	Agege	Verified	Verified from published directory
+Tanbimex Pharmacy	Retail	0813 317 8697	15 Okeho Street, Pako Bus-stop, Dopemu	Agege	Verified	Verified from published directory
+Tymed Pharmacy (Online Pharmacy)	Retail / Online	+234 701 953 4153	10 E. Mac Yoroki Street, Agungi East Estate	Agungi	Phone on record	
+Billhills Healthcare & Pharmacy	Retail	0904 026 4298	Ojaja Mall, Abraham Adesanya, Ogombo Road, Ajah	Ajah	Verified	Verified from published directory
+Blessed Hossanah Pharmacy	Retail	0802 930 5923	Shop 29 NEPA Road, Ajah	Ajah	Verified	Verified from published directory
+Drug Matter Pharmacy	Retail	0802 313 0814	Ado Road, Ajah	Ajah	Verified	Verified from published directory
+Elfimo Pharmacy & Stores (Ikota)	Retail	0812 908 3071	Shop H-94 Ikota Shopping Complex, Ajah	Ajah	Verified	Verified from published directory
+MedExpress Pharmacy	Retail	0803 300 1059	7 Adewale Kolawole Crescent off T.F Kuboye Street, Ajah	Ajah	Verified	Verified from published directory
+Primeah Pharmacy	Retail	Not listed	17/18 Lekki Epe Expressway, Oko Ado, Ajah	Ajah	Needs phone verification	
+R-Kay Pharmacy	Retail	No public number on record	Not specified	Ajah	Needs phone verification	
+Guardalife Pharmacy	Retail	Not listed	No 8 Ajibade Babatola Street, Ajao Estate	Ajao Estate	Needs phone verification	
+Mednet Pharmacy	Retail	0907 313 9870	50 Fatai Irawo Street	Ajao Estate	Phone on record	
+Primus Pharmacy	Retail	+234 816 617 7733	14 Awoniyi Elemo St	Ajao Estate	Phone on record	Confirmed
+Prodrug Pharmacy (Ajao)	Retail	0803 450 0599	7B Asa Afariogun Street, Ajao Estate	Ajao Estate	Verified	Verified from published directory
+Alpharma Pharmacy Store	Retail	0803 333 9137	23 St. Finbarr Road, Chief Bright Oridami Street	Akoka	Phone on record	
+Beulah Pharmaceutical Chemists Ltd	Retail / Wholesale	0802 306 4112, 0803 641 1416	Beulah Plaza, 14 St. Finbarr's College Road	Akoka	Phone on record	
+Drugs Cafe Pharmacy & Mini Mart	Retail	0903 514 3562	62 St. Finbarr's College Road	Akoka	Phone on record	
+Eagle Pharmacy	Retail	Not listed	45 Shasha Road, Akowonjo	Akowonjo	Needs phone verification	
+Jullifem Healthcare	Retail	0813 386 5638	1 Adeyemi Street, Alagbado	Alagbado	Verified	Verified from published directory
+Justinak Pharmacy	Retail	0816 650 8792	1/2 AIT Road, Kola Bus-stop, Alagbado	Alagbado	Verified	Verified from published directory
+League Pharmacy Limited	Retail	0801 343 8888, 0818 266 1500	289 Herbert Macaulay Way	Alagomeji, Yaba	Phone on record	
+Folyma Pharmacy	Retail	0803 365 1566	Alakuko Road, Alakuko	Alakuko	Verified	Verified from published directory
+Glory Divine Pharmacy	Retail	0803 670 6553	1 Bale Animashaun Road, Alakuko Bus stop	Alakuko	Verified	Verified from published directory
+Palchris Pharmacy	Retail	Not listed	9 Egbado Street, Off Dalemo Bus stop, Alakuko	Alakuko	Needs phone verification	
+Supavice Pharmacy & Stores	Retail	+234 813 811 2519	13 Baale Animashaun Rd	Alakuko	Phone on record	
+Vigilis Pharmacy	Retail	0805 413 1742	45 Nureni Yusuf Shopping Complex, Alakuko	Alakuko	Verified	Verified from published directory
+Elna Pharmacy & Stores	Retail	0813 799 1267	33 Ijegun Road, Ikotun	Alimosho	Phone on record	
+Engraced Pharmacy	Retail	0802 757 3761, 0803 822 1372, 0812 796 6963	80 Egbeda-Idimu Road, Egbeda	Alimosho	Phone on record	
+Goscel Pharmacy	Retail	Not listed	30B Ayo Afolabi Street, Aboru, Iyana-Ipaja	Alimosho	Needs phone verification	
+Health Consult Pharmacy	Retail	Not listed	12 Odunsi Road, opposite Everlead College, Ogunseye Ikola	Alimosho	Needs phone verification	
+Jodag Pharmacy	Retail	Not listed	Block 61, Plot 1456, Leye Adebowale Street, Heritage Estate, Aboru, Alimosho	Alimosho	Needs phone verification	
+Lifepoint Pharmacy	Retail	0818 255 6242	20/26 Alaba Oro Road, Amukoko	Amukoko	Verified	Verified from published directory
+Cus Pharmacy	Retail	0802 429 6039	56 Old Ojo Road, Amuwo	Amuwo-Odofin	Verified	Verified from published directory
+Grace Johnson Pharmacy	Retail	0816 268 2266	434 Old Ojo Road, Abule Ado	Amuwo-Odofin	Verified	Verified from published directory
+Live More Pharmacy	Retail	0808 605 8265	210 Old Ojo Road, Agboju	Amuwo-Odofin	Verified	Verified from published directory
+Mackebe Pharmacy	Retail	0803 057 3611, 0808 815 5554	1C Marwa Road, Satellite Town	Amuwo-Odofin	Phone on record	
+Med Store Pharmacy	Retail	0806 578 2292	133 Old Ojo Road, Agboju	Amuwo-Odofin	Verified	Verified from published directory
+Seadone Pharmacy	Retail	0808 523 4436	230 Old Ojo Road, Mazamaza	Amuwo-Odofin	Verified	Verified from published directory
+Vine Pharmacy & Stores	Retail	No public number on record	Amuwo-Odofin (public listing)	Amuwo-Odofin	Needs phone verification	
+RDC Pharmacy	Retail	0815 613 6683	7/8 Bush Street, Anthony, Lagos	Anthony	Verified	Verified from published directory
+Eno Pharmacy	Retail	01 497 7200	Adebayo Mokuolu Street	Anthony Village	Phone on record	
+Medlink Pharmacy & Supermarket	Retail	+234 818 039 4308	15 Sunmola Street	Anthony, Maryland	Phone on record	
+Remedia Pharmacy	Retail	0802 784 4181, 0812 873 1567	69 Kofo Abayomi Avenue	Apapa	Phone on record	
+Bisgan Pharmacy	Retail	0706 438 8776	5 Unity Street, Ayobo	Ayobo	Verified	Verified from published directory
+De-Omega Pharmacy	Retail	0908 616 6392	151 Ipaja Ayobo Road, Igbogbo Gbagada Bus stop, Ayobo	Ayobo	Verified	Verified from published directory
+Favalin Pharmacy	Retail	0807 412 0389	27 Unity Street, Ayobo	Ayobo	Verified	Verified from published directory
+Jenjil Pharmacy	Retail	0802 344 1885	118 Asipa Road, Ayobo	Ayobo	Verified	Verified from published directory
+Karadin Pharmacy	Retail	0805 431 2909	162 Lord Reign Plaza, Ayobo	Ayobo	Verified	Verified from published directory
+FlintY Rock Pharmacy	Retail	Not listed	13 Isashi Road, Mebamu, Badagry	Badagry	Needs phone verification	
+J.O. Sarchmore Pharmacy	Retail	0703 341 2636	118 Old Lagos Road, Ajara Dackor, Badagry	Badagry	Verified	Verified from published directory
+M.o.c Hossana Pharmacy	Retail	0805 477 1791	Ibereko, Badagry	Badagry	Verified	Verified from published directory
+Yankee Pharmacy	Retail	0703 701 2498	75 Hospital Road, Ajara, Badagry	Badagry	Verified	Verified from published directory
+C. Prime Pharmacy	Retail	0701 260 6864	52 Okuta Street, Bariga	Bariga	Verified	Verified from published directory
+CPG Pharmacy	Retail	0803 572 4576	37 Tijani Ashogbon Street, Bariga	Bariga	Verified	Verified from published directory
+Cyronx Pharmacy	Retail	0803 043 2917	41 Ilaje Road, Bariga	Bariga	Verified	Verified from published directory
+Foundation Pharmacy	Retail	0818 175 9215	23 Emmanuel Street, off First Bank, Bariga	Bariga	Verified	Verified from published directory
+Franco Pharmacy	Retail	0803 412 7564	49 Okuta Road, Bariga	Bariga	Verified	Verified from published directory
+Grasol Pharmacy & Store	Retail	0802 312 3759	71 Igiolugbin Street, Bariga	Bariga	Verified	Verified from published directory
+Jomason Pharmacy	Retail	0903 743 5933	24 Okuta Street, Bariga	Bariga	Verified	Verified from published directory
+Lifeplus Pharmacy (Bariga)	Retail	0814 150 1109	29 Gbagada Road, Bariga	Bariga	Verified	Verified from published directory
+Nich Pharmacy	Retail	0902 008 0902	38 Okuta Road, Bariga	Bariga	Verified	Verified from published directory
+Olivegreen Pharmacy	Retail	Not listed	33 Okuta Road, Bariga	Bariga	Needs phone verification	
+Pinco Pharmacy & Store (Bariga)	Retail	0802 344 4408	111 Igi-Olugbin Street, Pedro, Bariga	Bariga	Verified	Verified from published directory
+Rinzco Pharmacy	Retail	0814 434 9779	32 Okuta Street, Bariga	Bariga	Verified	Verified from published directory
+Surplus Pharmacy	Retail	0803 352 3345	48 Igi Olugbin Street, Ladi-Lak, Bariga	Bariga	Verified	Verified from published directory
+Ugoldenchuks Pharmacy	Retail	0706 120 4155	42 Jagunmola Road, Opp. Oando Filling Station, Bariga	Bariga	Verified	Verified from published directory
+Kunimed PharmaChem Limited	Pharmaceutical Services	0803 404 0907, 0803 560 7172	1 Adelanwa Street	Dopemu	Phone on record	
+Hope-cee Pharmacy & Stores	Retail Pharmacy	0803 715 4747, 0809 872 9999	6 Thomas Street	Ebute Metta West	Phone on record	
+Life Back Pharmacy	Retail	0817 119 075	Ebute-Metta, Lagos	Ebute-Metta	Verified	Verified from published directory
+Pharmaflash Pharmacy	Retail	0802 314 0347	38 Cemetery Street, Ebute-Metta	Ebute-Metta	Verified	Verified from published directory
+Pius & Gina Pharmacy (Ebute-Metta)	Retail	Not listed	28 Glover Street, Opposite Old Yaba Road, Ebute-Metta	Ebute-Metta	Needs phone verification	
+Tonyson Pharmacy & Stores	Retail	01 295 2044, 0708 557 0677, 0802 303 9766	47A Simpson Street	Ebute-Metta	Phone on record	
+Ambassadors Pharmacy	Retail	0805 347 6912	19 Isiba Oluwo Street, Egbeda	Egbeda	Verified	Verified from published directory
+Charther Pharmacy	Retail	Not listed	250 Akowonjo Road, Egbeda	Egbeda	Needs phone verification	
+Clich Pharmacy	Retail	0803 322 4562	3/5 Godlove, Akowonjo Road, Egbeda	Egbeda	Verified	Verified from published directory
+Crystal Specialist Hospital Pharmacy	Retail	+234 1 473 5162	148-150 Akowonjo Road, Egbeda	Egbeda	Verified	Verified from published directory
+Kerion Pharmacy	Retail	0817 777 8913	Gowon Estate, 3rd Avenue, opposite St. Bernadette School, Egbeda	Egbeda	Verified	Verified from published directory
+Lola Pharmacy	Retail	0803 347 0652	10 Idimu Road, Egbeda Bus stop	Egbeda	Verified	Verified from published directory
+Nard Pharmacy (Alimosho)	Retail	0915 430 6656	3 Egbeda-Idimu Road, Divine Court Plaza, Alimosho Bus stop, Egbeda	Egbeda	Verified	Verified from published directory
+Nectarite Pharmacy	Retail	Not listed	No. 2 Olorunwa Close, Karimu Laka Street, Egbeda	Egbeda	Needs phone verification	
+Nuges Pharmacy	Retail	Not listed	26/27 Karimu Laka Street by Oba's Palace, Egbeda	Egbeda	Needs phone verification	
+Ofred Pharmacy	Retail	Not listed	Adenle Road, Off 431 Junction, Gowon Estate, Egbeda	Egbeda	Needs phone verification	
+Pharmatone Pharmacy	Retail	Not listed	136 Egbeda-Idimu Road, Egbeda	Egbeda	Needs phone verification	
+Pius & Gina Pharmacy (Egbeda)	Retail	Not listed	107A Akowonjo Road, Vulcanizer Bus-stop, Egbeda	Egbeda	Needs phone verification	
+Primelead Pharmacy	Retail	Not listed	H27 A Close, Road 34, Opposite Navy Block 86, Gowon Estate, Egbeda	Egbeda	Needs phone verification	
+Salvich Pharmacy	Retail	Not listed	9 Lawal Street, Vulcanizer Bus stop, Egbeda	Egbeda	Needs phone verification	
+Teaco Pharmacy	Retail	0813 526 2542	50 Akowonjo Road, Egbeda	Egbeda	Verified	Verified from published directory
+Blessed Neodyke Pharmacy	Retail	0803 406 0316	21 Fadu Avenue, Ejigbo	Ejigbo	Verified	Verified from published directory
+Gbajumo Ventures	Retail	0802 412 7633	8 Ifoshi Street, Ejigbo	Ejigbo	Verified	Verified from published directory
+Kings Patent Medicine Store	Retail	0080 341 4609	1 Olusoga Street, Ejigbo	Ejigbo	Verified	Verified from published directory
+Sabuzo Mega Pharmacy	Retail	0817 921 4868	3 Ojuola Street, Ejigbo	Ejigbo	Verified	Verified from published directory
+Adornlife Pharmacy	Retail	0802 312 5693	Shop C11/005, A Close, 22 Road, Festac	Festac	Verified	Verified from published directory
+Drugplus Pharmacy	Retail	0802 344 0217	32/41 Road Junction, 32 Road, Festac	Festac	Verified	Verified from published directory
+Kaycee Pharmacy (Festac 2)	Retail	0803 670 8884	22 Road, Off 5th Avenue, Festac	Festac	Verified	Verified from published directory
+Kaycee Pharmacy (Festac)	Retail	0809 531 2332	22 Road, Festac Town	Festac	Verified	Verified from published directory
+Kris Daniel Pharmacy	Retail	0803 303 2903	Opposite Mr Biggs, Festac	Festac	Verified	Verified from published directory
+Kris Daniels Pharmacy (Festac)	Retail	0803 244 1992	1st Avenue, Opposite Mr. Biggs, Festac	Festac	Verified	Verified from published directory
+Monis Natural Healthcare	Retail	0802 360 0428	5th Avenue, By Last Bus stop, Festac	Festac	Verified	Verified from published directory
+Osbud Pharmacy	Retail	0809 500 0005	5th Avenue, E/G Close, Festac	Festac	Verified	Verified from published directory
+Ox Pharm	Retail	0808 388 1907	32 Road, Festac	Festac	Verified	Verified from published directory
+Victorious Pharmacy	Retail	Not listed	31 Road, Opposite D Close, Festac	Festac	Needs phone verification	
+Ajekins Pharmacy	Retail	0803 501 8100	11A Ibrahim Onashokun Street, Ifako, Gbagada	Gbagada	Verified	Verified from published directory
+Come Alive Pharmacy	Retail	0803 073 2692	15 Akerele Annex Church Street, Gbagada	Gbagada	Verified	Verified from published directory
+Familycare Pharmacy	Retail	0809 430 8361	89 Oworo Road, Oworoshoki	Gbagada	Verified	Verified from published directory
+HMR Pharmacy	Retail	0809 991 0978	38 Lanne Awolokun Street, Gbagada Phase 2, Gbagada	Gbagada	Verified	Verified from published directory
+Isalu Pharmacy	Retail	0803 654 4255	55 Diya Street, Near Deeper Life Church, Ifako, Gbagada	Gbagada	Verified	Verified from published directory
+Kerson Pharmacy	Retail	0803 254 0109	2 Williams Street, Sawmill, Gbagada	Gbagada	Verified	Verified from published directory
+Lifeplus Pharmacy (Gbagada)	Retail	0802 930 3367	29 Gbagada Road, Gbagada	Gbagada	Verified	Verified from published directory
+Lolana Pharmacy	Retail	0808 080 8827	2 Diya Street, Tantalizer Building, Ifako	Gbagada	Verified	Verified from published directory
+Mebik Pharmacy	Retail	0803 402 7579	19b Church Street, Opp. Gbagada General Hospital	Gbagada	Verified	Verified from published directory
+Medmark Pharmacy (Gbagada)	Retail	0803 633 6275	7 Adekunle Osomo Street, Soluyi, Gbagada	Gbagada	Verified	Verified from published directory
+Pinco Pharmacy & Store (Gbagada)	Retail	0802 311 7334	28 Oke Street, Pedro, Gbagada	Gbagada	Verified	Verified from published directory
+Pius & Gina Pharmacy (Gbagada)	Retail	Not listed	25 Diya Street, beside Fidelity Bank, Ifako Gbagada	Gbagada	Needs phone verification	
+Sabest Pharmacy	Retail	0806 619 8166	19 Church Street, Opp. Gbagada General Hospital	Gbagada	Verified	Verified from published directory
+Setz Pharmacy	Retail	0803 331 7477	1A Lanne Awolokun Street, Gbagada Phase 2	Gbagada	Verified	Verified from published directory
+Setz Pharmacy (Gbagada)	Retail	0803 778 4608	18 Ashimowu Street, Gbagada	Gbagada	Verified	Verified from published directory
+St. David's Pharmacy	Retail	No public number on record	Gbagada	Gbagada	Needs phone verification	
+Massey Vickers Pharmacy	Retail	0803 325 3463	117 Idimu Road, Abule Odu Bus stop	Idimu	Verified	Verified from published directory
+Mekon Pharmacy	Retail	Not listed	263 Ikotun-Idimu Road, Calvary Bus stop, Idimu	Idimu	Needs phone verification	
+Chivic Pharmacy	Retail	+234 806 302 2117	45 Nnamdi Azikiwe Street	Idumota	Phone on record	
+New Divine Pharmacy	Retail	+234 803 475 1885	12 Docemo Street	Idumota	Phone on record	
+Bolutife Pharmacy	Retail	0803 716 7414	60 Amusa Idowu Street, Ijegun	Ijegun	Verified	Verified from published directory
+City of Glory Pharmacy	Retail	0806 563 7705	8 Araromi Junction, Ijegemo Road, Ijegun	Ijegun	Verified	Verified from published directory
+Lighthouse Pharmacy	Retail	Not listed	84 Agbado Road, Toyin Bus stop, Iju Ishaga	Iju-Ishaga	Needs phone verification	
+All Drug Pharmacy	Retail	+234 803 307 0681	72 Mobolaji Bank Anthony Way, Opebi	Ikeja	Phone on record	
+All Drugs Pharma LTD.	Retail	+234 905 437 9892	77B Mobolaji Bank Anthony Way	Ikeja	Phone on record	
+Alpha Pharmacy & Stores Adeniyi Jones	Chain Retail	+234 906 000 6241	GFL, 33 Adeniyi Jones	Ikeja	Phone on record	
+Alpha Pharmacy & Stores Ltd	Retail Chain	01-2704374, 0906 000 6241, 0906 244 0935	33 Adeniyi Jones Avenue	Ikeja	Phone on record	
+Asset Pharmacy	Retail Pharmacy	0903 455 3795	1 Bethel Plaza, Olugbesan Close, Off Adegbeyemi Street, Allen Avenue	Ikeja	Phone on record	
+Astute-Care Pharmacy	Retail	0805 199 9704, 0807 611 5319, 0816 174 2232	9 Alhaji Kofoworola Crescent, Off Obafemi Awolowo Way	Ikeja	Phone on record	
+Atob Pharmacy	Retail	No public number on record	1 Toyin Street	Ikeja	Needs phone verification	
+Bengerty Pharmacy & Stores Ltd	Retail	0815 404 7090, 0916 641 2957	3 Kudirat Abiola Way, Olusosun Bus Stop, Oregun	Ikeja	Phone on record	
+Binklor Pharmacy & Stores	Retail	0808 925 2624	25 Afariogun Street, Off Awolowo Road	Ikeja	Phone on record	
+Bolar Pharmaceuticals	Retail/Distributor	0705 481 7887, 0803 410 5614, 0813 328 9839	5 Talabi Street, Off Adeniyi Jones Ave	Ikeja	Phone on record	
+Boluke Pharmacy	Retail	+234 803 322 3828, +234 903 361 8693, 0803 322 3828, 0812 800 0007	134 Obafemi Awolowo Way	Ikeja	Phone on record	
+Cantol Pharmacy & Stores	Retail	01 493 2556	56 Opebi Road	Ikeja	Phone on record	
+Capstone Pharmacy & Stores	Retail Pharmacy	0802 343 5779	163 Akilo Road	Ikeja	Phone on record	
+Caremax Pharmacy	Retail	0802 321 0294	2 Balogun Street, Off Obafemi Awolowo Way, Ikeja	Ikeja	Verified	Verified from published directory
+Cheltok Pharmacy	Retail	No public number on record	14 Allen Avenue	Ikeja	Needs phone verification	
+Chemo Pharma Laboratory Limited	Manufacturer	0809 444 4275	10 Olanrewaju Street, Oregun, Ikeja	Ikeja	Verified	Verified from published directory
+Chez Pharmacy	Retail	+234 1 2630997	70 Mobolaji Bank Anthony Way	Ikeja	Verified	Verified - Phone found
+Chris-Ejik Pharmaceuticals	Manufacturer/Distributor	+234 815 089 2289 / +234 906 600 0006	No 3 Eje Ore-Imlavan Street, Off Oregun Road, Ikeja	Ikeja	Verified	Verified from published directory
+Divine Favour Chemist	Retail	0803 229 4992	9 Atinke Olabanji Street	Ikeja	Phone on record	
+Drugstoc E-Hub Nig Ltd	Wholesale/Distributor	0703 787 1214	3 Billings Way, Oregun, Ikeja	Ikeja	Verified	Verified from published directory
+Elpha Pharmacy	Retail	0817 004 2399	64 Allen Avenue	Ikeja	Phone on record	
+Fasid Pharmacy	Retail	Not listed	Osunsina House, No 1 Ogunnusi Road, Omole Bus-stop, Agidingbi, Ikeja	Ikeja	Needs phone verification	
+Forlab Pharmacy	Retail	Not listed	8 Ola-Ayindestreet, Ikeja	Ikeja	Needs phone verification	
+Franna Pharmacy	Retail	0802 675 9174	7 Opebi Road	Ikeja	Phone on record	
+GNC Livewell	Wellness Pharmacy	0815 577 8882	1B Opebi Road	Ikeja	Phone on record	
+HealthPlus Pharmacy - Allen Avenue	Retail Chain	+234 707 455 7529, 0708 404 2498, 0809 589 8328	Centage Plaza, 14 Allen Ave	Ikeja	Phone on record	Confirmed
+HealthPlus Pharmacy - Ikeja City Mall	Chain Retail	+234 809 589 7922	Shop L29, Ikeja City Mall	Ikeja	Phone on record	
+Juli Pharmacy	Retail	+234 707 576 2933	19 Kodesoh Street	Ikeja	Phone on record	
+Lifepleni Pharmacy	Retail	0810 959 1659	23 Toyin Street, Ikeja	Ikeja	Verified	Verified from published directory
+Lilac Pharmacy	Retail	+234 803 308 1103	12 Ladipo Kuku Street, Off Allen Avenue	Ikeja	Phone on record	
+May & Baker Nigerian Plc Pharmacy Division	Manufacturer/Distribution	01-3426886, 0811 368 1447, 0906 437 3040	3/5 Sapara Street, Industrial Estate	Ikeja	Phone on record	
+MedPlus Pharmacy - MMIA	Chain Retail	+234 915 259 2974	Murtala Mohammed International Airport	Ikeja	Phone on record	
+Mediheirs Pharmacy & Stores	Retail	0809 515 2314	11 Olaide Tomori Street	Ikeja	Phone on record	
+Medplus - Opebi	Retail Chain	+234 908 204 2960	61 Opebi Road	Ikeja	Phone on record	Confirmed
+Medville Pharmacy	Retail	01 497 2615, 0802 368 9185	72 Allen Avenue	Ikeja	Phone on record	
+NETT Pharmacy Ltd	Retail	+234 1 295 5051, 01-2955051, 01-7741255, 0807 453 5824	33 Opebi Road	Ikeja	Phone on record	
+New Heights Pharmaceuticals Ltd	Wholesale/Retail	0803 320 5868	Suite BA28, 350/360 Ikorodu Road, Maryland	Ikeja	Phone on record	
+Pharmarket Pharmacy	Retail	+234 705 051 3932	2 Oyetubo St, Off Obafemi Awolowo Way	Ikeja	Phone on record	Confirmed
+Phiebiex Pharmacy	Retail	+234 803 331 4703	Oregun-Opebi Link Road	Ikeja	Phone on record	
+Pius & Gina Pharmacy (EKO)	Retail	Not listed	31C Mobolaji Bank Anthony Way, beside EKO Hospital, Ikeja	Ikeja	Needs phone verification	
+Pius & Gina Pharmacy (MBW)	Retail	Not listed	21 Mobolaji Bank Anthony Way, adjacent Ikeja Cantonment, Ikeja	Ikeja	Needs phone verification	
+Reals Pharmaceuticals	Pharmaceutical Distributor	0809 142 5157	Plot 1, Alhaji Dosumu Street, Alausa	Ikeja	Phone on record	
+SKT Healthcare Pharmaceuticals	Retail	0703 637 0444, 0909 778 9655	23 Ogunlowo Street, Off Awolowo Road	Ikeja	Phone on record	
+Supplementsfield	Nutraceutical/Pharmacy	0805 125 9983, 0814 693 2782	21 Obafemi Awolowo Way	Ikeja	Phone on record	
+Tiptop Nigeria Limited	Distributor	0703 009 4731	63 Oduduwa Crescent, Ikeja	Ikeja	Verified	Verified from published directory
+TrooPharm (Ikeja)	Retail	0901 190 0232	6 Makinde Street, Off Awolowo Way, Testing Ground Bus Stop, Alausa, Ikeja	Ikeja	Verified	Verified from published directory
+Vitabiotics Nig. Ltd	Manufacturer	+234 803 408 7139 / +234 805 135 1410	35 Mobolaji Johnson Avenue, Oregun Industrial Estate, Ikeja	Ikeja	Verified	Verified from published directory
+Wina Pharmacy	Retail	No public number on record	5/9 Oregun Road	Ikeja	Needs phone verification	
+Windy Pharmacy	Retail	No public number on record	146 Obafemi Awolowo Way	Ikeja	Needs phone verification	
+Winner Pharmacy & Chemist Industries	Retail	No public number on record	41 Oregun Road	Ikeja	Needs phone verification	
+Womisan Pharmacy	Retail	+234 813 970 3311	23 Oladosu Street, Off Olowu/Toyin Street	Ikeja	Phone on record	
+My-Medicines.com	Online/Retail	+234 808 275 1466	12B Stella Solanke Street, International Airport Road, Ajao Estate	Ikeja Axis	Phone on record	
+Health Plus - Isaac John (Adebola Shopping Mall)	Chain Retail	+234 1 497 0404	Unit 10, Adebola Shopping Mall, 53 Isaac John Street	Ikeja GRA	Phone on record	
+Medplus Pharmacy - Ikeja GRA	Chain Retail	+234 915 498 0431	Ntel Store, 1 Sobo Arobiodu Street	Ikeja GRA	Phone on record	
+Medplus Pharmacy - Isaac John	Chain Retail	+234 915 049 3174	29 Isaac John Street	Ikeja GRA	Phone on record	
+St. David's Pharmacy	Retail	+234 703 294 6611	14 Isaac John Street	Ikeja GRA	Phone on record	
+Neimeth International Pharmaceuticals	Manufacturer/Distribution	+234 1 899 7402	1 Henry Carr Street	Ikeja Industrial Estate	Phone on record	
+2Arms Pharmaceuticals	Retail	0706 493 8010	6 Agura, Gberighe Road, Ikorodu	Ikorodu	Verified	Verified from published directory
+Bjon & Tjon Pharmacy	Retail	0818 873 3508	Shop 23 POWA Shopping Complex, Sabo, Ikorodu	Ikorodu	Verified	Verified from published directory
+Charisland Pharmacy	Retail	0802 851 6843	47 Ijede Road, Omitoro, Ijede, Ikorodu	Ikorodu	Verified	Verified from published directory
+Constanstar Pharmacy	Retail	0706 443 7405	1 Rabaka Street, Owode, Ikorodu	Ikorodu	Verified	Verified from published directory
+De-Lawrex Pharmacy	Retail	0807 875 2897	50 Obafemi Awolowo Way, Igbogbo, Ikorodu	Ikorodu	Verified	Verified from published directory
+Delkem Pharmacy	Retail	0803 935 9078	1 Oduyero Street, Odonguyan, Ikorodu	Ikorodu	Verified	Verified from published directory
+Drugsporte Pharmacy	Retail	0703 943 9403	1 Alegha Street, Off Owode Ibeshe Road, Ikorodu	Ikorodu	Verified	Verified from published directory
+Drugstore.ng	Online/Retail	0907 977 2482	4/6 Ikorodu-Epe Rd, opposite Sabo Market, Ikorodu	Ikorodu	Verified	Verified from published directory
+Drugstore.ng Ikorodu	Online/Retail	0907 977 2482	4/6 Ikorodu-Epe Road, opposite Sabo Market, Ikorodu	Ikorodu	Verified	Verified from published directory
+Ejide Pharmacy	Retail	0802 306 3705	1 Obafemi Taiwo, Off Igbogbo Road, Ikorodu	Ikorodu	Verified	Verified from published directory
+Empathy Pharmacy	Retail	0806 453 7095	Agura-Gberigbe, Ikorodu	Ikorodu	Verified	Verified from published directory
+Fizanac Pharmacy	Retail	0812 901 8448	86 Bayeku Road, Igbogbo, Ikorodu	Ikorodu	Verified	Verified from published directory
+Giottos Pharmacy (Agric)	Retail	0806 904 5133	155 Lagos Road, Agric Bus stop, Ikorodu	Ikorodu	Verified	Verified from published directory
+Giottos Pharmacy (Irawo)	Retail	0808 939 8861	Shop 1-3 Success Plaza, Irawo, Ikorodu	Ikorodu	Verified	Verified from published directory
+Good Care Pharmacy	Retail	0806 080 0062	111 Ishawo Road, Agric Bus stop, Ikorodu	Ikorodu	Verified	Verified from published directory
+Govatec Pharmacy	Retail	Not listed	Isawo Road, RSA Bus Stop, Abule Cole, Agric, Owutu, Ikorodu	Ikorodu	Needs phone verification	
+Goxatek Pharmacy	Retail	0708 463 7410	16 Gberighe Road, Off Ijede Road, Ikorodu	Ikorodu	Verified	Verified from published directory
+Hugies Pharmacy Ltd	Retail	0815 391 1538	39 Bola Tinubu Road, Igbogbo, Ikorodu	Ikorodu	Verified	Verified from published directory
+Iosba Pharmacy	Retail	0909 826 5715	26 Odegate Street, Ikorodu	Ikorodu	Verified	Verified from published directory
+J & S Gold Pharmacy	Retail	Not listed	21 Shagamu Road, Ikorodu / 6 Isele Street, Ikorodu	Ikorodu	Needs phone verification	
+J-Goal Pharmacy	Retail	Not listed	23 Ayodele Ayeni Street, Eyita, Ikorodu	Ikorodu	Needs phone verification	
+Ladamos Pharmacy (Ikorodu)	Retail	0802 319 0162	38 Ladega Street, Ikorodu	Ikorodu	Verified	Verified from published directory
+Lifegate Pharmacy	Retail	0803 389 2682	10 Etunrennen Road, Ikorodu	Ikorodu	Verified	Verified from published directory
+Lugz Pharmacy	Retail	0809 395 5360 / 0806 312 1270	58 Lagos Road, Opp. UBA, Ikorodu	Ikorodu	Verified	Verified from published directory
+Makinga Pharmacy (Ikorodu)	Retail	0803 628 0477 / 0706 704 6404	4 Alhaja Alagogo Street, Ikorodu	Ikorodu	Verified	Verified from published directory
+Mapic Pharmacy	Retail	0805 601 8800	73 Ireshe Street	Ikorodu	Phone on record	
+Marson Pharmacy	Retail	0802 971 7376	9 Ishawo Road, Agric Bus stop, Ikorodu	Ikorodu	Verified	Verified from published directory
+Med Arena Pharmacy	Retail	0802 118 0855	Agbede, Ikorodu	Ikorodu	Verified	Verified from published directory
+Paupix Pharmacy	Retail	Not listed	16 Alison Street, Ojubode Bus stop, Ikorodu	Ikorodu	Needs phone verification	
+Prinogold Pharmacy	Retail	0809 680 1464	1 Adeola Street, Off Fela Ahmed, Agric Bus stop, Ikorodu	Ikorodu	Verified	Verified from published directory
+Setz Pharmacy (Ikorodu)	Retail	0909 826 5715	139 Ijede Road, Off St. Raphael Catholic Hospital, Ikorodu	Ikorodu	Verified	Verified from published directory
+Steady Care Pharmacy	Retail	0803 328 8827	Tipper Garage, Offin/Oreta Road, Igbogbo, Ikorodu	Ikorodu	Verified	Verified from published directory
+Sybarmedics Pharmacy	Retail	Not listed	Agbede Olorogbo Junction, Off Isawo Road, Agric, Ikorodu	Ikorodu	Needs phone verification	
+T & K Pharmacy	Retail	0803 378 7143	Agbaje Bus Stop, Enwuen Road, Ikorodu	Ikorodu	Verified	Verified from published directory
+T.T. Robinson Pharmacy	Retail	0806 080 0062	79 Odonla Road, Ikorodu	Ikorodu	Verified	Verified from published directory
+Telson Pharmacy	Retail	0806 904 5133	159 Ishawo Road, Agric Bus stop, Ikorodu	Ikorodu	Verified	Verified from published directory
+Urocheck Pharmacy	Retail	0813 021 0092	TJ Bus stop, Agbede, Ikorodu	Ikorodu	Verified	Verified from published directory
+Wecare Pharmacy	Retail	0814 891 2955	Prince of Peace Shopping Plaza, 300 Ikorodu-Shagamu Road, Ikorodu	Ikorodu	Verified	Verified from published directory
+Winlot Pharmacy	Retail	0804 004 6182	Ijede Road, Eleshin, Ikorodu	Ikorodu	Verified	Verified from published directory
+ExC Pharmacy Ikota, Lekki	Retail	+234 707 838 9227	6B Francis Ojei Street, Chevron Alternative Road	Ikota	Phone on record	
+Medplus Pharmacy - Ikota	Chain Retail	0905 388 7571	Lekki-Epe Expressway, opposite Mega Chicken	Ikota	Verified	Verified - Phone found
+Health Maps Pharmacy	Retail	Not listed	1 Adekunjo Street, opposite Synagogue Church, Ikotun	Ikotun	Needs phone verification	
+Jaybee Pharmacy	Retail	Not listed	65 Idimu Road, College Bus stop, Ikotun	Ikotun	Needs phone verification	
+PeaceWay Pharmacy	Retail	0808 567 5123	3 Igando Road, Ikotun	Ikotun	Verified	Verified from published directory
+Prinsa Healthcare	Retail	Not listed	6 Ayeni Street, Off Layi Haruna Street, Governor's Road, Ikotun	Ikotun	Needs phone verification	
+Riyi Pharmacy	Retail	Not listed	35 El-Bethel Church Street, Lawal Bus stop, Governor's Road, Ikotun	Ikotun	Needs phone verification	
+Afripharm Multiscience Co. Ltd	Retail	Not listed	15 Kingsway Road, Ikoyi	Ikoyi	Needs phone verification	
+Carlisle Pharm. & Chem. Co. Ltd	Retail	Not listed	19 Ribadu Road, South West, Ikoyi	Ikoyi	Needs phone verification	
+Chemart Pharmacy	Retail Pharmacy	0818 205 9355	2 Olawale Dawodu Street (Former Webb Road)	Ikoyi	Phone on record	
+Chemart Pharmacy - Ikoyi	Retail	0818 205 9355	7/12 Rumens Road, Off Alfred Rewane Road, Ikoyi	Ikoyi	Verified	Verified - Phone & address updated
+Chyzob Pharmacy Limited	Retail Pharmacy	0802 835 6250, 0813 104 8008, 0817 000 1325	168 Awoniyi Road	Ikoyi	Phone on record	
+Commark Pharm. Ventures Ltd	Retail	Not listed	Shop 60, LSDPC, Corporation Drive, Ikoyi	Ikoyi	Needs phone verification	
+Curemed Pharmacy Ltd	Retail	Not listed	31 Keffi Street, By Norman William Street, S/W Ikoyi	Ikoyi	Needs phone verification	
+Danisam Pharm. Ltd	Retail	Not listed	11 Nojeem Maiyegun Road, Obalende, Ikoyi	Ikoyi	Needs phone verification	
+Elbe Pharm. Nig. Ltd	Retail	Not listed	4 Akanbi Danmola Street, Ikoyi	Ikoyi	Needs phone verification	
+Executive Pharm. Chemists	Retail	Not listed	B2 Falomo Shopping Centre, Ikoyi	Ikoyi	Needs phone verification	
+Hess Pharmacy	Retail	Not listed	130 Awolowo Road, Ikoyi	Ikoyi	Needs phone verification	
+Lasucre Pharmacy & Store	Retail	+234 915 323 6728	30 King George Road	Ikoyi	Phone on record	
+Medplus Pharmacy- Ikoyi	Retail Chain	+234 915 259 2953	168 Awoniyi Road	Ikoyi	Phone on record	Confirmed
+Menbon Pharmacy	Retail	Not listed	37C Raymond Njoku Street, Ikoyi	Ikoyi	Needs phone verification	
+Nina-Adonai Pharmacy	Retail	Not listed	Shop 10 Ikeja Way, Dolphin Estate, Ikoyi	Ikoyi	Needs phone verification	
+Panvij Biotec Nig. LTD.	Retail	Not listed	15 Biaduo Street, off Keffi Street, S/W Ikoyi	Ikoyi	Needs phone verification	
+Pearle Pharmacy	Retail	Not listed	32 Ajeniya Street, off Obalende, Ikoyi	Ikoyi	Needs phone verification	
+All Gates Pharmacy	Retail	0803 549 5128	Shop 20/21 Jonwo Plaza, Ilupeju	Ilupeju	Verified	Verified from published directory
+Assure Pharmacy	Retail	0803 717 3626	7 Adeshida Street, Ilupeju	Ilupeju	Verified	Verified from published directory
+Clarion Medicals Ltd	Retail Pharmacy	0809 014 9999, 0816 644 4393	23 Afolabi Lesi Street, Off Town Planning Way	Ilupeju	Phone on record	
+Greenlife Pharmaceuticals Ltd	Distributor / Pharmacy	0704 618 3350, 0704 618 3353	2 Bank Lane, Town Planning	Ilupeju	Phone on record	
+Jathom Pharmacy	Retail	0814 124 4164	78 Shyllon Street, Palmgrove, Ilupeju	Ilupeju	Verified	Verified from published directory
+Lifestores Pharmacy	Retail Pharmacy	0905 909 1484, 0909 030 7612	46 Coker Road	Ilupeju	Phone on record	
+Orange Drugs Limited	Manufacturer / Distributor	0702 799 8947, 0702 799 8993, 0709 814 7939	66/68 Town Planning Way	Ilupeju	Phone on record	
+Superdrug Integrated Pharmacy	Retail Pharmacy	0803 077 6767, 0908 026 7284	30 Ilupeju Bypass, Heyden Filling Station	Ilupeju	Phone on record	
+Theodor Pharmacy	Retail Pharmacy	0706 663 0119	13 Association Avenue	Ilupeju	Phone on record	
+Toogun Pharmacy	Retail	0818 000 1995	21 Esther Oshiyemi Street, Ilupeju	Ilupeju	Verified	Verified from published directory
+Abincare Pharmacy	Retail	0818 337 8666	2 Ikola Road, Off Command Road, Ipaja	Ipaja	Verified	Verified from published directory
+Ajib Pharmacy	Retail	0803 225 4426	12A Command Road, Command	Ipaja	Verified	Verified from published directory
+Bonamour Pharmacy	Retail	0809 512 7000	23 Baruwa Road, Baruwa, Ipaja	Ipaja	Verified	Verified from published directory
+De-Omega Healthcare	Retail	0803 596 3349	7 Church Street, Akinogun Bus stop, Shagari Estate, Ipaja	Ipaja	Verified	Verified from published directory
+Joekem Pharmacy	Retail	Not listed	234 Ipaja-Ayobo Road, Opebi Bus stop, Ipaja	Ipaja	Needs phone verification	
+Joekem Pharmacy (Ipaja)	Retail	0803 447 2707	Church Bus stop, Ipaja Road, Ipaja	Ipaja	Verified	Verified from published directory
+Joelad Pharmacy	Retail	Not listed	203 Abule-Egun Bus stop, Ipaja Road, Ipaja	Ipaja	Needs phone verification	
+Lanbib Pharmacy	Retail	Not listed	Block 331, Flat 1, Abasan Estate, Ipaja	Ipaja	Needs phone verification	
+Mascot Pharmacy	Retail	Not listed	1 Monilari Close, Shagari Estate, Ipaja	Ipaja	Needs phone verification	
+Medgreens Pharmacy	Retail	0708 230 0349	1 Command Road, Command, Ipaja	Ipaja	Verified	Verified from published directory
+Olive Manex Pharmacy	Retail	0802 220 4312 / 0703 805 4422	1 Kareem Bankole Street, Off Candos Road, Baruwa	Ipaja	Verified	Verified from published directory
+Olivemanex Pharmacy	Retail	Not listed	1 Karim Bankole Street, Ipaja	Ipaja	Needs phone verification	
+Ufot-MfonSe Pharmacy	Retail	Not listed	142 Ayobo Road, Ipaja	Ipaja	Needs phone verification	
+A F Uchenna Pharmacy	Retail	0802 545 0757	6 Aderinto Street, Isolo	Isolo	Verified	Verified from published directory
+A.F. Uchenna Pharmacy Ltd	Retail	0802 545 0757	6 Aderinto Street, Isolo	Isolo	Verified	Verified from published directory
+Akugbe Pharmacy & Stores Ltd	Retail	Not listed	2 Olufemi Kolawole Street, Okota, Isolo	Isolo	Needs phone verification	
+Bandar Pharm. Ltd	Retail	Not listed	1A Coker Road, Ejigbo, Isolo	Isolo	Needs phone verification	
+Beyiscon Nig. Ltd	Retail	Not listed	129 Okota Road, Isolo	Isolo	Needs phone verification	
+Biggs Pharm. Ltd	Retail	Not listed	9 Lateef Salami Street, Ajao Estate, Isolo	Isolo	Needs phone verification	
+CHI Pharmaceuticals	Manufacturer/Distributor	+234 1 452 0629 / 0803 715 0506	14 Chivita Avenue, Ajao Estate, Isolo, Lagos	Isolo	Verified	Verified from published directory
+Chriswill Pharmaceutical Co. Ltd	Retail	Not listed	2 Muyili Oshode Street, Ejigbo	Isolo	Needs phone verification	
+Chymasen Pharmacy Nig. Ltd	Retail	Not listed	2 Taiwo Street, Okota, Ago Palace Way, Okota	Isolo	Needs phone verification	
+De Japhson Pharmacy Ltd	Retail	Not listed	40/42 Ago Palace Way, Okota, Isolo	Isolo	Needs phone verification	
+E'Dote Pharmaceutical Nig. Ltd	Retail	Not listed	34 Okeho Street, Ire Akari Estate, Isolo	Isolo	Needs phone verification	
+Ezeyisi & Sons Pharmacy Ltd	Retail	Not listed	27B Okota Palace Way, Okota	Isolo	Needs phone verification	
+James Adile Pharm. Nig Ltd	Retail	Not listed	304 Mushin Road, Isolo	Isolo	Needs phone verification	
+Kings Chemist & Cosmetics	Retail	Not listed	54 Okota Palace Way, Isolo	Isolo	Needs phone verification	
+Lanyard Pharmacy & Stores Ltd	Retail	Not listed	63 Palace Way, Okota, Isolo	Isolo	Needs phone verification	
+Marvel Pharm. Co. Ltd	Retail	Not listed	61/63 Falana Street, Ejigbo	Isolo	Needs phone verification	
+Medmark Limited (Ajao)	Retail	Not listed	29 M.M. Airport Road, Ajao Estate, Isolo	Isolo	Needs phone verification	
+Medreich Nig. LTD.	Retail	Not listed	11 Enoma Street, off Ago-Palace Way, Okota	Isolo	Needs phone verification	
+Nesco Pharm. Co. LTD.	Retail	Not listed	Shop 3/4 L.C.H.E. Oke-Afa, Isolo	Isolo	Needs phone verification	
+Palm Pharmacy	Retail	Not listed	22 Akinbaye Street, Isolo	Isolo	Needs phone verification	
+Prime Pharm. LTD.	Retail	Not listed	7 Ire Akari Estate Road, Isolo	Isolo	Needs phone verification	
+Prodrug Pharmacy	Retail	0805 612 5213	7B Asa Afariogun Street, Ajao Estate, Off International Airport Road	Isolo	Phone on record	
+Shepherd Food & Pharm. Ind. Ltd	Retail	Not listed	2 Dorishamu Close, Okota, Isolo	Isolo	Needs phone verification	
+Spring Forth Pharmacy	Retail	0802 306 0747	34 Alhaja Adenekan Street, Oke Afa, Isolo	Isolo	Verified	Verified from published directory
+Stella-Charles Pharm & Stores Ltd	Retail	Not listed	45A Okota Road, Isolo	Isolo	Needs phone verification	
+Torrent Pharmacy	Retail	0806 025 7252	26 Goloba Street, Isolo	Isolo	Verified	Verified from published directory
+Turmeric Pharmacy	Retail	0818 298 9540	41 Ire Akari Estate Road	Isolo	Phone on record	
+Welnex Pharmacy	Retail	0703 211 2589	7 Isolo Road, Jakande Estate, Isolo	Isolo	Verified	Verified from published directory
+Pill Box Pharmacy	Retail	0803 377 2943	4 Olumo Street, Onike	Iwaya	Phone on record	
+Egomore Pharmacy	Retail	Not listed	1 Oyiba Drive, Iba, Iyana Iba	Iyana Iba	Needs phone verification	
+St. Jude Pharmacy	Retail	Not listed	81 Ojo-Igbede Road, Iba, Iyana Iba	Iyana Iba	Needs phone verification	
+Domec United Pharmacy	Retail	Not listed	Iyana Ipaja Garage, Iyana Ipaja	Iyana Ipaja	Needs phone verification	
+Medstar Pharmacy	Retail	0812 216 3556	1A Hussey Road	Jibowu	Phone on record	
+Teemcare Pharmacy	Retail	0809 813 7516	34/36 Ikorodu Road	Jibowu	Phone on record	
+Amexco Pharmacy	Retail	0813 440 1031	1 Ikosi Road, Ketu	Ketu	Verified	Verified from published directory
+Chizzy Pharmacy	Retail	0813 827 7916	18 Ikosi Road, Ketu	Ketu	Verified	Verified from published directory
+Divine Chemist (Ketu 2)	Retail	0814 167 4678	16 Adebayo Street, Ketu	Ketu	Verified	Verified from published directory
+Divine Chemist (Ketu)	Retail	0816 055 1714	2 Owodunni Street, Ikosi, Ketu	Ketu	Verified	Verified from published directory
+Gally Pharmacy	Retail	Not listed	98 Demurin Street, Alapere, Ketu	Ketu	Needs phone verification	
+Gocrest Pharmacy	Retail	Not listed	26 Agidi Road, Opposite CAC Church, Iyakan Bus-stop, Alapere, Ketu	Ketu	Needs phone verification	
+Goodcare Pharmacy	Retail	0806 080 0062	500 Ikorodu Road, Ketu	Ketu	Verified	Verified from published directory
+Herbinco Pharmacy (Ketu)	Retail	0807 407 9805	28 Demurin Street, Ketu	Ketu	Verified	Verified from published directory
+Ifex Pharmacy	Retail	0708 488 0430	1 Okunowo Street, Ikosi Ketu	Ketu	Verified	Verified from published directory
+Kaften Flash Pharmacy	Retail	Not listed	37 Kazeem Street, Alapere, Ketu	Ketu	Needs phone verification	
+Makinga Pharmacy (Ketu)	Retail	0706 124 4076	3 Dele Okuwa Street, Ikosi, Ketu	Ketu	Verified	Verified from published directory
+Patvics Pharmacy	Retail	0818 566 6323	603 Ikorodu Road, Mile 12, Ketu	Ketu	Verified	Verified from published directory
+Sera Pharmacy	Retail	0803 726 4168 / 0808 624 9926	2A Doyin Omololu Road, Off Demurin Street, Ketu-Alapere	Ketu	Verified	Verified from published directory
+St. Peters & Paul's Pharmacy	Retail	0816 606 7735	15 Elejibu Street, Ketu	Ketu	Verified	Verified from published directory
+Afonchies Pharmaceuticals Limited	Retail Pharmacy	0705 449 2940	Shop 6, Ganiyi Daudu Street, Abraham Adesanya Estate, Lekki-Epe Expressway	Lagos	Phone on record	
+Anne Pharmacy Store	Retail	0805 805 2314	35 Post Office Road, Onipanu	Lagos	Phone on record	
+Arowolo Pharmacy	Retail	0802 136 3342, 0802 911 0894	7 Isheri Road, Idimu	Lagos	Phone on record	
+Beneze Pharmacy Limited	Retail	0706 703 5990, 0803 715 5854	4 Demurin Street, Ketu	Lagos	Phone on record	
+Dana Drugs Limited	Manufacturer	01 773 0054, 0802 776 7777	KM 4 Apapa-Oshodi Expressway, Ijesha	Lagos	Phone on record	
+Drugstore.ng (Online)	Online Pharmacy	0907 977 2482	Lagos (Delivery statewide)	Lagos	Verified	Verified from published directory
+Enavec Pharmacy	Retail Community Pharmacy	0706 835 7391	26, 4th Avenue, Festac Town	Lagos	Phone on record	
+Frank-Chuks Pharmacy Ltd	Retail	0706 921 2733	2A Oseni Street, Iyana-Iba	Lagos	Phone on record	
+HealthServe Pharmacy	Retail	No public number on record	4 Ladipo Adeyemi Street, Anthony Village	Lagos	Needs phone verification	
+Healthy Child Pharmacy	Retail	0808 035 6154 / 0818 780 9366	462, 5th Avenue, Gowon Estate, Egbeda	Lagos	Verified	Verified - Phone & address updated
+Help Pharmacy	Retail	No public number on record	145/147 Ago Palace Way, Okota	Lagos	Needs phone verification	
+Herbinco Pharmacy Ltd	Retail	0805 846 1448 / 0807 407 9600	410 Ikorodu Road, Ojota Bus-stop, Ojota	Lagos	Verified	Verified - Phone & address updated
+Medplus Pharmacy - Atlantic (Chevron)	Chain Retail	0815 973 9667	No. 6 Chevron Drive, Lekki Peninsula	Lagos	Phone on record	
+Medplus Pharmacy - World Bank	Chain Retail	0805 939 7523	Everyday Supermarket, World Bank Road	Lagos	Phone on record	
+Panacea Pharmacy	Retail	0802 222 4272, 0809 422 6056	Suite B3 & B4, No. 3 LSDPC/Tinubu Estate Road, Isheri North	Lagos	Phone on record	
+Sanlive Pharmacy & Stores Ltd	Retail	0803 247 2565, 0805 888 5913	29 Doyin Omololu Street, Ketu	Lagos	Phone on record	
+Alfa Pharmacy	Retail	+234 805 236 3928	187 Massey Bamgbose Street	Lagos Island	Phone on record	
+Bimade Pharmacy	Retail	+234 803 344 7205	Tom Jones Street	Lagos Island	Phone on record	
+Bola Chemist	Retail	0805 596 1037	51 Chambell Street, Lagos Island	Lagos Island	Verified	Verified from published directory
+Conduit Pharmacy	Retail	+234 816 824 0599	48 Bamgbose Street	Lagos Island	Phone on record	
+Crown Pharmacy	Retail	+234 803 305 5441	Bamgbose Street	Lagos Island	Phone on record	
+Fountain Pharmacy	Retail	+234 803 304 1902	31 Broad Street	Lagos Island	Phone on record	
+Frichima Pharmacy	Retail	0803 805 1266	100b Odunfa Street, Adeniji Adele, Obalende	Lagos Island	Verified	Verified from published directory
+Good Shepherd Pharmacy	Retail	+234 802 315 1987	88 Broad Street	Lagos Island	Phone on record	
+Grace Pharmacy	Retail	+234 803 321 5252	62 Martins Street	Lagos Island	Phone on record	
+HealthPlus Pharmacy (Marina)	Chain Retail	+234 707 455 7536	47 Marina Road	Lagos Island	Phone on record	
+HealthPlus Pharmacy - Adeniji Adele	Chain Retail	+234 707 455 7535	Adeniji Adele Road	Lagos Island	Phone on record	
+HealthPlus Pharmacy - Broad Street	Chain Retail	+234 809 589 8326, +234 915 259 2966	Broad Street	Lagos Island	Phone on record	
+Juli Pharmacy Plc	Retail	0802 281 2142	181 Bamgbose Street	Lagos Island	Phone on record	
+K-Pharma Ltd	Retail / Wholesale	+234 803 308 1100	18 Bamgbose Street	Lagos Island	Phone on record	
+Life Pharmacy	Retail	+234 803 338 4509	Catholic Mission Street	Lagos Island	Phone on record	
+Mecure Healthcare Pharmacy	Retail	+234 803 340 6780	15 Campbell Street	Lagos Island	Phone on record	
+Medcourt Pharmacy	Retail	+234 706 688 5544	Marina	Lagos Island	Phone on record	
+Medplus Pharmacy Warehouse	Warehouse / Distribution	0818 712 2408	2 Savage Lane, Ring Road, Lagos Island	Lagos Island	Verified	Verified - Phone found
+Shalom Pharmacy	Retail	+234 803 320 6902	10 Balogun Street	Lagos Island	Phone on record	
+Simba Pharmacy	Retail	0803 308 0133	18 Church Street, Idumota, Lagos Island	Lagos Island	Verified	Verified from published directory
+The Existential Pharmacist	Retail	+234 704 526 0152	71 Enu Owa Street	Lagos Island	Phone on record	
+Union Pharmacy	Retail	+234 802 311 5700	Nnamdi Azikiwe Street	Lagos Island	Phone on record	
+Dimik Pharmacy	Retail	0803 323 9083	1 Jubril Martin's Street, Lawanson	Lawanson	Verified	Verified from published directory
+Lindabel Medical Centre	Retail	0803 337 7787	2 Bee Adebisi Street, Lawanson	Lawanson	Verified	Verified from published directory
+Alpha Pharmacy & Stores Lekki	Retail	+234 906 244 0937	16B Emma Abimbola Cole St	Lekki	Phone on record	Confirmed
+Chemart Pharmacy (Lekki)	Retail	0818 414 6486	Renee Supermarket, Freedom Way, Lekki	Lekki	Verified	Verified from published directory
+EDGE Pharma Limited	Wholesale (Ethical Medicines)	0806 713 0562	17 James Orugbor Close	Lekki	Phone on record	
+Elfimo Pharmacy & Stores	Retail Pharmacy	0810 614 5221, 0812 908 3071, 0812 908 3076	Scapular Plaza, Km 17 Lekki-Epe Expressway	Lekki	Phone on record	
+Justrite Pharmacy (Lekki)	Chain Retail	0916 863 3735	36B, Kusenla Road, Ikate, Lekki	Lekki	Verified	Verified - Phone & address updated
+Medplus Pharmacy - Circle Mall	Chain Retail	0807 071 9365	Shop 23, Circle Mall, Lekki-Epe Expressway, Jakande	Lekki	Phone on record	
+Medplus Pharmacy - The Palms	Chain Retail	01-4700975	Shop 39, The Palms Shopping Mall, Bis Way	Lekki	Phone on record	
+Nina's Pharmacy	Retail	No public number on record	Not specified	Lekki	Needs phone verification	
+Pharm Xtra Pharmacy	Retail	Not listed	1 Raliat Omolua Street, Bera Estate, Off Chevron Drive, Lekki	Lekki	Needs phone verification	
+Tonique Pharmacy Nigeria Ltd	Retail	01 587 2192	Entourage Mall, 12 Adebayo Doherty Road	Lekki	Phone on record	
+Medplus Pharmacy - Agungi	Chain Retail	+234 818 300 3665	Shepard's Place, 11 Agungi Ajiran Road	Lekki Peninsula II	Phone on record	
+Briscon Pharmacy	Retail	+234 813 527 3535	No. 3 Emeka Nweze Street, Off Admiralty Way	Lekki Phase 1	Phone on record	
+Health Plus Pharmacy - Head Office	Chain Retail / Corporate	+234 1 279 3885	18B Anthony Ekukudo Avenue	Lekki Phase 1	Phone on record	
+Lifeline Children's Pharmacy	Pediatric Pharmacy	No public number on record	Not specified	Lekki Phase 1	Needs phone verification	
+MedPlus Pharmacy - Lidone Store	Chain Retail	+234 818 475 4730	34A Fola Osibo Road	Lekki Phase 1	Phone on record	
+Medplus Pharmacy - Beyond Medplus (Admiralty)	Chain Retail	+234 817 103 0932, 0915 259 2985	69 Admiralty Way, beside Zenith Bank	Lekki Phase 1	Phone on record	
+Medplus Pharmacy - Freedom Way	Chain Retail	+234 805 402 9530	41 Freedom Way	Lekki Phase 1	Phone on record	
+Medplus Pharmacy - Hakeem Dickson	Chain Retail	+234 915 259 2979	Block 113, Plot 1C Hakeem Dickson Link Road	Lekki Phase 1	Phone on record	
+Medplus Pharmacy - Oriwu Street	Chain Retail	+234 818 412 1607	5 Oriwu Street	Lekki Phase 1	Phone on record	
+Medplus Pharmacy Lekki-Admiralty	Retail Chain	+234 905 549 4173	7 Admiralty Way	Lekki Phase 1	Phone on record	Confirmed
+Namz Pharmacy and Stores	Independent Retail	+234 707 215 0806	4B Taiwo Ishola Street	Lekki Phase 1	Phone on record	
+Purelife Pharmacy (HQ)	Retail Chain	+234 809 056 4568	15B Admiralty Way	Lekki Phase 1	Phone on record	Confirmed
+Widdi Pharmacy	Retail	0818 113 5236	1 Providence Street, Lekki Phase 1	Lekki Phase 1	Verified	Verified from published directory
+Korlyns Pharmaceuticals	Distributor	01 895 8644, 0803 301 0249	7 Jaiye Odotun Street	Magodo	Phone on record	
+Lydab Pharmacy	Retail	0803 308 4699	Plot 9 Basheer Shittu Avenue, Magodo GRA Phase 2	Magodo	Verified	Verified from published directory
+Dear Life Global Chemist & Supermarket	Retail	+234 813 020 7414	Shop 1, Block 8 Cantonment	Maryland	Phone on record	
+Edichart Pharmacy	Retail	0802 648 8463	54 Olorunlogbon Street, Anthony Village, Maryland	Maryland	Verified	Verified from published directory
+Edichart Pharmacy (Maryland)	Retail	0802 648 8463	54 Olorunlogbon Street, Anthony Village, Maryland	Maryland	Verified	Verified from published directory
+El-Marine Pharmacy	Retail	0803 065 3706	Olaside Close, Maryland	Maryland	Verified	Verified from published directory
+Ilupeju Pharmacy	Retail Pharmacy	0802 315 8135	299 Olatunji House, Ikorodu Road	Maryland	Phone on record	
+Med Link Pharmacy & Stores	Retail	0802 223 1378, 0818 039 4308	4 Sunmola Street, Anthony	Maryland	Phone on record	
+MedLink Pharmacy	Retail	No public number on record	5 Aderibigbe Shitta Street	Maryland	Needs phone verification	
+Medplus Pharmacy - Maryland Outlet	Chain Retail	+234 818 300 3894	Maryland Mall, 350/360 Ikorodu Road	Maryland	Phone on record	
+New Height Pharmacy	Retail	0805 205 3273	3 Olaide Benson Street, Maryland	Maryland	Verified	Verified from directory
+New Height Pharmacy (Maryland)	Retail	0805 205 3273	3 Olaide Benson Street, Maryland	Maryland	Verified	Verified from directory
+Pharmanews Limited	Healthcare / Pharmaceutical Services	0802 674 8215, 0803 301 5991, 0805 723 5128	8 Akinwunmi Street, Mende	Maryland	Phone on record	
+Therapeutics Laboratories Nig. Ltd	Manufacturer	01 791 0769 / 0802 350 1104	372 Ikorodu Road, Maryland, Lagos	Maryland	Verified	Verified from published directory
+World Wide Commercial Venture Ltd	Wholesale/Distributor	0805 501 6610	13 Fatai Atere Way, Matori, Lagos	Matori	Verified	Verified from published directory
+Caraale Pharmacy Ltd	Retail / Wholesale	+234 702 540 1159, +234 803 881 1286	3A Ajose Street	Mende, Maryland	Phone on record	
+Cutting Edge Pharmacy	Retail	+234 907 725 5045	26 Ajose Street	Mende, Maryland	Phone on record	
+A N Chiedozie Pharmacy	Retail	0818 161 1691	2b Dada Aga Street, Kosofe Bus stop, Mile 12	Mile 12	Verified	Verified from published directory
+Aka God Pharmacy	Retail	Not listed	34 Moshalashi Street, Mushin	Mushin	Needs phone verification	
+Amac Ben Pharmacy	Retail	0819 963 3410	6 Alasalatu Street, Mushin	Mushin	Verified	Verified from published directory
+Amac Ben Pharmacy (Mushin)	Retail	Not listed	6 Alasalatu Street, Mushin	Mushin	Needs phone verification	
+Anaco P. Ventures	Retail	0817 535 1606	21 Moshalashi Street, Mushin	Mushin	Verified	Verified from published directory
+Astranad Pharmacy	Retail	0814 772 9552	40 Oilyide Street, Mushin	Mushin	Verified	Verified from published directory
+B. Emmanuel Pharmacy	Retail	Not listed	13 Akinwunmi Street, Mushin	Mushin	Needs phone verification	
+Benmat Pharmacy	Retail	0803 720 4598	11 Aganran Street, Mushin	Mushin	Verified	Verified from published directory
+Bishop Pharmacy	Retail	0813 398 0739	10 Tadeyo Street, Mushin	Mushin	Verified	Verified from published directory
+Blessed Paul Global Link	Retail	Not listed	240 Mushin Road, Pako Bus stop, Mushin	Mushin	Needs phone verification	
+Bonbase Pharmacy	Retail	Not listed	4 Aganran Street, Mushin	Mushin	Needs phone verification	
+Bonbet Pharmacy	Retail	Not listed	4 Aganran Street, Mushin	Mushin	Needs phone verification	
+Bright Uba Global Resources	Retail	Not listed	24 Agege Motor Road, Mushin	Mushin	Needs phone verification	
+C.U. Pedro Pharmaceutics	Retail	0908 330 2818	11 Kelani Street, Off LUTH Access Road, Mushin	Mushin	Verified	Verified from published directory
+Ceefam Pharmacy	Retail	0813 054 2764	54 Isolo Road, Mushin	Mushin	Verified	Verified from published directory
+Chido Pharmacy	Retail	Not listed	37 Isolo Road, Mushin	Mushin	Needs phone verification	
+Chimez Pharmacy	Retail	Not listed	8 Aganran Street, Mushin	Mushin	Needs phone verification	
+Churchill Pharmacy	Retail	Not listed	174 Agege Motor Road, Mushin	Mushin	Needs phone verification	
+Chydmore Ventures	Retail	0806 869 3487	126 Itire Road, Mushin	Mushin	Verified	Verified from published directory
+Cydak Pharmacy	Retail	0803 716 2583	10 Aganran Street, off Agege Motor Road, Mushin	Mushin	Verified	Verified from published directory
+Danijoe Pharmaceuticals	Retail	0816 089 5999	220 Agege Motor Road, Mushin	Mushin	Verified	Verified from published directory
+De-Law Pharmacy	Retail	0808 721 0988	67 Ishaga Road, Idi Araba, Mushin	Mushin	Verified	Verified from published directory
+Derome Pharmacy	Retail	0909 908 1465	5 Ojuwoye Street, off Aganran, Mushin	Mushin	Verified	Verified from published directory
+Destiny Pharmacy	Retail	0806 011 9476	27 Isolo Road, Mushin	Mushin	Verified	Verified from published directory
+Discount Pharmacy	Retail	Not listed	235 Agege Motor Road, Mushin	Mushin	Needs phone verification	
+Famous Pharmacy	Retail	0806 956 8448	1 Olorunsogo Street, Off Ayantuga Street, Mushin	Mushin	Verified	Verified from published directory
+G.U. Resources Pharmacy	Retail	Not listed	174 Agege Motor Road, Mushin	Mushin	Needs phone verification	
+Gennork Pharmacy	Retail	0906 906 0425	235 Agege Motor Road, Mushin	Mushin	Verified	Verified from published directory
+Ikomo Pharmacy	Retail	Not listed	135 Itire Road, Mushin	Mushin	Needs phone verification	
+Kabros Pharmacy	Retail	0801 131 3112	28 Isolo Road, Mushin	Mushin	Verified	Verified from published directory
+Krisphina Pharmacy	Retail	0817 039 2522	44 Abiodun Street, Mushin	Mushin	Verified	Verified from published directory
+More Blessing Pharmacy	Retail	0806 340 3295	Alasalatu Street, Mushin	Mushin	Verified	Verified from published directory
+One with God Pharmacy	Retail	0806 282 8927	95 Olateju Street, Mushin	Mushin	Verified	Verified from published directory
+PaulyBright Pharmacy	Retail	0803 448 0065	5 Aganran Street, off Agege Motor Road, Mushin	Mushin	Verified	Verified from published directory
+Pharmacy Store	Retail	+234 704 090 4691	31/32 Kelani St	Mushin	Phone on record	
+Rightview Pharmacy	Retail	0810 336 1952	29 Kelani Street, Mushin	Mushin	Verified	Verified from published directory
+Sunshine Pharmacy	Retail	0903 404 4853	227 Agege Motor Road, Mushin	Mushin	Verified	Verified from published directory
+Uzobiz Pharmacy	Retail	0817 921 4868	24/26 Isolo Road, Mushin	Mushin	Verified	Verified from published directory
+VinPaul Pharmacy	Retail	0803 805 3131	28 Isolo Road, Isolo, Mushin	Mushin	Verified	Verified from published directory
+Zomel Pharmacy	Retail	Not listed	170 Agege Motor Road, Mushin	Mushin	Needs phone verification	
+Quadcare Pharmacy	Retail	0817 473 2670	250 Ikorodu Road	Obanikoro	Phone on record	
+Audion Pharmacy	Retail	0803 281 9555	Aguda, Ogba	Ogba	Verified	Verified from published directory
+Brite Aid Pharmaceutical Company	Distributor	0803 325 0827, 0803 703 3776	6 Bolode-Oku Street	Ogba	Phone on record	
+Chifrancis Chemist	Retail	0703 378 6746	College Road, Ogba	Ogba	Verified	Verified from published directory
+Divine Care Pharmacy	Retail	0810 808 5857	Oke-Ira, Ogba	Ogba	Verified	Verified from published directory
+Health Bridge Pharmacy	Retail	0803 939 5526	Oke-Ira, Ogba	Ogba	Verified	Verified from published directory
+Healthdome Pharmacy	Retail	0802 666 3850	17 Ijaiye Street, Opposite WAEC, Ogba	Ogba	Verified	Verified from published directory
+J.P. Pharmacy	Retail	0709 652 4712	Oke-Ira, Ogba	Ogba	Verified	Verified from published directory
+JM & F Specialities	Retail	Not listed	33 Leigh Abisogun Street, Ogba	Ogba	Needs phone verification	
+Jost Blossom	Retail	0804 521 4588	Oke-Ira, Ogba	Ogba	Verified	Verified from published directory
+Ladelko Pharmacy	Retail	Not listed	35 Yaya Abatan Road, Ogba	Ogba	Needs phone verification	
+Midams Pharmacy	Retail	0803 321 3362	30 Ayo Alabi Street, Off Ajayi Road, Ogba	Ogba	Verified	Verified from published directory
+NCT Pharmacy	Retail	0803 703 0924	Yaya Abatan, Ogba	Ogba	Verified	Verified from published directory
+NHC Pharmaceuticals Ltd	Retail	0704 633 1830	ACME House, Acme, Ogba	Ogba	Verified	Verified from published directory
+NHC Pharmacy	Retail	0803 307 4656	23 Acme Road, Acme House, Ogba	Ogba	Verified	Verified from published directory
+Shekinah Pharmacy	Retail	Not listed	94 Yaya Abatan Street, Ogba	Ogba	Needs phone verification	
+Sholly Pharmacy	Retail	0815 089 1923	Ogba	Ogba	Verified	Verified from published directory
+Skylife Pharmacy	Retail	0806 411 5591	College Road, Ogba	Ogba	Verified	Verified from published directory
+Ahmex Herbs & Therapy	Herbal/Pharmacy	+234 1 950 2800	101 Oshola Street, Off College Road	Ogba, Ikeja	Phone on record	
+All Drugs Pharmacy	Retail	0709 850 1409, 0803 307 0681	34 Ijaiye Road	Ogba, Ikeja	Phone on record	
+Damtol Pharmacy	Retail	+234 806 020 1188	14 Yaya Abatan Street	Ogba, Ikeja	Phone on record	
+HealthPlus Pharmacy - Adeniyi Jones	Chain Retail	+234 707 455 7548, +234 817 313 6117, +234 905 392 7662	68 Adeniyi Jones	Ogba, Ikeja	Phone on record	
+IYFCARE Pharmacy	Retail	+234 706 150 1448	9 Wemco Road	Ogba, Ikeja	Phone on record	
+Medexa Healthcare	Retail	+234 707 024 8373	25 Nob Oluwa Street, Off Wemco Road	Ogba, Ikeja	Phone on record	
+Deeper Care Pharmacy	Retail	0803 308 2836	1 Agboyi Road, Ogudu Roundabout, Ogudu	Ogudu	Verified	Verified from published directory
+Haven Pharmacy	Retail	0809 393 3043	116 Ogudu Road, Ogudu	Ogudu	Verified	Verified from published directory
+Med Court	Retail	0802 729 1909	76 Ogudu Road, Ogudu	Ogudu	Verified	Verified from published directory
+Neatline Pharmacy	Retail	0803 306 0577	1 Emmanuel High Street, Ogudu Road	Ogudu	Verified	Verified from published directory
+Pharm Affairs	Retail	0705 214 1816	122 Ogudu Road, Ogudu	Ogudu	Verified	Verified from published directory
+Sparcon HealthCare	Retail	0803 316 0543	19 Ogudu Road, Godwin Plaza, Ogudu	Ogudu	Verified	Verified from published directory
+Jedidiah Pharmacy	Retail	Not listed	36 Adaloko Road, Adjacent Gabriel Junction, Ijankin, Ojo	Ojo	Needs phone verification	
+Lopez Pharmacy	Retail	Not listed	10 Omila Road, Inikeke, Ojo	Ojo	Needs phone verification	
+New Concept Pharmacy	Retail	Not listed	1 Arufa Street, Agric Bus stop, Ojo	Ojo	Needs phone verification	
+Newton Pharmacy	Retail	Not listed	3/4 Adoff Bus stop, Iba-LASU Road, Ojo	Ojo	Needs phone verification	
+Shorehealth Pharmacy	Retail	Not listed	258 Ilogbo Road, Kajola, Ojo	Ojo	Needs phone verification	
+Taigab Pharmacy	Retail	Not listed	Etegbin Road, Shibiri, Ojo	Ojo	Needs phone verification	
+Mac Evantus Pharmacy	Retail	0703 458 0102	101 Aina Street, Ojodu Berger	Ojodu	Verified	Verified from published directory
+Pentad Pharmacy	Retail	0809 455 3000	893 Ogunnusi Road, Ojodu	Ojodu	Verified	Verified from published directory
+Raymoo Pharmacy	Retail	0906 708 9477	1 Odozi Street, Ojodu	Ojodu	Verified	Verified from published directory
+Rubby Pharmacy	Retail	0810 363 5496	73 Aina Street, Berger	Ojodu	Verified	Verified from published directory
+Sanforte Pharmacy	Retail	0909 966 6076	8 Adebayo Shina Street, Ojodu	Ojodu	Verified	Verified from published directory
+Zicron Pharmacy	Retail	0803 332 7373	420 Ogunnesi Road, Berger	Ojodu	Verified	Verified from published directory
+Healthrite Pharmacy & Supermart	Retail	+234 704 922 6764	4 Ogunnusi Road	Ojodu, Ikeja	Phone on record	
+Chikey Pharmacy	Retail	0818 151 3547	1 Roju Avenue, Ojota	Ojota	Verified	Verified from published directory
+Divine Chemist (Ojota)	Retail	0803 488 2802	4 Ogudu Road, Ojota	Ojota	Verified	Verified from published directory
+Herbinco Pharmacy (Ojota)	Retail	0807 407 9600 / 0805 846 1448	410 Ikorodu Road, Underbridge, Ojota	Ojota	Verified	Verified from published directory
+Makinga Consult Pharmacy	Retail	0815 101 7557	24 Kujore Street, Ojota	Ojota	Verified	Verified from published directory
+Marky Juddy	Retail	0802 319 3761	23 Adeshiga Street, Ojota	Ojota	Verified	Verified from published directory
+Medplus Pharmacy - Ogudu	Chain Retail	+234 908 335 4474	45A Ogudu Road	Ojota	Phone on record	
+Nemitt Pharmacy	Retail	0803 331 4315	95 Western Avenue, Gilgal Complex, Ojuelegba	Ojuelegba	Verified	Verified from published directory
+Pharmforte Pharmacy	Retail	0703 676 7296	3 Abeo Street, Ojuelegba	Ojuelegba	Verified	Verified from published directory
+Endymax Pharmacy & Stores Ltd	Retail	0906 438 3325	133 Samuel Ekunola Street, Ago Palace Way	Okota	Phone on record	
+Legend of God Pharmacy	Retail	0809 390 2202	110 Ago Palace Way, Okota	Okota	Verified	Verified from published directory
+Pivot Pharmacy	Retail	0818 712 6441 / 0708 913 4329	Elyon Plaza, 108 Ago Palace Way, Okota	Okota	Verified	Verified from published directory
+Prezzy Pharmacy	Retail	Not listed	Christ Embassy Bus Stop, beside NIPCO Filling Station, Ago Palace Way, Okota	Okota	Needs phone verification	
+TrooPharm (Okota)	Retail	0902 611 5994 / 0701 337 3673	2 Dr Fasheun Street, Off Century Hotel Bus stop, Ago Palace Way, Okota	Okota	Verified	Verified from published directory
+Lonestar Pharmacy & Stores Nigeria Limited	Retail	+234 806 254 2940	1 Ijaola Street	Onigbongbo, Maryland	Phone on record	
+Tonark Pharmacy	Retail	Not listed	City Mall, Shop G18 Onikan, Opp. MUSON Centre	Onikan	Needs phone verification	
+Tonark Pharmacy & Health Shop	Retail	01 271 8588, 0803 334 3202, 0819 196 5997	Shop G18, City Mall	Onikan	Phone on record	
+Chemart Pharmacy (Oniru)	Retail	0811 319 4818	Feebees Supermarket, 28 Chief Yesufu Abiodun Road, Oniru	Oniru	Verified	Verified from published directory
+Pius & Gina Pharmacy (Opebi)	Retail	Not listed	62 Opebi Road, Opebi-Ikeja	Opebi	Needs phone verification	
+Alpha Pharmacy & Stores Ltd	Chain Retail	+234 813 404 1020	2B Alabi Street, Off Toyin Street	Opebi, Ikeja	Phone on record	Confirmed
+Fembrook Pharmacy	Retail	+234 906 232 2818	Groundsquare Supermarket, 38B Mobolaji Johnson Avenue	Oregun, Ikeja	Phone on record	
+Medplus Pharmacy - Ikeja Mall	Chain Retail	+234 701 348 9462	Ikeja City Mall, Obafemi Awolowo Way	Oregun, Ikeja	Phone on record	
+Pharmacy Plus Ltd	Retail	+234 808 481 8243	28 Olanrewaju Street, Off Billings Way	Oregun, Ikeja	Phone on record	
+E.U. Emmason Pharmacy	Retail	0817 818 6376	1 Bale Street, Orile Bus-stop, Orile Iganmu	Orile-Iganmu	Verified	Verified from published directory
+Keamax Pharmacy	Retail Pharmacy	0803 398 7987, 0817 136 8231	101 Iganmu Road	Orile-Iganmu	Phone on record	
+Appealing Pharmacy	Retail	0803 001 5313	7 Ogunoloko Street, Mafoluku, Oshodi	Oshodi	Verified	Verified from published directory
+Bestlaw Pharmacy	Retail	0803 363 5602 / 0803 563 5602	7 Oshodi Road, By Post Office, Oshodi	Oshodi	Verified	Verified from published directory
+Brightmex Pharmacy	Retail	0802 618 6745	47 Makinde Street, Oshodi	Oshodi	Verified	Verified from published directory
+Chi-Link Pharmacy	Retail	0803 572 1052	16 Daodu Street, Oshodi	Oshodi	Verified	Verified from published directory
+Chosen Light PMS	Retail	0817 754 7494 / 0803 845 9828	4 Banjoko Street, Oshodi	Oshodi	Verified	Verified from published directory
+Drugzone Pharmacy	Retail	0813 443 0679	11 Church Street, Oshodi	Oshodi	Verified	Verified from published directory
+Fenomas Pharmacy	Retail	0803 329 0651	41 Daodu Street, Oshodi	Oshodi	Verified	Verified from published directory
+Geneith Pharmaceuticals Ltd	Manufacturer/Distributor	0812 900 8556	12 Adewale Crescent	Oshodi	Phone on record	
+Gloryzone Pharmacy	Retail	0802 536 0331 / 0701 917 5782	Furniture Bus stop, Ogunloko, Oshodi	Oshodi	Verified	Verified from published directory
+Healthmax Pharmacy	Retail	Not listed	22 Ogunyika Street, Mafoluku, Oshodi	Oshodi	Needs phone verification	
+Homilys Pharmacy	Retail	0701 917 5782 / 0701 917 5782	27 Baderu Street, Oshodi	Oshodi	Verified	Verified from published directory
+Pillzone Pharmacy	Retail	Not listed	21 Ogunwemimo Street, Mafoluku, Oshodi	Oshodi	Needs phone verification	
+Rehoboth Pharmacy	Retail	0813 303 7868	1 Joseph Street, Off Adeyemi Street, Mafoluku	Oshodi	Verified	Verified from published directory
+Rehoboth Pharmacy (Oshodi)	Retail	Not listed	32 Ishola Anigbajumo Street, Off Afariaogun Street, Orile, Oshodi	Oshodi	Needs phone verification	
+Resurrection Pharmacy	Retail	0803 200 4020	42 Brown Street, Oshodi	Oshodi	Verified	Verified from published directory
+ABJ Pharmaceutical Limited	Retail / Wholesale	0803 302 9420, 0803 308 5441	193/195 Ago Palace Way, Okota	Oshodi-Isolo	Phone on record	
+Everyday Pharmacy	Retail	0803 304 6112, 0816 701 1225	111/113 Ago Palace Way, Okota	Oshodi-Isolo	Phone on record	
+Arisek Pharmacy	Retail	0817 363 1989	113 Ildiroko Road, Baby'o Bus stop	Ota	Verified	Verified from published directory
+Chitexco Pharmacy	Retail	0817 077 3948 / 0805 513 2851	142 Iganmode Road, Ota	Ota	Verified	Verified from published directory
+Ezialpha Pharmacy	Retail	0803 693 5850	22 Ketere Road, Sango Ota	Ota	Verified	Verified from published directory
+Gilbam Pharmacy	Retail	Not listed	14 Ildiroko Road, Sango Ota	Ota	Needs phone verification	
+Globalms Pharmacy	Retail	0803 207 1335	106 Ilo-Awela Road, Toll-Gate, Ota	Ota	Verified	Verified from published directory
+Hardej Pharmacy	Retail	0803 373 8101	99 Iganmode Road, Otta	Ota	Verified	Verified from published directory
+Royal Diamond Pharmacy	Retail	0806 637 1818	Plot 1, 2nd Powerline, Fatoba Estate, Old Ilogbo Road, Oju-Ore	Ota	Verified	Verified from published directory
+Naza Pharmacy Limited	Retail	0802 817 8449	1 Ohamu Street, Olojojo, Oworoshoki	Oworoshoki	Verified	Verified from published directory
+Jossy Pharmacy	Retail	0802 332 5908	20 Lagos Abeokuta Road, Sango	Sango	Verified	Verified from published directory
+Sabesco Global	Retail	0903 122 5616	20 Lagos Abeokuta Road, Sango	Sango	Verified	Verified from published directory
+Medplus Pharmacy - Novare Lekki	Retail	0818 868 7911	Novare Lekki Mall, Sangotedo	Sangotedo	Verified	Verified from published directory
+Vinco Pharmaceutical Nigeria Limited	Manufacturer	0803 300 7351 / 0909 006 5401	4B Dupe Otegbola Street, Opp. Navy Town, Satellite, Lagos	Satellite Town	Verified	Verified from published directory
+Bluerex Pharmacy	Retail	Not listed	1 Olufemi Ojo Street, Shasha	Shasha	Needs phone verification	
+Farenmore Pharmacy	Retail	Not listed	Shasha Market, Shasha	Shasha	Needs phone verification	
+Ajao Samuel Pharmacy	Retail	0816 676 2607	7 Fetuga Street, Ladi-Lak Bus stop	Shomolu	Verified	Verified from published directory
+Drug Consult Pharmacy	Retail	0818 484 9563	52 Shipeolu Street, Shomolu	Shomolu	Verified	Verified from published directory
+Grand Healthcare	Retail	0806 347 6801	107 Bajulaye Road, Shomolu	Shomolu	Verified	Verified from published directory
+Kaycee Pharmacy	Retail	0812 706 3248	5 Market Street, Shomolu	Shomolu	Verified	Verified from published directory
+Kem Pharmacy	Retail	0812 903 8344	46 Oguntolu Street, Shomolu	Shomolu	Verified	Verified from published directory
+R.L. Upright Pharmacy	Retail	0817 292 2059	15 Market Street, Shomolu	Shomolu	Verified	Verified from published directory
+Pharmfit Pharmacy	Retail	Not listed	83 Apata Street, Somolu	Somolu	Needs phone verification	
+ABJ Pharmaceuticals Ltd (Surulere)	Retail	Not listed	13 Brown Road, Aguda, Surulere	Surulere	Needs phone verification	
+ATSI Pharmacy Nigeria Limited	Retail	0701 799 3526, 0803 320 0887	Unit 6, 52 James Robertson Street, Off Alhaji Masha Road	Surulere	Phone on record	
+Able-T Pharm. & Stores	Retail	Not listed	36 Olatilewa Street, Surulere	Surulere	Needs phone verification	
+Afro-Health Pharm. Ltd	Retail	Not listed	30 Bode Thomas Street, Surulere	Surulere	Needs phone verification	
+Agary Pharmaceuticals Ltd	Retail	Not listed	40 Ojuelegba Road, Surulere	Surulere	Needs phone verification	
+Amaks Chemists & Ind. Ltd	Retail	Not listed	7B Ilorin Street, Adelabu, Surulere	Surulere	Needs phone verification	
+Anuga Pharmacy	Retail	Not listed	54 Olufemi Road, Surulere	Surulere	Needs phone verification	
+Bayston Pharm. Nig. Ltd	Retail	Not listed	14 Dayo Ojutiku Street, Ikate, Surulere	Surulere	Needs phone verification	
+Benzyk Pharmacy Ltd	Retail	Not listed	Not specified, Surulere	Surulere	Needs phone verification	
+Bernadds Pharmacy	Retail	01 584 8008	58 Western Avenue	Surulere	Phone on record	
+Bernados Pharmacy	Retail	01 452 8705, 0704 237 1579, 0803 301 8022	108 Western Avenue, Ojuelegba	Surulere	Phone on record	
+Boluke Pharmacy - Surulere	Retail	+234 816 287 9045	17 Adebola Ojomu Street, Iganmu	Surulere	Phone on record	
+Careforte Pharmacy - Surulere	Retail Chain	0704 474 3759	221 Etim Inyang Crescent, Victoria Island	Surulere	Verified	Verified - Phone & address updated
+Chijons Pharmacy and Supermarket	Retail	+234 811 488 2567	27 Adeshina Street, Ijesha Road	Surulere	Phone on record	
+Divine Grace Pharmacy	Retail	+234 803 475 3228	Bode Thomas Street	Surulere	Phone on record	
+Dominus Pharmacy	Retail	+234 818 730 6499	45 Adeniran Ogunsanya Street	Surulere	Phone on record	
+Duke Pharmacy	Retail	+234 803 300 6478	Adeniran Ogunsanya Street	Surulere	Phone on record	
+E-care Pharmacy Ltd	Retail	+234 906 394 2699	4 Odolowu Street, Ijesha Road	Surulere	Phone on record	
+El-Lab Pharmacy	Retail	+234 802 312 1659	Ogunlana Drive	Surulere	Phone on record	
+Express Pharmacy	Retail	+234 906 095 7302	172 Akerele Road	Surulere	Phone on record	
+Goodlife Pharmacy	Retail	+234 703 561 2087	Aguda	Surulere	Phone on record	
+HealthPlus Pharmacy - Adeniran Ogunsanya	Chain Retail	0809 589 7913	Adeniran Ogunsanya Shopping Mall	Surulere	Phone on record	Confirmed - phone found
+Healthrite Pharmacy & Supermart	Retail	+234 916 867 5007	72 Akerele Street	Surulere	Phone on record	
+Healthrite Pharmacy (Surulere)	Retail	Not listed	Western Avenue, Surulere	Surulere	Needs phone verification	
+Healthwise Pharmacy	Retail	+234 803 723 4510	Itire Road	Surulere	Phone on record	
+Kaizen Pharmacy and Healthcare Services	Retail	+234 802 541 5810	Rita Lori Hotel Junction, Babs Animashaun Road, Off Bode Thomas Street	Surulere	Phone on record	
+Lifecrest Pharmacy	Retail	+234 809 112 8854	Adelabu Street	Surulere	Phone on record	
+Medisure Pharmacy	Retail	+234 803 456 1120	Ogunlana Drive	Surulere	Phone on record	
+Medmac Pharma	Retail	+234 707 099 7209	17 Durojaiye Street, Lawanson	Surulere	Phone on record	
+Medplus Pharmacy - Adeniran Ogunsanya Shoprite Mall	Chain Retail	+234 701 348 9463	Adeniran Ogunsanya Street	Surulere	Phone on record	
+Medplus Pharmacy - Bode Thomas	Chain Retail	+234 915 259 2965	Bode Thomas Street	Surulere	Phone on record	
+Medplus Pharmacy - Ogunlana Drive	Chain Retail	+234 818 381 2589	113 Ogunlana Drive	Surulere	Phone on record	
+Newcare Pharmacy	Retail	+234 803 311 8295	Akerele Street	Surulere	Phone on record	
+PWDA Nigeria (Office)	Association	0803 307 4656	95 Funsho Williams Avenue, Surulere, Lagos	Surulere	Verified	Verified from published directory
+Pharmadey Pharmacy	Retail	+234 808 184 3801	12 Agbonyin Avenue, Off Adelabu Street	Surulere	Phone on record	
+Pillbox Pharmacy	Retail	+234 803 401 2288	Aguda	Surulere	Phone on record	
+SKI Pharmacy	Retail	Not listed	183A Akerele Street, Surulere	Surulere	Needs phone verification	
+ShowerCare Pharmacy and Supermarket	Pharmacy & Supermarket	+234 902 481 0973	4 Irone Avenue	Surulere	Phone on record	
+Silverline Pharmacy	Retail	+234 816 433 1828	18 Olatunde Onimole Street	Surulere	Phone on record	
+Springlife Pharmacy	Retail	+234 806 212 9876	Adelabu Street	Surulere	Phone on record	
+St. Nicholas Pharmacy	Retail	No public number on record	Western Avenue (Funsho Williams Avenue)	Surulere	Needs phone verification	
+Tandem Pharmacy & Stores	Retail	01 774 8427	9 Adeniji Adefioye Street	Surulere	Phone on record	
+Tolmar Pharmacy	Retail	+234 803 309 6316	Ojuelegba Road	Surulere	Phone on record	
+Tonia Pharmacy	Retail	+234 803 331 2297	Lawanson	Surulere	Phone on record	
+Vaticabells	Retail	+234 803 301 9432	61 Ogunlana Drive	Surulere	Phone on record	
+Vatican Pharmacy	Retail	+234 806 173 0859	3 Akerele Street	Surulere	Phone on record	
+Victory Pharmacy & Stores	Retail	+234 802 874 9936	Bode Thomas Street	Surulere	Phone on record	
+Aaroon Blossom Pharmacy	Retail	Not listed	Plot 269B Muri Okunola Street, Victoria Island	Victoria Island	Needs phone verification	
+Alpha Pharmacy & Stores Victoria Island	Chain Retail	+234 906 244 0967	31 Ologun Agbaje Street, Off Adeola Odeku Street	Victoria Island	Phone on record	
+Baykins Pharmacy	Retail	+234 909 980 0050	Palace Road	Victoria Island	Phone on record	
+Careforte Pharmacy	Chain Retail	0704 474 3759	221 Etim Inyang Crescent, Victoria Island	Victoria Island	Verified	Verified - Phone & address updated
+Careforte Pharmacy & Health Shop	Retail	0704 474 3759	221 Etim Inyang Crescent, Victoria Island	Victoria Island	Verified	Verified - Phone & address updated
+Chemart Pharmacy (VI)	Retail	0909 463 2241	3/5 Adeyemo Alakija, Victoria Island	Victoria Island	Verified	Verified from published directory
+Lidone Pharmacy & Health Shop	Retail Pharmacy	0803 304 1649, 0808 436 2321	Novena Majesty Plaza, 141 Ahmadu Bello Way	Victoria Island	Phone on record	
+Lifemed Pharmacy	Retail	0703 514 8751, 0803 526 7817	Dine Mall, 33 Ahmadu Bello Way	Victoria Island	Phone on record	
+Medplus	Retail / Pharmaceutical	+234 701 582 7743	2 Adeola Odeku Street	Victoria Island	Phone on record	
+Medplus - Saka Tinubu	Retail Chain	+234 701 348 9458	45 Saka Tinubu St	Victoria Island	Phone on record	Confirmed
+Medplus Pharmacy - Experience Centre	Chain Retail	+234 905 392 7665	26 Adeola Hopewell Street	Victoria Island	Phone on record	
+Medplus Pharmacy - Landmark Mall	Chain Retail	+234 815 597 5356	Landmark Retail Boulevard, Oniru Estate	Victoria Island	Phone on record	
+Medplus Pharmacy - Tantalizers	Chain Retail	+234 701 348 9459	Tantalizers Building, 58 Adetokunbo Ademola Street	Victoria Island	Phone on record	
+Medvacc Pharmaceuticals Limited	Distributor	0802 224 5920, 0803 828 3217	16 Karimu Kotun Street	Victoria Island	Phone on record	
+Mopheth Pharmacy	Retail	0802 315 0551	23A Adeola Odeku Street, Victoria Island	Victoria Island	Verified	Verified from published directory
+Mopheth Pharmacy Victoria Island Lagos	Retail Chain	+234 808 672 6291	23A Adeola Odeku St	Victoria Island	Phone on record	Confirmed
+Nordica Pharmacy	Specialist Pharmacy	No public number on record	Not specified	Victoria Island	Needs phone verification	
+Pharmalife Pharmacy	Retail	Not listed	Dreams Plaza, 7 Bishop Aboyade Cole Street, VI	Victoria Island	Needs phone verification	
+Pharmazon Pharmacy & Supermart	Retail	+234 706 183 9866	292E Ajose Adeogun Street	Victoria Island	Phone on record	
+Queen Pharmacy	Retail	01 270 8562, 0803 335 3614	9B Adeola Odeku Street	Victoria Island	Phone on record	
+SS-Tech Pharmacy	Retail	+234 707 640 1842	33 Saka Tinubu Street	Victoria Island	Phone on record	
+Totem Pharmacy	Retail	+234 909 808 6836	56B Adeola Odeku Street	Victoria Island	Phone on record	
+Al-Pharma Pharmacy Ltd	Retail	0803 518 0712	4 Bright Oridani Street, Akoka, Yaba	Yaba	Verified	Verified from published directory
+Dependo Pharmacy	Retail	0803 562 4346	11 Makoko Road, Yaba	Yaba	Verified	Verified from published directory
+Drug Point Pharmacy	Retail	0817 400 9128	9 University Road, Abule Oja, Yaba	Yaba	Verified	Verified from published directory
+Drug Smith Pharmacy	Retail	0908 324 8386	105 Herbert Macaulay Way, Adekunle, Yaba	Yaba	Verified	Verified from published directory
+Express Aid Pharmacy	Retail	0909 738 2982	8 University Road	Yaba	Phone on record	
+Giant Strides Pharmacy	Retail	0807 425 1160	236 Herbert Macaulay Way	Yaba	Phone on record	
+Health Plus Pharmacy (Yaba)	Retail	Not listed	Suite G009, Domino E Center, 1-11 Commercial Avenue, Yaba	Yaba	Needs phone verification	
+Health Serve Pharmacy	Retail	0802 322 6540	11 Oweh Street, Fadeyi	Yaba	Phone on record	
+HealthServePlus Pharmacy Ltd	Retail	0703 804 1309	4 Alhaja Oluwakemi Street, Anthony Village	Yaba	Verified	Verified - Phone & address corrected
+Healthspring Pharmacy	Retail	0814 984 8469	2 Oweh Street, Fadeyi Bus stop	Yaba	Verified	Verified from published directory
+Healthy Pulse Pharmacy Ltd	Retail	No public number on record	346 Herbert Macaulay Way	Yaba	Needs phone verification	
+Kasville Pharmacy	Retail	0810 454 2510	22 Montgomery Road	Yaba	Phone on record	
+Lexicon Pharmacy & Supermarket	Retail	0702 938 9149	6 Iwaya Road, Onike, Yaba	Yaba	Verified	Verified from published directory
+Livewell Pharmacy	Retail	No public number on record	Yaba	Yaba	Needs phone verification	
+Medlounge Pharmacy	Retail	Not listed	285 Herbert Macaulay Way, Yaba	Yaba	Needs phone verification	
+Metromeds Pharmacy Limited	Retail	0817 283 6273	6 Queens Street Casino, Off Herbert Macaulay Way	Yaba	Phone on record	
+Okolowhite Pharmacy	Retail	0803 321 7034	41A Commercial Avenue, Sabo	Yaba	Verified	Verified from published directory
+Omowunmi Titilayo Pharmacy	Retail	0802 594 3727	371 Borno Way, Alagomeji	Yaba	Phone on record	
+Pharma Solutions	Retail / Medical Supplies	0809 111 1608, 0809 111 1908, 0810 493 1060	25 Montgomery Road, Off Herbert Macaulay Way	Yaba	Phone on record	
+Pharmasolution Pharmacy	Retail	0703 037 4411	28 Commercial Avenue, Yaba	Yaba	Verified	Verified from published directory
+Pill Box Pharmacy (Yaba)	Retail	0706 119 0149	5 Olumo Street, Onike, Yaba	Yaba	Verified	Verified from published directory
+Remey Pharmacy	Retail	0803 325 7114	Tanimo Street, Off Ikorodu Road, Fadeyi Bus stop	Yaba	Verified	Verified from published directory
+Reneca Pharmacy	Retail	0809 759 2042	17 Mosuro Street, Abule Oja, Yaba	Yaba	Verified	Verified from published directory
+Robson Pharmacy	Retail	Not listed	Sanyaolu Street, Akoka	Yaba	Needs phone verification	
+Sheba Pharmacy	Retail	0704 949 0853	32B Yaba Tech Staff Quarters, Aggrey Road, GRA	Yaba	Phone on record	

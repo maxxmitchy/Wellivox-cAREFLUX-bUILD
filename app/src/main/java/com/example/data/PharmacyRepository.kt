@@ -128,8 +128,8 @@ class PharmacyRepository(private val pharmacyDao: PharmacyDao) {
         return pharmacyDao.getMedicationsForCustomer(customerId)
     }
 
-    suspend fun insertCustomerMedication(medication: CustomerMedication) {
-        pharmacyDao.insertCustomerMedication(medication)
+    suspend fun insertCustomerMedication(medication: CustomerMedication): Int {
+        return pharmacyDao.insertCustomerMedication(medication).toInt()
     }
 
     suspend fun updateCustomerMedication(medication: CustomerMedication) {
@@ -166,8 +166,8 @@ class PharmacyRepository(private val pharmacyDao: PharmacyDao) {
     // --- AI Carousels ---
     val allAICarousels: Flow<List<AICarousel>> = pharmacyDao.getAllAICarousels()
 
-    suspend fun insertAICarousel(carousel: AICarousel) {
-        pharmacyDao.insertAICarousel(carousel)
+    suspend fun insertAICarousel(carousel: AICarousel): Long {
+        return pharmacyDao.insertAICarousel(carousel)
     }
 
     suspend fun deleteAICarousel(carousel: AICarousel) {
@@ -224,6 +224,44 @@ class PharmacyRepository(private val pharmacyDao: PharmacyDao) {
 
     suspend fun insertAdminAuditLog(log: AdminAuditLog) {
         pharmacyDao.insertAdminAuditLog(log)
+    }
+
+    // --- Inventory Batches ---
+    val allInventoryBatches: Flow<List<InventoryBatch>> = pharmacyDao.getAllInventoryBatches()
+
+    fun getBatchesForItem(itemId: Int): Flow<List<InventoryBatch>> {
+        return pharmacyDao.getBatchesForItem(itemId)
+    }
+
+    suspend fun insertInventoryBatch(batch: InventoryBatch): Long {
+        return pharmacyDao.insertInventoryBatch(batch)
+    }
+
+    suspend fun updateInventoryBatch(batch: InventoryBatch) {
+        pharmacyDao.updateInventoryBatch(batch)
+    }
+
+    suspend fun deleteInventoryBatch(batch: InventoryBatch) {
+        pharmacyDao.deleteInventoryBatch(batch)
+    }
+
+    suspend fun deleteInventoryBatchById(id: Int) {
+        pharmacyDao.deleteInventoryBatchById(id)
+    }
+
+    // --- Outbound SMS Logs ---
+    val allSmsLogs: Flow<List<OutboundSmsLog>> = pharmacyDao.getAllSmsLogs()
+
+    suspend fun insertSmsLog(log: OutboundSmsLog): Long {
+        return pharmacyDao.insertSmsLog(log)
+    }
+
+    suspend fun updateSmsLog(log: OutboundSmsLog) {
+        pharmacyDao.updateSmsLog(log)
+    }
+
+    suspend fun clearSmsLogs() {
+        pharmacyDao.clearSmsLogs()
     }
 
     suspend fun clearAllData() {

@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
@@ -1756,6 +1757,24 @@ fun BranchTeamTab(
 
         val channels = listOf("Phone Call", "WhatsApp", "In-Person", "System/Other")
 
+        val isStockTransfer = task.category == "Stock Transfer"
+        val descriptionText = task.description
+        val itemName = if (isStockTransfer && descriptionText.contains("ITEM: ")) {
+            descriptionText.substringAfter("ITEM: ").substringBefore(" | DOSAGE: ").trim()
+        } else ""
+        val itemDosage = if (isStockTransfer && descriptionText.contains("DOSAGE: ")) {
+            descriptionText.substringAfter("DOSAGE: ").substringBefore(" | QTY: ").trim()
+        } else ""
+        val itemQty = if (isStockTransfer && descriptionText.contains("QTY: ")) {
+            descriptionText.substringAfter("QTY: ").substringBefore(" | FROM: ").trim().toIntOrNull() ?: 0
+        } else 0
+        val fromBranch = if (isStockTransfer && descriptionText.contains("FROM: ")) {
+            descriptionText.substringAfter("FROM: ").substringBefore(" | REASON: ").trim()
+        } else ""
+        val reasonText = if (isStockTransfer && descriptionText.contains("REASON: ")) {
+            descriptionText.substringAfter("REASON: ").trim()
+        } else ""
+
         AlertDialog(
             onDismissRequest = { if (!isSavingCompliance) taskForComplianceVerification = null },
             title = {
@@ -1764,13 +1783,13 @@ fun BranchTeamTab(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Icon(
-                        imageVector = Icons.Default.FactCheck,
+                        imageVector = if (isStockTransfer) Icons.Default.Transform else Icons.Default.FactCheck,
                         contentDescription = null,
                         tint = TealPrimary,
                         modifier = Modifier.size(24.dp)
                     )
                     Text(
-                        text = "Clinical Task Verification",
+                        text = if (isStockTransfer) "Stock Transfer Receipt" else "Clinical Task Verification",
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp,
                         color = MaterialTheme.colorScheme.onSurface
@@ -1778,137 +1797,208 @@ fun BranchTeamTab(
                 }
             },
             text = {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(16.dp),
-                    modifier = Modifier.padding(top = 8.dp)
-                ) {
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = AppThemeManager.secondary.copy(alpha = 0.2f)),
-                        border = BorderStroke(1.dp, TealPrimary.copy(alpha = 0.2f)),
-                        modifier = Modifier.fillMaxWidth()
+                if (isStockTransfer) {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        modifier = Modifier.padding(top = 8.dp)
                     ) {
-                        Column(modifier = Modifier.padding(10.dp)) {
-                            Text(text = "TASK TO RESOLVE", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = TealPrimary)
-                            Spacer(modifier = Modifier.height(2.dp))
-                            Text(text = task.title, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                            Spacer(modifier = Modifier.height(2.dp))
-                            val instructionsText = if (task.description.startsWith("Assignee:")) {
-                                task.description.substringAfter(" | instructions: ")
-                            } else {
-                                task.description
-                            }
-                            Text(text = instructionsText, fontSize = 11.sp, color = AppThemeManager.slateTextMedium)
-                        }
-                    }
-
-                    Text(
-                        text = "To maintain strict clinical safety and operational tracing, you must document interaction evidence before closing this node assignment.",
-                        fontSize = 11.sp,
-                        color = AppThemeManager.slateTextMedium
-                    )
-
-                    // Linked Patient Name
-                    OutlinedTextField(
-                        value = linkedCustomerName,
-                        onValueChange = { linkedCustomerName = it },
-                        label = { Text("Patient / Customer Name", fontSize = 12.sp) },
-                        placeholder = { Text("e.g. John Doe") },
-                        singleLine = true,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = TealPrimary,
-                            focusedLabelColor = TealPrimary,
-                            unfocusedBorderColor = AppThemeManager.unfocusedTextFieldBorder
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    // Engagement Channel Select
-                    Column {
-                        Text(text = "Select Engagement Channel", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = AppThemeManager.slateTextMedium)
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = AppThemeManager.secondary.copy(alpha = 0.2f)),
+                            border = BorderStroke(1.dp, TealPrimary.copy(alpha = 0.2f)),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            channels.forEach { channel ->
-                                val isSelected = selectedChannel == channel
-                                Box(
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .clip(RoundedCornerShape(6.dp))
-                                        .background(if (isSelected) TealPrimary.copy(alpha = 0.15f) else Color.Transparent)
-                                        .border(
-                                            width = 1.dp,
-                                            color = if (isSelected) TealPrimary else AppThemeManager.unfocusedTextFieldBorder.copy(alpha = 0.4f),
-                                            shape = RoundedCornerShape(6.dp)
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text(text = "INCOMING STOCK TRANSFER DETAILS", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = TealPrimary)
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(text = "Item: $itemName ($itemDosage)", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(text = "Transfer Quantity: $itemQty units", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TealPrimary)
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(text = "Originating Branch: $fromBranch", fontSize = 11.sp, color = AppThemeManager.slateTextMedium)
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(text = "Reason: $reasonText", fontSize = 11.sp, color = AppThemeManager.slateTextMedium)
+                            }
+                        }
+
+                        Text(
+                            text = "Please verify that the physical stock received matches the transfer request. Confirming this receipt will automatically adjust your local branch inventory.",
+                            fontSize = 11.sp,
+                            color = AppThemeManager.slateTextMedium
+                        )
+
+                        OutlinedTextField(
+                            value = complianceNotes,
+                            onValueChange = { complianceNotes = it },
+                            label = { Text("Verification / Condition Notes", fontSize = 12.sp) },
+                            placeholder = { Text("e.g. Received intact, count verified, batch logged in shelf.") },
+                            minLines = 3,
+                            maxLines = 5,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = TealPrimary,
+                                focusedLabelColor = TealPrimary,
+                                unfocusedBorderColor = AppThemeManager.unfocusedTextFieldBorder
+                            ),
+                            modifier = Modifier.fillMaxWidth().testTag("transfer_receipt_notes_input")
+                        )
+                        
+                        Text(
+                            text = "Note: A minimum of 5 characters verification notes is required.",
+                            fontSize = 10.sp,
+                            color = if (complianceNotes.trim().length >= 5) AppThemeManager.okGreen else AppThemeManager.warningRed,
+                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                        )
+                    }
+                } else {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        modifier = Modifier.padding(top = 8.dp)
+                    ) {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = AppThemeManager.secondary.copy(alpha = 0.2f)),
+                            border = BorderStroke(1.dp, TealPrimary.copy(alpha = 0.2f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Text(text = "TASK TO RESOLVE", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = TealPrimary)
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(text = task.title, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                                Spacer(modifier = Modifier.height(2.dp))
+                                val instructionsText = if (task.description.startsWith("Assignee:")) {
+                                    task.description.substringAfter(" | instructions: ")
+                                } else {
+                                    task.description
+                                }
+                                Text(text = instructionsText, fontSize = 11.sp, color = AppThemeManager.slateTextMedium)
+                            }
+                        }
+
+                        Text(
+                            text = "To maintain strict clinical safety and operational tracing, you must document interaction evidence before closing this node assignment.",
+                            fontSize = 11.sp,
+                            color = AppThemeManager.slateTextMedium
+                        )
+
+                        // Linked Patient Name
+                        OutlinedTextField(
+                            value = linkedCustomerName,
+                            onValueChange = { linkedCustomerName = it },
+                            label = { Text("Patient / Customer Name", fontSize = 12.sp) },
+                            placeholder = { Text("e.g. John Doe") },
+                            singleLine = true,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = TealPrimary,
+                                focusedLabelColor = TealPrimary,
+                                unfocusedBorderColor = AppThemeManager.unfocusedTextFieldBorder
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        // Engagement Channel Select
+                        Column {
+                            Text(text = "Select Engagement Channel", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = AppThemeManager.slateTextMedium)
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                channels.forEach { channel ->
+                                    val isSelected = selectedChannel == channel
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(if (isSelected) TealPrimary.copy(alpha = 0.15f) else Color.Transparent)
+                                            .border(
+                                                width = 1.dp,
+                                                color = if (isSelected) TealPrimary else AppThemeManager.unfocusedTextFieldBorder.copy(alpha = 0.4f),
+                                                shape = RoundedCornerShape(6.dp)
+                                            )
+                                            .clickable { selectedChannel = channel }
+                                            .padding(vertical = 8.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = channel,
+                                            fontSize = 10.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isSelected) TealPrimary else AppThemeManager.slateTextMedium
                                         )
-                                        .clickable { selectedChannel = channel }
-                                        .padding(vertical = 8.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = channel,
-                                        fontSize = 10.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (isSelected) TealPrimary else AppThemeManager.slateTextMedium
-                                    )
+                                    }
                                 }
                             }
                         }
-                    }
 
-                    // Clinical resolution interaction transcript
-                    OutlinedTextField(
-                        value = complianceNotes,
-                        onValueChange = { complianceNotes = it },
-                        label = { Text("Clinical Interaction Transcript / Proof Notes", fontSize = 12.sp) },
-                        placeholder = { Text("Provide details of the follow-up, patient feedback, clinical adjustments, or resolution outcomes...") },
-                        minLines = 3,
-                        maxLines = 5,
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = TealPrimary,
-                            focusedLabelColor = TealPrimary,
-                            unfocusedBorderColor = AppThemeManager.unfocusedTextFieldBorder
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    
-                    Text(
-                        text = "Note: A minimum of 10 characters descriptive proof is required to satisfy clinical audit policies.",
-                        fontSize = 10.sp,
-                        color = if (complianceNotes.trim().length >= 10) AppThemeManager.okGreen else AppThemeManager.warningRed,
-                        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
-                    )
+                        // Clinical resolution interaction transcript
+                        OutlinedTextField(
+                            value = complianceNotes,
+                            onValueChange = { complianceNotes = it },
+                            label = { Text("Clinical Interaction Transcript / Proof Notes", fontSize = 12.sp) },
+                            placeholder = { Text("Provide details of the follow-up, patient feedback, clinical adjustments, or resolution outcomes...") },
+                            minLines = 3,
+                            maxLines = 5,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = TealPrimary,
+                                focusedLabelColor = TealPrimary,
+                                unfocusedBorderColor = AppThemeManager.unfocusedTextFieldBorder
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        
+                        Text(
+                            text = "Note: A minimum of 10 characters descriptive proof is required to satisfy clinical audit policies.",
+                            fontSize = 10.sp,
+                            color = if (complianceNotes.trim().length >= 10) AppThemeManager.okGreen else AppThemeManager.warningRed,
+                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                        )
+                    }
                 }
             },
             confirmButton = {
                 Button(
                     onClick = {
-                        val cleanPatient = linkedCustomerName.trim()
                         val cleanNotes = complianceNotes.trim()
-                        if (cleanPatient.isEmpty()) {
-                            Toast.makeText(context, "Patient Name is required for follow-up audit", Toast.LENGTH_SHORT).show()
-                            return@Button
-                        }
-                        if (cleanNotes.length < 10) {
-                            Toast.makeText(context, "Interaction notes must be at least 10 characters long to satisfy policy", Toast.LENGTH_SHORT).show()
-                            return@Button
-                        }
-                        isSavingCompliance = true
-                        viewModel.verifiablyCompleteOperationTask(
-                            task = task,
-                            notes = cleanNotes,
-                            channel = selectedChannel,
-                            patientName = cleanPatient
-                        ) { success, msg ->
-                            isSavingCompliance = false
-                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                            if (success) {
-                                taskForComplianceVerification = null
+                        if (isStockTransfer) {
+                            if (cleanNotes.length < 5) {
+                                Toast.makeText(context, "Verification notes must be at least 5 characters long", Toast.LENGTH_SHORT).show()
+                                return@Button
+                            }
+                            isSavingCompliance = true
+                            viewModel.verifyAndReceiveStockTransfer(task, cleanNotes) { success, msg ->
+                                isSavingCompliance = false
+                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                if (success) {
+                                    taskForComplianceVerification = null
+                                }
+                            }
+                        } else {
+                            val cleanPatient = linkedCustomerName.trim()
+                            if (cleanPatient.isEmpty()) {
+                                Toast.makeText(context, "Patient Name is required for follow-up audit", Toast.LENGTH_SHORT).show()
+                                return@Button
+                            }
+                            if (cleanNotes.length < 10) {
+                                Toast.makeText(context, "Interaction notes must be at least 10 characters long to satisfy policy", Toast.LENGTH_SHORT).show()
+                                return@Button
+                            }
+                            isSavingCompliance = true
+                            viewModel.verifiablyCompleteOperationTask(
+                                task = task,
+                                notes = cleanNotes,
+                                channel = selectedChannel,
+                                patientName = cleanPatient
+                            ) { success, msg ->
+                                isSavingCompliance = false
+                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                if (success) {
+                                    taskForComplianceVerification = null
+                                }
                             }
                         }
                     },
-                    enabled = !isSavingCompliance && linkedCustomerName.trim().isNotEmpty() && complianceNotes.trim().length >= 10,
+                    enabled = !isSavingCompliance && (
+                        (isStockTransfer && complianceNotes.trim().length >= 5) ||
+                        (!isStockTransfer && linkedCustomerName.trim().isNotEmpty() && complianceNotes.trim().length >= 10)
+                    ),
                     colors = ButtonDefaults.buttonColors(containerColor = TealPrimary)
                 ) {
                     if (isSavingCompliance) {
@@ -1918,7 +2008,7 @@ fun BranchTeamTab(
                             strokeWidth = 2.dp
                         )
                     } else {
-                        Text("Archive Proof", color = Color.Black, fontWeight = FontWeight.Bold)
+                        Text(if (isStockTransfer) "Verify & Receive" else "Archive Proof", color = Color.Black, fontWeight = FontWeight.Bold)
                     }
                 }
             },

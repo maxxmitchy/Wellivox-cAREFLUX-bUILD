@@ -10,6 +10,7 @@ import android.widget.Toast
 import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
@@ -84,6 +85,8 @@ fun PharmacyTriageTabContent(
     var editingCondition by remember { mutableStateOf<TriageCondition?>(null) }
     var showAiGeneratorDialog by remember { mutableStateOf(false) }
     var showWhatsAppShareDialog by remember { mutableStateOf<TriageCondition?>(null) }
+    var showDossierDialogFor by remember { mutableStateOf<TriageCondition?>(null) }
+    var selectedSymptomsForDossier by remember { mutableStateOf("") }
 
     // Derive category filters dynamically
     val categories = remember(conditions) {
@@ -114,20 +117,20 @@ fun PharmacyTriageTabContent(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 12.dp),
+                .padding(bottom = 10.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(
                 modifier = Modifier
                     .weight(1f)
-                    .padding(end = 16.dp)
+                    .padding(end = 12.dp)
             ) {
                 Text(
                     text = "Pharmacy Triage",
                     style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
-                    color = TealTertiary
+                    color = TealPrimary
                 )
                 Text(
                     text = "Clinical Knowledge Base & Patient Screener",
@@ -137,26 +140,26 @@ fun PharmacyTriageTabContent(
             }
             // Quick count badge
             Surface(
-                color = TealSurface,
-                shape = RoundedCornerShape(12.dp)
+                color = TealPrimary.copy(alpha = 0.12f),
+                shape = RoundedCornerShape(8.dp)
             ) {
                 Text(
                     text = "${conditions.size} Conditions",
-                    style = MaterialTheme.typography.labelMedium,
+                    style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.Bold,
-                    color = TealTertiary,
+                    color = TealPrimary,
                     maxLines = 1,
                     softWrap = false,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                 )
             }
         }
 
-        // Action Buttons Grid (Manual creation & AI generation)
+        // Action Buttons Grid - Sleek, compact and styled like Analytics
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 14.dp),
+                .padding(bottom = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Button(
@@ -166,104 +169,150 @@ fun PharmacyTriageTabContent(
                 },
                 modifier = Modifier
                     .weight(1f)
-                    .height(48.dp)
+                    .height(38.dp)
                     .testTag("create_protocol_button"),
-                colors = ButtonDefaults.buttonColors(containerColor = TealPrimary),
-                shape = RoundedCornerShape(12.dp),
-                contentPadding = PaddingValues(horizontal = 8.dp)
+                colors = ButtonDefaults.buttonColors(containerColor = TealPrimary, contentColor = Color.Black),
+                shape = RoundedCornerShape(10.dp),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
             ) {
-                Icon(Icons.Filled.Add, contentDescription = "Manual Protocol")
+                Icon(Icons.Filled.Add, contentDescription = "Manual Protocol", modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(
                     text = "New Protocol",
                     fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp,
                     maxLines = 1,
-                    softWrap = false,
-                    overflow = TextOverflow.Ellipsis
+                    softWrap = false
                 )
             }
 
-            val aiBtnBg = if (AppThemeManager.isDark) Color(0xFF132D37) else Color(0xFFE0F7FA)
-            val aiBtnText = TealPrimary
-            val aiBtnBorder = if (AppThemeManager.isDark) TealPrimary.copy(alpha = 0.4f) else Color(0xFF0D9488)
-
-            ElevatedButton(
+            Button(
                 onClick = { 
                     viewModel.resetTriageAiState()
                     showAiGeneratorDialog = true 
                 },
                 modifier = Modifier
                     .weight(1f)
-                    .height(48.dp)
+                    .height(38.dp)
                     .testTag("ai_generator_button"),
-                colors = ButtonDefaults.elevatedButtonColors(
-                    containerColor = aiBtnBg, 
-                    contentColor = aiBtnText
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = TealPrimary.copy(alpha = 0.12f), 
+                    contentColor = TealPrimary
                 ),
-                shape = RoundedCornerShape(12.dp),
-                border = BorderStroke(1.dp, aiBtnBorder),
-                contentPadding = PaddingValues(horizontal = 8.dp)
+                shape = RoundedCornerShape(10.dp),
+                border = BorderStroke(1.dp, TealPrimary.copy(alpha = 0.4f)),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
             ) {
-                Icon(Icons.Filled.AutoAwesome, contentDescription = "AI Generator", tint = aiBtnText)
+                Icon(Icons.Filled.AutoAwesome, contentDescription = "AI Generator", tint = TealPrimary, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(4.dp))
                 Text(
                     text = "Generate AI",
                     fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp,
                     maxLines = 1,
-                    softWrap = false,
-                    overflow = TextOverflow.Ellipsis
+                    softWrap = false
                 )
             }
         }
 
-        // Search Bar with explicit clear button
-        OutlinedTextField(
+        // Search Bar with custom height and compact layout (Using BasicTextField to prevent vertical clipping/tucking)
+        androidx.compose.foundation.text.BasicTextField(
             value = searchQuery,
             onValueChange = { searchQuery = it },
-            placeholder = { Text("Search by name, symptoms or keywords...") },
+            textStyle = MaterialTheme.typography.bodyMedium.copy(
+                color = MaterialTheme.colorScheme.onSurface,
+                fontSize = 13.sp
+            ),
+            singleLine = true,
+            cursorBrush = androidx.compose.ui.graphics.SolidColor(TealPrimary),
             modifier = Modifier
                 .fillMaxWidth()
+                .height(44.dp)
                 .testTag("triage_search_input"),
-            shape = RoundedCornerShape(14.dp),
-            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = "SearchIcon") },
-            trailingIcon = {
-                if (searchQuery.isNotEmpty()) {
-                    IconButton(onClick = { searchQuery = "" }) {
-                        Icon(Icons.Filled.Close, contentDescription = "ClearSearch")
+            decorationBox = { innerTextField ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            color = TealSurface,
+                            shape = RoundedCornerShape(10.dp)
+                        )
+                        .border(
+                            width = 1.dp,
+                            color = SlateBorderLight.copy(alpha = 0.4f),
+                            shape = RoundedCornerShape(10.dp)
+                        )
+                        .padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Search,
+                        contentDescription = "SearchIcon",
+                        tint = SlateTextMedium,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Box(
+                        modifier = Modifier.weight(1f),
+                        contentAlignment = Alignment.CenterStart
+                    ) {
+                        if (searchQuery.isEmpty()) {
+                            Text(
+                                text = "Search triage protocols...",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = SlateTextMedium,
+                                fontSize = 13.sp
+                            )
+                        }
+                        innerTextField()
+                    }
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(
+                            onClick = { searchQuery = "" },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Close,
+                                contentDescription = "ClearSearch",
+                                tint = SlateTextMedium,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
                     }
                 }
-            },
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = TealPrimary,
-                unfocusedBorderColor = UnfocusedTextFieldBorder
-            ),
-            singleLine = true
+            }
         )
 
-        Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
-        // Dynamic Categories Horizontal List
+        // Dynamic Categories Horizontal List - Clean compact pill design
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .horizontalScroll(rememberScrollState())
-                .padding(bottom = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                .padding(bottom = 10.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             categories.forEach { category ->
                 val isSelected = category == selectedCategory
                 Box(
                     modifier = Modifier
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(if (isSelected) TealPrimary else TealSecondary)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (isSelected) TealPrimary else SlateBackgroundLight)
+                        .border(
+                            1.dp, 
+                            if (isSelected) Color.Transparent else SlateBorderLight.copy(alpha = 0.4f), 
+                            RoundedCornerShape(8.dp)
+                        )
                         .clickable { selectedCategory = category }
-                        .padding(horizontal = 14.dp, vertical = 8.dp)
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
                 ) {
                     Text(
                         text = category,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                        color = if (isSelected) Color.White else SlateTextMedium
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isSelected) Color.Black else SlateTextMedium,
+                        fontSize = 11.5.sp
                     )
                 }
             }
@@ -303,7 +352,7 @@ fun PharmacyTriageTabContent(
         } else {
             LazyColumn(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 items(filteredConditions) { condition ->
                     Card(
@@ -313,96 +362,134 @@ fun PharmacyTriageTabContent(
                                 viewModel.incrementTriageUsage(condition)
                                 activeConditionForDetail = condition
                             },
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (condition.isFavorite) {
-                                if (AppThemeManager.isDark) Color(0xFF1E1F1A) else Color(0xFFFFFDF5)
-                            } else TealSurface
-                        ),
+                        colors = CardDefaults.cardColors(containerColor = TealSurface),
                         border = BorderStroke(
                             1.dp,
-                            if (condition.isFavorite) Color(0xFFEAB308) else SlateBorderLight
+                            if (condition.isFavorite) Color(0xFFEAB308) else SlateBorderLight.copy(alpha = 0.4f)
                         ),
-                        shape = RoundedCornerShape(16.dp)
+                        shape = RoundedCornerShape(12.dp)
                     ) {
-                        Row(
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                                .padding(10.dp)
                         ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        text = condition.conditionName,
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = TealTertiary,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    if (condition.isFavorite) {
-                                        Spacer(modifier = Modifier.width(4.dp))
+                            // Row 1: Header / Title with Star and Info Icon
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(32.dp)
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(TealPrimary.copy(alpha = 0.1f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
                                         Icon(
-                                            Icons.Filled.Star,
-                                            contentDescription = "Pinned",
-                                            tint = Color(0xFFEAB308),
+                                            imageVector = Icons.Filled.MedicalServices,
+                                            contentDescription = null,
+                                            tint = TealPrimary,
                                             modifier = Modifier.size(16.dp)
                                         )
                                     }
-                                }
-                                if (condition.alternativeNames.isNotBlank()) {
-                                    Text(
-                                        text = "Synonyms: ${condition.alternativeNames}",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = SlateTextMedium,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                }
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Text(
-                                    text = condition.briefDescription,
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = SlateTextMedium,
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    SuggestionChip(
-                                        onClick = {},
-                                        label = { Text(condition.category, fontSize = 11.sp) },
-                                        colors = SuggestionChipDefaults.suggestionChipColors(
-                                            containerColor = TealSecondary,
-                                            labelColor = TealTertiary
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = condition.conditionName,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
                                         )
-                                    )
-                                    if (condition.usageCount > 0) {
-                                        SuggestionChip(
-                                            onClick = {},
-                                            label = { Text("Used ${condition.usageCount}x", fontSize = 11.sp) },
-                                            colors = SuggestionChipDefaults.suggestionChipColors(
-                                                containerColor = if (AppThemeManager.isDark) Color(0x331D4ED8) else Color(0xFFEFF6FF),
-                                                labelColor = if (AppThemeManager.isDark) Color(0xFF93C5FD) else Color(0xFF1D4ED8)
+                                        if (condition.alternativeNames.isNotBlank()) {
+                                            Text(
+                                                text = "Synonyms: ${condition.alternativeNames}",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = SlateTextMedium,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
                                             )
-                                        )
+                                        }
                                     }
-                                    Spacer(modifier = Modifier.weight(1f))
-                                    Text(
-                                        text = "Updated: ${SimpleDateFormat("MMM d", Locale.getDefault()).format(Date(condition.lastUpdated))}",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = SlateTextMedium
+                                }
+                                IconButton(
+                                    onClick = { viewModel.toggleTriageFavorite(condition) },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = if (condition.isFavorite) Icons.Filled.Star else Icons.Outlined.Star,
+                                        contentDescription = "Favorite",
+                                        tint = if (condition.isFavorite) Color(0xFFEAB308) else SlateTextMedium,
+                                        modifier = Modifier.size(16.dp)
                                     )
                                 }
                             }
-                            IconButton(onClick = { viewModel.toggleTriageFavorite(condition) }) {
-                                Icon(
-                                    imageVector = if (condition.isFavorite) Icons.Filled.Star else Icons.Outlined.Star,
-                                    contentDescription = "Favorite",
-                                    tint = if (condition.isFavorite) Color(0xFFEAB308) else Color(0xFF94A3B8)
+
+                            Spacer(modifier = Modifier.height(4.dp))
+
+                            // Row 2: Description
+                            Text(
+                                text = condition.briefDescription,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = SlateTextMedium,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(bottom = 6.dp)
+                            )
+
+                            // Row 3: Tags & Metadata
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Surface(
+                                        color = TealPrimary.copy(alpha = 0.08f),
+                                        shape = RoundedCornerShape(4.dp)
+                                    ) {
+                                        Text(
+                                            text = condition.category,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = TealPrimary,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                        )
+                                    }
+                                    if (condition.usageCount > 0) {
+                                        Surface(
+                                            color = OKGreenText.copy(alpha = 0.08f),
+                                            shape = RoundedCornerShape(4.dp)
+                                        ) {
+                                            Text(
+                                                text = "Used ${condition.usageCount}x",
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = OKGreenText,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                                val formattedDate = remember(condition.lastUpdated) {
+                                    SimpleDateFormat("MMM d", Locale.getDefault()).format(Date(condition.lastUpdated))
+                                }
+                                Text(
+                                    text = "Updated: $formattedDate",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = SlateTextMedium,
+                                    fontSize = 9.sp
                                 )
                             }
                         }
@@ -640,6 +727,47 @@ fun PharmacyTriageTabContent(
                                         )
                                     }
                                 }
+                            }
+                        }
+                    }
+
+                    // Triage-to-Intervention Action Card (Option 4)
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = TealSurface),
+                        border = BorderStroke(1.dp, TealPrimary.copy(alpha = 0.5f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Filled.AssignmentInd, contentDescription = "Dossier", tint = TealPrimary)
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    "Save Assessment & Set Follow-Up",
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.titleSmall,
+                                    color = TealTertiary
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                "Link this triage screening directly to a patient's digital dossier and schedule automated recovery follow-ups.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = SlateTextMedium
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Button(
+                                onClick = {
+                                    val symptomsJoined = checkedQuestions.map { questions[it].question }.joinToString(", ")
+                                    selectedSymptomsForDossier = if (symptomsJoined.isNotBlank()) symptomsJoined else "General symptom screening completed"
+                                    showDossierDialogFor = condition
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = TealPrimary, contentColor = Color.Black),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Filled.FolderShared, contentDescription = "Save to Dossier")
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Save to Patient Dossier", fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -927,6 +1055,231 @@ fun PharmacyTriageTabContent(
             },
             dismissButton = {
                 TextButton(onClick = { showWhatsAppShareDialog = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // ==========================================
+    // DIALOG 1.5: SAVE TRIAGE TO PATIENT DOSSIER (Option 4)
+    // ==========================================
+    showDossierDialogFor?.let { condition ->
+        var createNewPatient by remember { mutableStateOf(false) }
+        var patientName by remember { mutableStateOf("") }
+        var patientPhone by remember { mutableStateOf("") }
+        var customerSearchQuery by remember { mutableStateOf("") }
+        var selectedCustomer by remember { mutableStateOf<com.example.data.Customer?>(null) }
+        var recommendedMed by remember {
+            mutableStateOf(
+                condition.recommendedOtcs.split(",").firstOrNull()?.trim() ?: ""
+            )
+        }
+        var followUpDays by remember { mutableStateOf(7) } // Presets: 3, 7, 30
+
+        val filteredCustomers = remember(customers, customerSearchQuery) {
+            customers.filter {
+                it.name.contains(customerSearchQuery, ignoreCase = true) ||
+                it.phoneNumber.contains(customerSearchQuery)
+            }
+        }
+
+        AlertDialog(
+            onDismissRequest = { showDossierDialogFor = null },
+            icon = { Icon(Icons.Filled.FolderShared, contentDescription = null, tint = TealPrimary, modifier = Modifier.size(36.dp)) },
+            title = { Text("Save Screening to Patient Dossier", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium) },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState())
+                ) {
+                    Text(
+                        text = "Condition: ${condition.conditionName}",
+                        fontWeight = FontWeight.Bold,
+                        color = TealTertiary,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+
+                    Text(
+                        text = "Observed: $selectedSymptomsForDossier",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = SlateTextMedium
+                    )
+
+                    HorizontalDivider(color = SlateBorderLight)
+
+                    // Selection Mode Switcher
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = if (createNewPatient) "🆕 Register New Patient" else "🔍 Select Registered Patient",
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        TextButton(
+                            onClick = { 
+                                createNewPatient = !createNewPatient 
+                                selectedCustomer = null
+                            }
+                        ) {
+                            Text(if (createNewPatient) "Select Existing" else "Register New")
+                        }
+                    }
+
+                    if (createNewPatient) {
+                        OutlinedTextField(
+                            value = patientName,
+                            onValueChange = { patientName = it },
+                            label = { Text("Patient Full Name") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = patientPhone,
+                            onValueChange = { patientPhone = it },
+                            label = { Text("Patient Phone / WhatsApp Number") },
+                            placeholder = { Text("e.g. +234...") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    } else {
+                        // Customer selection layout
+                        OutlinedTextField(
+                            value = customerSearchQuery,
+                            onValueChange = { customerSearchQuery = it },
+                            label = { Text("Search Patients") },
+                            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = SlateBackgroundLight),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 140.dp)
+                        ) {
+                            LazyColumn(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(4.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                if (filteredCustomers.isEmpty()) {
+                                    item {
+                                        Text(
+                                            "No patients found matching query",
+                                            modifier = Modifier.padding(8.dp),
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = SlateTextMedium
+                                        )
+                                    }
+                                } else {
+                                    items(filteredCustomers) { cust ->
+                                        val isSel = selectedCustomer?.id == cust.id
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(if (isSel) TealPrimary.copy(alpha = 0.3f) else Color.Transparent)
+                                                .clickable { selectedCustomer = cust }
+                                                .padding(8.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Column {
+                                                Text(cust.name, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
+                                                Text(cust.phoneNumber, style = MaterialTheme.typography.labelSmall, color = SlateTextMedium)
+                                            }
+                                            if (isSel) {
+                                                Icon(Icons.Filled.Check, contentDescription = "Selected", tint = TealPrimary, modifier = Modifier.size(16.dp))
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    HorizontalDivider(color = SlateBorderLight)
+
+                    // Recommended Medication
+                    OutlinedTextField(
+                        value = recommendedMed,
+                        onValueChange = { recommendedMed = it },
+                        label = { Text("Recommended Medication") },
+                        placeholder = { Text("OTC option or chronic prescription") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    // Follow-Up Presets
+                    Text(
+                        "Recovery Follow-up Timeline:",
+                        fontWeight = FontWeight.SemiBold,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = TealTertiary
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        val presets = listOf(
+                            3 to "3 Days (Acute)",
+                            7 to "7 Days (Standard)",
+                            30 to "30 Days (Chronic)"
+                        )
+                        presets.forEach { (days, label) ->
+                            val isSel = followUpDays == days
+                            FilterChip(
+                                selected = isSel,
+                                onClick = { followUpDays = days },
+                                label = { Text(label, fontSize = 11.sp) },
+                                modifier = Modifier.weight(1.0f)
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val finalName = if (createNewPatient) patientName.trim() else selectedCustomer?.name ?: ""
+                        val finalPhone = if (createNewPatient) patientPhone.trim() else selectedCustomer?.phoneNumber ?: ""
+                        
+                        if (finalName.isBlank() || finalPhone.isBlank()) {
+                            Toast.makeText(context, "Please select or register a valid patient name and phone number.", Toast.LENGTH_SHORT).show()
+                            return@Button
+                        }
+
+                        viewModel.saveTriageToDossier(
+                            customerName = finalName,
+                            customerPhone = finalPhone,
+                            customerId = selectedCustomer?.id ?: 0,
+                            conditionName = condition.conditionName,
+                            checkedSymptoms = selectedSymptomsForDossier,
+                            recommendedMed = recommendedMed,
+                            followUpDays = followUpDays
+                        ) { success, msg ->
+                            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                            if (success) {
+                                showDossierDialogFor = null
+                                activeConditionForDetail = null
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = TealPrimary, contentColor = Color.Black)
+                ) {
+                    Text("Link & Save", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDossierDialogFor = null }) {
                     Text("Cancel")
                 }
             }

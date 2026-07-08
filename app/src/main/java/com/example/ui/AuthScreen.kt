@@ -667,7 +667,7 @@ fun AuthScreen(
                                                             updateMap["registeredAt"] = System.currentTimeMillis()
                                                             dbFirestore.collection("registered_pharmacists")
                                                                 .document(user.uid)
-                                                                .set(updateMap)
+                                                                .set(updateMap, com.google.firebase.firestore.SetOptions.merge())
                                                         }
 
                                                     Toast.makeText(context, "Login Successful!", Toast.LENGTH_SHORT).show()

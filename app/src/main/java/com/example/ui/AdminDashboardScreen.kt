@@ -21,6 +21,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -43,6 +44,10 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
     val allBranches by viewModel.allBranches.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
+    // Local override state for instant, offline-resilient UI reactive feedback and sync fallback
+    var localIsSuspendedOverrides by remember { mutableStateOf<Map<String, Boolean>>(emptyMap()) }
+    var localCarefluxAiOverrides by remember { mutableStateOf<Map<String, Boolean>>(emptyMap()) }
+
     var selectedSubTab by remember { mutableStateOf(0) } // 0 = Nodes, 1 = Pharmacies, 2 = LGA Analytics, 3 = Key Requests, 4 = Audit Trail
     var pharmacistsList by remember { mutableStateOf<List<Map<String, Any>>>(emptyList()) }
     var deviceConfigsList by remember { mutableStateOf<List<Map<String, Any>>>(emptyList()) }
@@ -54,8 +59,8 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
     var isLoadingAnalytics by remember { mutableStateOf(false) }
 
     // Dynamic, interactive seed fallback generator (utilizes standard Nigerian LGAs & disease patterns)
-    val resolvedAnalyticsCustomers = remember(globalCustomersForAnalytics) {
-        if (globalCustomersForAnalytics.isNotEmpty()) {
+    val resolvedAnalyticsCustomers = remember(globalCustomersForAnalytics, deviceConfigsList, localIsSuspendedOverrides) {
+        val rawList = if (globalCustomersForAnalytics.isNotEmpty()) {
             globalCustomersForAnalytics
         } else {
             val list = mutableListOf<Map<String, Any>>()
@@ -87,9 +92,15 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                     else -> categories[random.nextInt(categories.size)]
                 }
                 
+                // Tie simulated patients to active devices/nodes dynamically
+                val simulatedDeviceId = if (deviceConfigsList.isNotEmpty()) {
+                    val dDoc = deviceConfigsList[i % deviceConfigsList.size]
+                    dDoc["id"] as? String ?: ""
+                } else ""
+
                 list.add(
                     mapOf(
-                        "id" to "sim_c_$i",
+                        "id" to if (simulatedDeviceId.isNotEmpty()) "${simulatedDeviceId}_sim_c_$i" else "sim_c_$i",
                         "name" to "Patient $i",
                         "age" to age,
                         "gender" to gender,
@@ -97,16 +108,38 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                         "lga" to lga,
                         "city" to lga,
                         "category" to category,
-                        "phoneNumber" to "0803000${1000 + i}"
+                        "phoneNumber" to "0803000${1000 + i}",
+                        "consentCloudSync" to true,
+                        "deviceId" to simulatedDeviceId
                     )
                 )
             }
             list
         }
+
+        // Filter: Only return patients with valid cloud consent AND whose device/node is active (NOT suspended)
+        rawList.filter { c ->
+            val isConsented = (c["consentCloudSync"] as? Boolean) == true
+            val idStr = c["id"] as? String ?: ""
+            val cDeviceId = c["deviceId"] as? String ?: ""
+
+            val matchingDevice = deviceConfigsList.find { d ->
+                val dId = d["id"] as? String ?: ""
+                dId.isNotEmpty() && (idStr.startsWith(dId) || cDeviceId == dId)
+            }
+            val dId = matchingDevice?.get("id") as? String ?: ""
+            val isDeviceSuspended = if (dId.isNotEmpty() && localIsSuspendedOverrides.containsKey(dId)) {
+                localIsSuspendedOverrides[dId] == true
+            } else {
+                matchingDevice?.let { (it["isSuspended"] as? Boolean) == true } ?: false
+            }
+            
+            isConsented && !isDeviceSuspended
+        }
     }
 
     val resolvedAnalyticsMeds = remember(globalMedsForAnalytics, resolvedAnalyticsCustomers) {
-        if (globalMedsForAnalytics.isNotEmpty()) {
+        val rawMeds = if (globalMedsForAnalytics.isNotEmpty()) {
             globalMedsForAnalytics
         } else {
             resolvedAnalyticsCustomers.mapIndexed { index, c ->
@@ -127,6 +160,11 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                     "category" to category
                 )
             }
+        }
+        val activeCustIds = resolvedAnalyticsCustomers.map { it["id"] as? String ?: "" }.toSet()
+        rawMeds.filter { m ->
+            val custId = m["customerId"] as? String ?: ""
+            activeCustIds.contains(custId)
         }
     }
 
@@ -175,10 +213,6 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
     var syncedInterventions by remember { mutableStateOf<List<Map<String, Any>>>(emptyList()) }
     var isLoadingNodeDetail by remember { mutableStateOf(false) }
     var selectedDetailTab by remember { mutableStateOf(0) } // 0 = Customers & Database, 1 = Demographics
-
-    // Local override state for instant, offline-resilient UI reactive feedback and sync fallback
-    var localIsSuspendedOverrides by remember { mutableStateOf<Map<String, Boolean>>(emptyMap()) }
-    var localCarefluxAiOverrides by remember { mutableStateOf<Map<String, Boolean>>(emptyMap()) }
 
     // Compliance / suspend dialog state
     var nodeToSuspend by remember { mutableStateOf<Map<String, Any>?>(null) }
@@ -680,7 +714,8 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                     "Pharmacies" to Icons.Filled.MedicalServices,
                     "LGA Analytics" to Icons.Filled.Analytics,
                     "Key Requests" to Icons.Filled.VpnKey,
-                    "Audit Trail" to Icons.Filled.HistoryToggleOff
+                    "Audit Trail" to Icons.Filled.HistoryToggleOff,
+                    "NDPA Compliance" to Icons.Filled.Security
                 ).forEachIndexed { idx, pair ->
                     val isSelected = selectedSubTab == idx
                     Box(
@@ -1300,26 +1335,25 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                             val lastActiveTime = node["lastActive"] as? Long ?: 0L
                             val aiEnabled = node["aiContentEnabled"] as? Boolean ?: true
                             val carefluxAi = node["carefluxAiEnabled"] as? Boolean ?: true
-
                             // Redesigned Node Card: 12-Year Designer Signature Left Border Strip
                             Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable { selectedNodeForDetail = node },
-                                shape = RoundedCornerShape(16.dp),
+                                shape = RoundedCornerShape(12.dp),
                                 border = BorderStroke(
                                     1.dp,
-                                    if (isSuspended) MaterialTheme.colorScheme.error.copy(alpha = 0.4f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)
+                                    if (isSuspended) MaterialTheme.colorScheme.error.copy(alpha = 0.3f) else MaterialTheme.colorScheme.outline.copy(alpha = 0.12f)
                                 ),
                                 colors = CardDefaults.cardColors(
-                                    containerColor = if (isSuspended) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surface
+                                    containerColor = if (isSuspended) MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.05f) else MaterialTheme.colorScheme.surface
                                 )
                             ) {
                                 Row(modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
                                     // Colored vertical indicator
                                     Box(
                                         modifier = Modifier
-                                            .width(5.dp)
+                                            .width(4.dp)
                                             .fillMaxHeight()
                                             .background(if (isSuspended) com.example.ui.theme.WarningRed else TealPrimary)
                                     )
@@ -1327,8 +1361,8 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                                     Column(
                                         modifier = Modifier
                                             .weight(1f)
-                                            .padding(16.dp),
-                                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                                            .padding(12.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
                                     ) {
                                         // Top Row with Device Icon and Soft glow Badge
                                         Row(
@@ -1337,8 +1371,9 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
                                             Row(
+                                                modifier = Modifier.weight(1f),
                                                 verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                                             ) {
                                                 // Icon Wrapper
                                                 val deviceIcon = if (modelName.contains("samsung", ignoreCase = true)) {
@@ -1350,55 +1385,61 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                                                 }
                                                 Box(
                                                     modifier = Modifier
-                                                        .size(36.dp)
-                                                        .clip(RoundedCornerShape(8.dp))
-                                                        .background(if (isSuspended) com.example.ui.theme.WarningRed.copy(alpha = 0.15f) else TealPrimary.copy(alpha = 0.15f)),
+                                                        .size(30.dp)
+                                                        .clip(RoundedCornerShape(6.dp))
+                                                        .background(if (isSuspended) com.example.ui.theme.WarningRed.copy(alpha = 0.12f) else TealPrimary.copy(alpha = 0.12f)),
                                                     contentAlignment = Alignment.Center
                                                 ) {
                                                     Icon(
                                                         imageVector = deviceIcon,
                                                         contentDescription = null,
                                                         tint = if (isSuspended) com.example.ui.theme.WarningRed else TealPrimary,
-                                                        modifier = Modifier.size(18.dp)
+                                                        modifier = Modifier.size(15.dp)
                                                     )
                                                 }
 
-                                                Column {
+                                                Column(modifier = Modifier.weight(1f)) {
                                                     Text(
                                                         text = modelName,
-                                                        style = MaterialTheme.typography.titleMedium,
+                                                        style = MaterialTheme.typography.titleSmall,
                                                         fontWeight = FontWeight.Bold,
-                                                        color = if (isSuspended) com.example.ui.theme.WarningRedTitle else MaterialTheme.colorScheme.onSurface
+                                                        color = if (isSuspended) com.example.ui.theme.WarningRedTitle else MaterialTheme.colorScheme.onSurface,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
                                                     )
                                                     Text(
-                                                        text = "ID: $nodeId",
+                                                        text = "ID: ${if (nodeId.length > 12) nodeId.take(12) + "..." else nodeId}",
                                                         style = MaterialTheme.typography.bodySmall,
-                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                        fontSize = 11.sp,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
                                                     )
                                                 }
                                             }
 
-                                            // Breathing Dot Status Badge
+                                            Spacer(modifier = Modifier.width(8.dp))
+
+                                            // Breathing Dot Status Badge (Horizontal pill)
                                             Row(
                                                 verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(5.dp),
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp),
                                                 modifier = Modifier
-                                                    .clip(RoundedCornerShape(6.dp))
+                                                    .clip(RoundedCornerShape(4.dp))
                                                     .background(if (isSuspended) com.example.ui.theme.WarningRedContainerSoft else com.example.ui.theme.OKGreenContainer)
-                                                    .padding(horizontal = 8.dp, vertical = 4.dp)
+                                                    .padding(horizontal = 6.dp, vertical = 3.dp)
                                             ) {
                                                 Box(
                                                     modifier = Modifier
-                                                        .size(6.dp)
+                                                        .size(5.dp)
                                                         .clip(androidx.compose.foundation.shape.CircleShape)
                                                         .background(if (isSuspended) com.example.ui.theme.WarningRed else com.example.ui.theme.OKGreen)
                                                 )
                                                 Text(
                                                     text = if (isSuspended) "SUSPENDED" else "ACTIVE",
-                                                    fontSize = 10.sp,
+                                                    fontSize = 9.sp,
                                                     fontWeight = FontWeight.Bold,
-                                                    color = if (isSuspended) com.example.ui.theme.WarningRed else com.example.ui.theme.OKGreenText,
-                                                    letterSpacing = 0.5.sp
+                                                    color = if (isSuspended) com.example.ui.theme.WarningRed else com.example.ui.theme.OKGreenText
                                                 )
                                             }
                                         }
@@ -1410,24 +1451,26 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                                             Row(
                                                 modifier = Modifier
                                                     .fillMaxWidth()
-                                                    .clip(RoundedCornerShape(8.dp))
-                                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f))
-                                                    .padding(8.dp),
+                                                    .clip(RoundedCornerShape(6.dp))
+                                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f))
+                                                    .padding(horizontal = 8.dp, vertical = 4.dp),
                                                 verticalAlignment = Alignment.CenterVertically
                                             ) {
                                                 Icon(
                                                     imageVector = Icons.Filled.Person,
                                                     contentDescription = null,
                                                     tint = TealPrimary,
-                                                    modifier = Modifier.size(14.dp)
+                                                    modifier = Modifier.size(12.dp)
                                                 )
-                                                Spacer(modifier = Modifier.width(6.dp))
+                                                Spacer(modifier = Modifier.width(4.dp))
                                                 val disp = if (ownerName.isNotEmpty() && ownerEmail.isNotEmpty()) "$ownerName ($ownerEmail)" else ownerName.ifEmpty { ownerEmail }
                                                 Text(
                                                     text = "Affiliation: $disp",
-                                                    fontSize = 11.sp,
+                                                    fontSize = 10.sp,
                                                     fontWeight = FontWeight.SemiBold,
-                                                    color = MaterialTheme.colorScheme.onSurface
+                                                    color = MaterialTheme.colorScheme.onSurface,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
                                                 )
                                             }
                                         }
@@ -1435,38 +1478,38 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                                         // AI status and sync status details row
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                                            horizontalArrangement = Arrangement.spacedBy(12.dp)
                                         ) {
                                             Column(modifier = Modifier.weight(1f)) {
-                                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                                    Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = TealPrimary, modifier = Modifier.size(12.dp))
-                                                    Text("AI Optimization", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                                                    Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = TealPrimary, modifier = Modifier.size(11.dp))
+                                                    Text("AI Optimization", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                                 }
-                                                Spacer(modifier = Modifier.height(2.dp))
-                                                Text(if (carefluxAi) "Active & Running" else "Muted (Bypassed)", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                                Spacer(modifier = Modifier.height(1.dp))
+                                                Text(if (carefluxAi) "Active & Running" else "Muted", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                             }
                                             Column(modifier = Modifier.weight(1f)) {
-                                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                                    Icon(Icons.Filled.Sync, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(12.dp))
-                                                    Text("Last Synced", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                                                    Icon(Icons.Filled.Sync, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(11.dp))
+                                                    Text("Last Synced", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                                 }
-                                                Spacer(modifier = Modifier.height(2.dp))
+                                                Spacer(modifier = Modifier.height(1.dp))
                                                 val dateStr = if (lastActiveTime > 0) {
-                                                    SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(lastActiveTime))
+                                                    SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(lastActiveTime))
                                                 } else "Never"
-                                                Text(dateStr, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                                Text(dateStr, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                             }
                                         }
 
                                         // Database inspection button guide
                                         Row(
-                                            modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                                            modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
                                             horizontalArrangement = Arrangement.End,
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
                                             Text(
                                                 text = "Inspect Node Database & Patients ",
-                                                fontSize = 11.sp,
+                                                fontSize = 10.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 color = TealPrimary
                                             )
@@ -1474,14 +1517,14 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                                                 imageVector = Icons.Filled.ArrowForward,
                                                 contentDescription = null,
                                                 tint = TealPrimary,
-                                                modifier = Modifier.size(12.dp)
+                                                modifier = Modifier.size(11.dp)
                                             )
                                         }
 
                                         // Node action buttons (Clean capsules with glowing touch points)
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                                         ) {
                                             if (isSuspended) {
                                                 Button(
@@ -1491,12 +1534,13 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                                                         nodeToSuspend = node
                                                     },
                                                     colors = ButtonDefaults.buttonColors(containerColor = TealPrimary),
-                                                    modifier = Modifier.weight(1f),
-                                                    shape = RoundedCornerShape(10.dp)
+                                                    modifier = Modifier.weight(1f).height(32.dp),
+                                                    contentPadding = PaddingValues(0.dp),
+                                                    shape = RoundedCornerShape(6.dp)
                                                 ) {
-                                                    Icon(Icons.Filled.Check, contentDescription = null, tint = Color.Black, modifier = Modifier.size(14.dp))
-                                                    Spacer(modifier = Modifier.width(6.dp))
-                                                    Text("Activate Access", color = Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                    Icon(Icons.Filled.Check, contentDescription = null, tint = Color.Black, modifier = Modifier.size(12.dp))
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Text("Activate Access", color = Color.Black, fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                                 }
                                             } else {
                                                 OutlinedButton(
@@ -1506,13 +1550,14 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                                                         nodeToSuspend = node
                                                     },
                                                     colors = ButtonDefaults.outlinedButtonColors(contentColor = com.example.ui.theme.WarningRed),
-                                                    border = BorderStroke(1.dp, com.example.ui.theme.WarningRed.copy(alpha = 0.6f)),
-                                                    modifier = Modifier.weight(1f),
-                                                    shape = RoundedCornerShape(10.dp)
+                                                    border = BorderStroke(1.dp, com.example.ui.theme.WarningRed.copy(alpha = 0.5f)),
+                                                    modifier = Modifier.weight(1f).height(32.dp),
+                                                    contentPadding = PaddingValues(0.dp),
+                                                    shape = RoundedCornerShape(6.dp)
                                                 ) {
-                                                    Icon(Icons.Filled.Block, contentDescription = null, tint = com.example.ui.theme.WarningRed, modifier = Modifier.size(14.dp))
-                                                    Spacer(modifier = Modifier.width(6.dp))
-                                                    Text("Suspend Node", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                    Icon(Icons.Filled.Block, contentDescription = null, tint = com.example.ui.theme.WarningRed, modifier = Modifier.size(12.dp))
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Text("Suspend Node", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                                 }
                                             }
 
@@ -1529,6 +1574,7 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                                                     db.collection("registered_pharmacists")
                                                         .document(nodeId)
                                                         .set(mapOf("carefluxAiEnabled" to newAiVal), com.google.firebase.firestore.SetOptions.merge())
+                                                    
                                                     db.collection("registered_pharmacists")
                                                         .whereEqualTo("deviceId", nodeId)
                                                         .get()
@@ -1537,7 +1583,7 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                                                                 docSnap.reference.set(mapOf("carefluxAiEnabled" to newAiVal), com.google.firebase.firestore.SetOptions.merge())
                                                             }
                                                         }
-
+ 
                                                     viewModel.logAdminAction(
                                                         admin = "Chinedu (Admin)",
                                                         action = if (newAiVal) "ENABLE_AI_SUPPORT" else "DISABLE_AI_SUPPORT",
@@ -1546,14 +1592,15 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                                                         reason = "Manual Admin Configuration override"
                                                     )
                                                 },
-                                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
-                                                modifier = Modifier.weight(1f),
-                                                shape = RoundedCornerShape(10.dp),
+                                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+                                                modifier = Modifier.weight(1f).height(32.dp),
+                                                contentPadding = PaddingValues(0.dp),
+                                                shape = RoundedCornerShape(6.dp),
                                                 colors = ButtonDefaults.outlinedButtonColors(contentColor = if (carefluxAi) TealPrimary else MaterialTheme.colorScheme.onSurfaceVariant)
                                             ) {
-                                                Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(14.dp))
-                                                Spacer(modifier = Modifier.width(6.dp))
-                                                Text(if (carefluxAi) "Mute AI" else "Unmute AI", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(12.dp))
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text(if (carefluxAi) "Mute AI" else "Unmute AI", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                             }
                                         }
                                     }
@@ -1568,6 +1615,17 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
             var searchQuery by remember { mutableStateOf("") }
             var showDeleteDialog by remember { mutableStateOf(false) }
             var selectedBranchForDelete by remember { mutableStateOf<Map<String, Any>?>(null) }
+
+            var showEditDialog by remember { mutableStateOf(false) }
+            var selectedBranchForEdit by remember { mutableStateOf<Map<String, Any>?>(null) }
+            var editBranchName by remember { mutableStateOf("") }
+            var editBranchLga by remember { mutableStateOf("") }
+            var editBranchState by remember { mutableStateOf("") }
+
+            var showManagerDialog by remember { mutableStateOf(false) }
+            var selectedBranchForManager by remember { mutableStateOf<Map<String, Any>?>(null) }
+            var managerSearchQuery by remember { mutableStateOf("") }
+
             val filteredBranches = remember(allBranches, searchQuery) {
                 if (searchQuery.isBlank()) {
                     allBranches
@@ -1616,19 +1674,22 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                 OutlinedTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
-                    placeholder = { Text("Search by name, code, LGA, or state...") },
-                    leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = TealPrimary) },
-                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { Text("Search by name, code, LGA, or state...", fontSize = 14.sp) },
+                    leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = TealPrimary, modifier = Modifier.size(18.dp)) },
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp),
                     singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(8.dp),
                     colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f),
+                        unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f),
                         focusedBorderColor = TealPrimary,
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                        unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)
                     ),
                     trailingIcon = {
                         if (searchQuery.isNotEmpty()) {
-                            IconButton(onClick = { searchQuery = "" }) {
-                                Icon(Icons.Filled.Clear, contentDescription = "Clear search", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            IconButton(onClick = { searchQuery = "" }, modifier = Modifier.size(24.dp)) {
+                                Icon(Icons.Filled.Clear, contentDescription = "Clear search", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
                             }
                         }
                     }
@@ -1664,7 +1725,7 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                 } else {
                     Column(
                         modifier = Modifier.fillMaxWidth(),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         filteredBranches.forEach { branch ->
                             val bId = branch["id"] as? String ?: "Unknown Code"
@@ -1683,9 +1744,9 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
 
                             Card(
                                 modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(16.dp),
+                                shape = RoundedCornerShape(10.dp),
                                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
                             ) {
                                 Row(modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)) {
                                     // Visual color highlight indicator
@@ -1699,8 +1760,8 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                                     Column(
                                         modifier = Modifier
                                             .fillMaxWidth()
-                                            .padding(16.dp),
-                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                            .padding(12.dp),
+                                        verticalArrangement = Arrangement.spacedBy(6.dp)
                                     ) {
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
@@ -1712,72 +1773,94 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                                                     text = bName,
                                                     style = MaterialTheme.typography.titleMedium,
                                                     fontWeight = FontWeight.Bold,
-                                                    color = TealPrimary
+                                                    color = TealPrimary,
+                                                    fontSize = 15.sp
                                                 )
-                                                Spacer(modifier = Modifier.height(2.dp))
+                                                Spacer(modifier = Modifier.height(1.dp))
                                                 Text(
                                                     text = "Established: $creationDateStr",
                                                     style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    fontSize = 11.sp
                                                 )
                                             }
 
                                             Row(
                                                 verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
                                             ) {
                                                 // Copyable Terminal Code pill
                                                 Card(
                                                     colors = CardDefaults.cardColors(
-                                                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+                                                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
                                                     ),
-                                                    border = BorderStroke(1.dp, TealPrimary.copy(alpha = 0.4f)),
+                                                    border = BorderStroke(1.dp, TealPrimary.copy(alpha = 0.3f)),
                                                     modifier = Modifier.clickable {
                                                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                                         val clip = ClipData.newPlainText("Pharmacy Code", bId)
                                                         clipboard.setPrimaryClip(clip)
-                                                        Toast.makeText(context, "Code '$bId' copied to clipboard!", Toast.LENGTH_SHORT).show()
+                                                        Toast.makeText(context, "Code '$bId' copied!", Toast.LENGTH_SHORT).show()
                                                     }
                                                 ) {
                                                     Row(
-                                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
                                                         verticalAlignment = Alignment.CenterVertically,
-                                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                        horizontalArrangement = Arrangement.spacedBy(3.dp)
                                                     ) {
                                                         Text(
                                                             text = bId,
-                                                            fontSize = 11.sp,
+                                                            fontSize = 10.sp,
                                                             fontWeight = FontWeight.Bold,
                                                             fontFamily = FontFamily.Monospace,
-                                                            color = MaterialTheme.colorScheme.onSurface,
-                                                            letterSpacing = 0.5.sp
+                                                            color = MaterialTheme.colorScheme.onSurface
                                                         )
                                                         Icon(
                                                             imageVector = Icons.Filled.ContentCopy,
                                                             contentDescription = "Copy code",
                                                             tint = TealPrimary,
-                                                            modifier = Modifier.size(11.dp)
+                                                            modifier = Modifier.size(10.dp)
                                                         )
                                                     }
                                                 }
 
+                                                // Edit button
+                                                IconButton(
+                                                    onClick = {
+                                                        selectedBranchForEdit = branch
+                                                        editBranchName = bName
+                                                        editBranchLga = bLga
+                                                        editBranchState = bState
+                                                        showEditDialog = true
+                                                    },
+                                                    modifier = Modifier.size(24.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Filled.Edit,
+                                                        contentDescription = "Edit Branch",
+                                                        tint = MaterialTheme.colorScheme.primary,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
+
+                                                // Delete button
                                                 IconButton(
                                                     onClick = {
                                                         selectedBranchForDelete = branch
                                                         showDeleteDialog = true
                                                     },
-                                                    modifier = Modifier.size(28.dp)
+                                                    modifier = Modifier.size(24.dp)
                                                 ) {
                                                     Icon(
                                                         imageVector = Icons.Filled.Delete,
                                                         contentDescription = "Delete Branch",
                                                         tint = MaterialTheme.colorScheme.error,
-                                                        modifier = Modifier.size(18.dp)
+                                                        modifier = Modifier.size(16.dp)
                                                     )
                                                 }
                                             }
                                         }
 
+                                        // Location & Team members row
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
                                             horizontalArrangement = Arrangement.SpaceBetween,
@@ -1787,34 +1870,128 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                                                 verticalAlignment = Alignment.CenterVertically,
                                                 horizontalArrangement = Arrangement.spacedBy(4.dp)
                                             ) {
-                                                Icon(Icons.Filled.Place, contentDescription = null, tint = TealPrimary, modifier = Modifier.size(14.dp))
+                                                Icon(Icons.Filled.Place, contentDescription = null, tint = TealPrimary, modifier = Modifier.size(12.dp))
                                                 Text(
                                                     text = "$bLga, $bState",
                                                     style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    fontSize = 11.sp
                                                 )
                                             }
 
                                             Row(
                                                 verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                horizontalArrangement = Arrangement.spacedBy(3.dp),
                                                 modifier = Modifier
-                                                    .clip(RoundedCornerShape(8.dp))
-                                                    .background(TealPrimary.copy(alpha = 0.1f))
-                                                    .padding(horizontal = 8.dp, vertical = 2.dp)
+                                                    .clip(RoundedCornerShape(6.dp))
+                                                    .background(TealPrimary.copy(alpha = 0.08f))
+                                                    .padding(horizontal = 6.dp, vertical = 2.dp)
                                             ) {
                                                 Icon(
                                                     imageVector = Icons.Filled.Group,
                                                     contentDescription = null,
                                                     tint = TealPrimary,
-                                                    modifier = Modifier.size(12.dp)
+                                                    modifier = Modifier.size(10.dp)
                                                 )
                                                 Text(
-                                                    text = "$staffCount team ${if (staffCount == 1) "member" else "members"}",
-                                                    fontSize = 10.sp,
+                                                    text = "$staffCount ${if (staffCount == 1) "member" else "members"}",
+                                                    fontSize = 9.sp,
                                                     fontWeight = FontWeight.Bold,
                                                     color = TealPrimary
                                                 )
+                                            }
+                                        }
+
+                                        // Manager section
+                                        HorizontalDivider(
+                                            modifier = Modifier.padding(vertical = 2.dp),
+                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.05f)
+                                        )
+
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            val mName = branch["managerName"] as? String ?: pharmacistsList.find { (it["branchId"] as? String) == bId && it["role"] == "Branch Manager" }?.let { it["displayName"] as? String } ?: ""
+                                            val mEmail = branch["managerEmail"] as? String ?: pharmacistsList.find { (it["branchId"] as? String) == bId && it["role"] == "Branch Manager" }?.let { it["email"] as? String } ?: ""
+                                            
+                                            if (mName.isNotBlank()) {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                    modifier = Modifier.weight(1f)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Filled.Shield,
+                                                        contentDescription = "Manager",
+                                                        tint = TealPrimary,
+                                                        modifier = Modifier.size(13.dp)
+                                                    )
+                                                    Column {
+                                                        Text(
+                                                            text = "Mgr: $mName",
+                                                            fontSize = 11.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = MaterialTheme.colorScheme.onSurface
+                                                        )
+                                                        if (mEmail.isNotBlank()) {
+                                                            Text(
+                                                                text = mEmail,
+                                                                fontSize = 9.sp,
+                                                                color = SlateTextMedium
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                                
+                                                TextButton(
+                                                    onClick = {
+                                                        selectedBranchForManager = branch
+                                                        managerSearchQuery = ""
+                                                        showManagerDialog = true
+                                                    },
+                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                                    modifier = Modifier.height(24.dp)
+                                                ) {
+                                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                                        Icon(Icons.Filled.SwapHoriz, contentDescription = null, modifier = Modifier.size(11.dp), tint = TealPrimary)
+                                                        Text("Reassign", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = TealPrimary)
+                                                    }
+                                                }
+                                            } else {
+                                                Row(
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                    modifier = Modifier.weight(1f)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Filled.Shield,
+                                                        contentDescription = "No Manager",
+                                                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                                        modifier = Modifier.size(13.dp)
+                                                    )
+                                                    Text(
+                                                        text = "No Manager Appointed",
+                                                        fontSize = 11.sp,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
+                                                
+                                                TextButton(
+                                                    onClick = {
+                                                        selectedBranchForManager = branch
+                                                        managerSearchQuery = ""
+                                                        showManagerDialog = true
+                                                    },
+                                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                                    modifier = Modifier.height(24.dp)
+                                                ) {
+                                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                                        Icon(Icons.Filled.PersonAdd, contentDescription = null, modifier = Modifier.size(11.dp), tint = TealPrimary)
+                                                        Text("Appoint", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = TealPrimary)
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -1852,6 +2029,174 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                                 onClick = {
                                     showDeleteDialog = false
                                     selectedBranchForDelete = null
+                                }
+                            ) {
+                                Text("Cancel")
+                            }
+                        }
+                    )
+                }
+
+                if (showEditDialog && selectedBranchForEdit != null) {
+                    val bId = selectedBranchForEdit!!["id"] as? String ?: ""
+                    AlertDialog(
+                        onDismissRequest = {
+                            showEditDialog = false
+                            selectedBranchForEdit = null
+                        },
+                        title = { Text("Edit Branch Details", fontWeight = FontWeight.Bold) },
+                        text = {
+                            Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                                OutlinedTextField(
+                                    value = editBranchName,
+                                    onValueChange = { editBranchName = it },
+                                    label = { Text("Branch Name") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(8.dp)
+                                )
+                                OutlinedTextField(
+                                    value = editBranchLga,
+                                    onValueChange = { editBranchLga = it },
+                                    label = { Text("LGA") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(8.dp)
+                                )
+                                OutlinedTextField(
+                                    value = editBranchState,
+                                    onValueChange = { editBranchState = it },
+                                    label = { Text("State") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(8.dp)
+                                )
+                            }
+                        },
+                        confirmButton = {
+                            Button(
+                                onClick = {
+                                    if (editBranchName.isBlank() || editBranchLga.isBlank() || editBranchState.isBlank()) {
+                                        Toast.makeText(context, "All fields are required.", Toast.LENGTH_SHORT).show()
+                                        return@Button
+                                    }
+                                    viewModel.updateBranchDetails(bId, editBranchName, editBranchLga, editBranchState) { success, msg ->
+                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                        showEditDialog = false
+                                        selectedBranchForEdit = null
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = TealPrimary, contentColor = Color.Black)
+                            ) {
+                                Text("Save Changes", fontWeight = FontWeight.Bold)
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(
+                                onClick = {
+                                    showEditDialog = false
+                                    selectedBranchForEdit = null
+                                }
+                            ) {
+                                Text("Cancel")
+                            }
+                        }
+                    )
+                }
+
+                if (showManagerDialog && selectedBranchForManager != null) {
+                    val bId = selectedBranchForManager!!["id"] as? String ?: ""
+                    val bName = selectedBranchForManager!!["name"] as? String ?: "this branch"
+                    val filteredPharmacists = pharmacistsList.filter { pharmacist ->
+                        val pName = pharmacist["displayName"] as? String ?: ""
+                        val pEmail = pharmacist["email"] as? String ?: ""
+                        pName.contains(managerSearchQuery, ignoreCase = true) || pEmail.contains(managerSearchQuery, ignoreCase = true)
+                    }
+
+                    AlertDialog(
+                        onDismissRequest = {
+                            showManagerDialog = false
+                            selectedBranchForManager = null
+                        },
+                        title = { Text("Appoint Manager", fontWeight = FontWeight.Bold) },
+                        text = {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                Text("Assign a Branch Manager for '$bName' ($bId):", fontSize = 13.sp)
+                                
+                                OutlinedTextField(
+                                    value = managerSearchQuery,
+                                    onValueChange = { managerSearchQuery = it },
+                                    placeholder = { Text("Filter staff name or email...") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = OutlinedTextFieldDefaults.colors(
+                                        focusedBorderColor = TealPrimary,
+                                        unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                                    )
+                                )
+
+                                Box(modifier = Modifier.fillMaxWidth().heightIn(max = 240.dp)) {
+                                    if (filteredPharmacists.isEmpty()) {
+                                        Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                                            Text("No matching pharmacists found.", fontSize = 12.sp, color = SlateTextMedium)
+                                        }
+                                    } else {
+                                        LazyColumn(
+                                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            items(filteredPharmacists) { pharmacist ->
+                                                val pUid = pharmacist["id"] as? String ?: ""
+                                                val pName = pharmacist["displayName"] as? String ?: "Unknown"
+                                                val pEmail = pharmacist["email"] as? String ?: ""
+                                                val pRole = pharmacist["role"] as? String ?: "Pharmacist"
+                                                val pBranch = pharmacist["branchName"] as? String ?: "No Branch"
+
+                                                Card(
+                                                    colors = CardDefaults.cardColors(
+                                                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f)
+                                                    ),
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .clickable {
+                                                            viewModel.appointManager(bId, bName, pUid, pName, pEmail) { success, msg ->
+                                                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                                                showManagerDialog = false
+                                                                selectedBranchForManager = null
+                                                            }
+                                                        }
+                                                ) {
+                                                    Row(
+                                                        modifier = Modifier.padding(10.dp),
+                                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        Column(modifier = Modifier.weight(1f)) {
+                                                            Text(pName, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                                            Text("$pEmail • $pRole", fontSize = 10.sp, color = SlateTextMedium)
+                                                            Text("Branch: $pBranch", fontSize = 10.sp, color = TealPrimary, fontWeight = FontWeight.SemiBold)
+                                                        }
+                                                        Icon(
+                                                            imageVector = Icons.Filled.ArrowForward,
+                                                            contentDescription = "Select",
+                                                            tint = TealPrimary,
+                                                            modifier = Modifier.size(16.dp)
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        },
+                        confirmButton = {},
+                        dismissButton = {
+                            TextButton(
+                                onClick = {
+                                    showManagerDialog = false
+                                    selectedBranchForManager = null
                                 }
                             ) {
                                 Text("Cancel")
@@ -2640,7 +2985,7 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                     }
                 }
             }
-        } else {
+        } else if (selectedSubTab == 4) {
 
             if (auditLogs.isEmpty()) {
                 Box(modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp), contentAlignment = Alignment.Center) {
@@ -2749,6 +3094,290 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                         }
                     }
                 }
+            }
+        } else if (selectedSubTab == 5) {
+            // --- NDPA PRIVACY POLICY & COMPLIANCE PLEDGE TAB ---
+            val isPledgeSigned by viewModel.isNdpaPledgeSigned.collectAsStateWithLifecycle()
+            var showPledgeDialog by remember { mutableStateOf(false) }
+
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                // Header Panel
+                Card(
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = if (isPledgeSigned) TealSurface else MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.15f)),
+                    border = BorderStroke(
+                        1.dp,
+                        if (isPledgeSigned) TealPrimary.copy(alpha = 0.4f) else MaterialTheme.colorScheme.error.copy(alpha = 0.4f)
+                    ),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(
+                                imageVector = if (isPledgeSigned) Icons.Filled.VerifiedUser else Icons.Filled.PrivacyTip,
+                                contentDescription = null,
+                                tint = if (isPledgeSigned) OKGreen else MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Text(
+                                text = if (isPledgeSigned) "Nigeria Data Protection Act (NDPA) - ACTIVE" else "NDPA Data processing pledge required",
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = if (isPledgeSigned) TealTertiary else MaterialTheme.colorScheme.error
+                            )
+                        }
+
+                        Text(
+                            text = if (isPledgeSigned) {
+                                "Under the Nigeria Data Protection Act (NDPA) 2023, this node is registered as a lawful clinical processor of customer records, WhatsApp prescriptions, and multi-node cloud syncing. Security profiles and consent audits are logged."
+                            } else {
+                                "Your node is currently operating in offline-first processing mode. To activate care-network cloud synchronizations and secure messaging, the head pharmacist must sign and execute the Data Processing Agreement (DPA) and compliance pledge."
+                            },
+                            fontSize = 11.sp,
+                            lineHeight = 15.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        if (!isPledgeSigned) {
+                            Button(
+                                onClick = { showPledgeDialog = true },
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.align(Alignment.End)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Icon(Icons.Filled.Assignment, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Text("Sign NDPA Compliance Pledge", fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                }
+                            }
+                        } else {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                SuggestionChip(
+                                    onClick = {},
+                                    label = { Text("Regulatory Status: COMPLIANT", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = OKGreen) },
+                                    colors = SuggestionChipDefaults.suggestionChipColors(containerColor = OKGreen.copy(alpha = 0.1f)),
+                                    border = BorderStroke(0.5.dp, OKGreen.copy(alpha = 0.4f)),
+                                    modifier = Modifier.height(24.dp)
+                                )
+                                Text(
+                                    text = "Audit trail verified ✔",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = OKGreen
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Privacy Policy and Legal Overview Block
+                Text(
+                    text = "Regulatory Overview (NDPA 2023)",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = TealTertiary,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = SlateBackgroundLight),
+                        border = BorderStroke(1.dp, SlateBorderLight),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("Section 26: Consent", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = TealTertiary)
+                            Text("Lawful basis of processing requires clear, explicit, affirmative consent from data subjects for medical tracking.", fontSize = 9.sp, lineHeight = 12.sp, color = SlateTextMedium)
+                        }
+                    }
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = SlateBackgroundLight),
+                        border = BorderStroke(1.dp, SlateBorderLight),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text("Section 34: Rights", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = TealTertiary)
+                            Text("Patients hold the right to access, export, rectify, and delete their medical and demographic data instantly.", fontSize = 9.sp, lineHeight = 12.sp, color = SlateTextMedium)
+                        }
+                    }
+                }
+
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = SlateBackgroundLight),
+                    border = BorderStroke(1.dp, SlateBorderLight),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text("Section 39: Security Measures", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = TealTertiary)
+                        Text("Provides strict guidelines on encryption, role-based database locking, multi-branch network access, and logs tracking of administrative changes to prevent malicious data leaks.", fontSize = 9.sp, lineHeight = 12.sp, color = SlateTextMedium)
+                    }
+                }
+
+                // Official Privacy Policy Block
+                Text(
+                    text = "Careflux Official Patient Data Privacy Policy",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = TealTertiary
+                )
+
+                Card(
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, SlateBorderLight),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(280.dp)
+                            .verticalScroll(rememberScrollState())
+                            .padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text(
+                            text = "CAREFLUX CLINICAL NETWORK PRIVACY POLICY\nEffective Date: June 2026\nVersion 1.2 (NDPA Standardized)",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontWeight = FontWeight.Black,
+                            color = TealTertiary,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Text(
+                            text = "1. DATA MINIMIZATION & COLLECTION LIMITS\nWe only collect demographic data (Name, Age, WhatsApp Number, LGA/City) and active clinical prescriptions necessary to provide pharmaceutical dispensing, check severe drug interactions, and alert patients on dynamic medication refills.",
+                            fontSize = 10.sp,
+                            lineHeight = 14.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        Text(
+                            text = "2. CONSENT BY THE DATA SUBJECT\nNo record is uploaded to Firestore or searched in the Global Care Node Registry without explicit opt-in. Patients can select Verbal, OTP-verified, or Written consent channels upon registration or profile updates.",
+                            fontSize = 10.sp,
+                            lineHeight = 14.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        Text(
+                            text = "3. SECURE PROCESSING GUARANTEES\nAll patient data saved in the SQLite/Room database is encrypted. Syncing with care-nodes is secured via SSL with dynamic cryptographic access keys. Administrative changes (such as node suspensions or API access token changes) are logged permanently.",
+                            fontSize = 10.sp,
+                            lineHeight = 14.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        Text(
+                            text = "4. PATIENT CONTROL & AUDITING\nPatients have full rights to request deletion or modification of their clinical records. Pharmacists can update, deactivate, or export these files. Any deletion is immediately recorded in the global node network logs.",
+                            fontSize = 10.sp,
+                            lineHeight = 14.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        Text(
+                            text = "5. COOPERATING DATA PROCESSORS\nBy signing the compliance pledge, the processing pharmacist agrees to handle medical records solely in compliance with the Nigeria Data Protection Act. Negligent disclosure of medical history constitutes a material breach.",
+                            fontSize = 10.sp,
+                            lineHeight = 14.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
+            // Executive Pledge Signature Dialog
+            if (showPledgeDialog) {
+                var typedName by remember { mutableStateOf("") }
+                var checkbox1 by remember { mutableStateOf(false) }
+                var checkbox2 by remember { mutableStateOf(false) }
+                var checkbox3 by remember { mutableStateOf(false) }
+                var checkbox4 by remember { mutableStateOf(false) }
+                var formError by remember { mutableStateOf(false) }
+
+                AlertDialog(
+                    onDismissRequest = { showPledgeDialog = false },
+                    title = {
+                        Text(
+                            text = "Execute Data Processing Pledge",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    },
+                    text = {
+                        Column(
+                            modifier = Modifier.verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Text(
+                                text = "Please review the Data Processing Agreement (DPA) stipulations and pledge compliance under penalty of administrative de-registration.",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+
+                            // Pledge 1
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(checked = checkbox1, onCheckedChange = { checkbox1 = it })
+                                Text("I pledge to only register patients who provide explicit, documented consent under Section 26.", fontSize = 10.sp, lineHeight = 12.sp, modifier = Modifier.weight(1f))
+                            }
+                            // Pledge 2
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(checked = checkbox2, onCheckedChange = { checkbox2 = it })
+                                Text("I agree to only trigger WhatsApp/SMS messages to patients who authorized message alerting.", fontSize = 10.sp, lineHeight = 12.sp, modifier = Modifier.weight(1f))
+                            }
+                            // Pledge 3
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(checked = checkbox3, onCheckedChange = { checkbox3 = it })
+                                Text("I commit to maintaining database confidentiality, locking access keys, and recording audits.", fontSize = 10.sp, lineHeight = 12.sp, modifier = Modifier.weight(1f))
+                            }
+                            // Pledge 4
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Checkbox(checked = checkbox4, onCheckedChange = { checkbox4 = it })
+                                Text("I acknowledge that Careflux is a secure processor, and data leaks will be reported within 72 hrs.", fontSize = 10.sp, lineHeight = 12.sp, modifier = Modifier.weight(1f))
+                            }
+
+                            Spacer(modifier = Modifier.height(6.dp))
+
+                            OutlinedTextField(
+                                value = typedName,
+                                onValueChange = { typedName = it; formError = false },
+                                label = { Text("Sign Full Pharmacist Name") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            if (formError) {
+                                Text("Please sign your name and accept all compliance pledge boxes to continue.", color = Color.Red, fontSize = 9.sp)
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                if (typedName.isBlank() || !checkbox1 || !checkbox2 || !checkbox3 || !checkbox4) {
+                                    formError = true
+                                } else {
+                                    viewModel.signNdpaPledge(typedName)
+                                    showPledgeDialog = false
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = TealPrimary),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text("Sign & Execute DPA", color = Color.Black, fontWeight = FontWeight.Bold)
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showPledgeDialog = false }) {
+                            Text("Cancel")
+                        }
+                    }
+                )
             }
         }
     }

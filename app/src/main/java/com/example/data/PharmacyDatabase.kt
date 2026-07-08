@@ -22,9 +22,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         TriageCondition::class,
         MedicationSale::class,
         RescueListing::class,
-        AdminAuditLog::class
+        AdminAuditLog::class,
+        InventoryBatch::class,
+        OutboundSmsLog::class
     ],
-    version = 21,
+    version = 22,
     exportSchema = false
 )
 abstract class PharmacyDatabase : RoomDatabase() {

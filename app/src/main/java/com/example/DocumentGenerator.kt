@@ -23,19 +23,21 @@ object DocumentGenerator {
         customerPhone: String,
         deliveryAddress: String,
         invoiceNo: String = "CFX-${System.currentTimeMillis().toString().takeLast(6)}",
-        orderId: String = "ORD-${System.currentTimeMillis().toString().takeLast(6)}"
+        orderId: String = "ORD-${System.currentTimeMillis().toString().takeLast(6)}",
+        pharmacistName: String = "Pharm. Olawale A.",
+        pharmacyName: String = "Careflux Central Pharmacy"
     ): Pair<Uri?, String?> {
         val width = 1400
         val headerHeight = 450
         val billToHeight = 250
         val tableHeaderHeight = 60
-        val rowHeight = 80
+        val rowHeight = 90
         val itemsHeight = (cartItems.size * rowHeight) + tableHeaderHeight
         val totalsHeight = 350
-        val paymentHeight = if (isInvoice) 250 else 0
-        val footerHeight = 250
+        val paymentHeight = if (isInvoice) 360 else 0
+        val footerHeight = 360
         
-        val height = headerHeight + billToHeight + itemsHeight + totalsHeight + paymentHeight + footerHeight + 100
+        val height = headerHeight + billToHeight + itemsHeight + totalsHeight + paymentHeight + footerHeight + 150
         
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(bitmap)
@@ -69,16 +71,16 @@ object DocumentGenerator {
         // --- HEADER --- //
         // Logo simulation + CAREFLUX
         paintDarkBlueText.typeface = typeBold
-        paintDarkBlueText.textSize = 64f
-        canvas.drawText("CAREFLUX", margin + 100f, yPos, paintDarkBlueText)
+        paintDarkBlueText.textSize = 56f
+        canvas.drawText("CAREFLUX", margin + 100f, yPos - 10f, paintDarkBlueText)
         
         paintLightBlueText.typeface = typeRegular
-        paintLightBlueText.textSize = 48f
-        canvas.drawText("P H A R M A C Y", margin + 100f, yPos + 60f, paintLightBlueText)
+        paintLightBlueText.textSize = 20f
+        paintLightBlueText.color = colorTextGray
+        canvas.drawText("DELIVERING ON BEHALF OF ${pharmacyName.uppercase()}", margin + 100f, yPos + 30f, paintLightBlueText)
         
         paintGrayText.typeface = typeRegular
         paintGrayText.textSize = 28f
-        // canvas.drawText("Your Health. Our Priority.", margin + 100f, yPos + 110f, paintGrayText)
 
         // Draw cross logo box
         val logoPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorDarkBlue; style = Paint.Style.FILL }
@@ -119,9 +121,8 @@ object DocumentGenerator {
         canvas.drawText(addressLine2, margin + 40f, yPos + 35f, paintDarkText)
         
         canvas.drawText("+234 814 757 8314", margin + 40f, yPos + 90f, paintDarkText)
-        canvas.drawText("hello@carefluxpharmacy.com", margin + 40f, yPos + 140f, paintDarkText)
-        canvas.drawText("www.carefluxpharmacy.com", margin + 40f, yPos + 190f, paintDarkText)
-        // canvas.drawText("RC: 1670123    |    CAC: BN 3027198", margin + 40f, yPos + 240f, paintGrayText)
+        canvas.drawText("hello@careflux.com", margin + 40f, yPos + 140f, paintDarkText)
+        canvas.drawText("www.careflux.com", margin + 40f, yPos + 190f, paintDarkText)
 
         // Info box on right
         val infoBoxTop = yPos - 10f
@@ -161,30 +162,48 @@ object DocumentGenerator {
 
         // --- BILL TO / DELIVERY DETAILS --- //
         yPos += 280f
-        val halfW = (width - (margin * 2) - 40f) / 2f
-        val billRect = RectF(margin, yPos, margin + halfW, yPos + 220f)
-        val delRect = RectF(margin + halfW + 40f, yPos, width - margin, yPos + 220f)
+        val hasDelivery = deliveryAddress.isNotBlank() && !deliveryAddress.equals("In-Store Pickup", ignoreCase = true)
         
         val boxBgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorBgLight }
         val boxBorderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorBorder; style = Paint.Style.STROKE; strokeWidth = 2f }
         
-        canvas.drawRoundRect(billRect, 20f, 20f, boxBgPaint)
-        canvas.drawRoundRect(billRect, 20f, 20f, boxBorderPaint)
-        
-        canvas.drawRoundRect(delRect, 20f, 20f, boxBgPaint)
-        canvas.drawRoundRect(delRect, 20f, 20f, boxBorderPaint)
+        if (hasDelivery) {
+            val halfW = (width - (margin * 2) - 40f) / 2f
+            val billRect = RectF(margin, yPos, margin + halfW, yPos + 220f)
+            val delRect = RectF(margin + halfW + 40f, yPos, width - margin, yPos + 220f)
+            
+            canvas.drawRoundRect(billRect, 20f, 20f, boxBgPaint)
+            canvas.drawRoundRect(billRect, 20f, 20f, boxBorderPaint)
+            
+            canvas.drawRoundRect(delRect, 20f, 20f, boxBgPaint)
+            canvas.drawRoundRect(delRect, 20f, 20f, boxBorderPaint)
+            
+            // Titles
+            paintDarkBlueText.textSize = 24f
+            paintDarkBlueText.typeface = typeBold
+            canvas.drawText("BILL TO", billRect.left + 50f, billRect.top + 45f, paintDarkBlueText)
+            canvas.drawText("DELIVERY DETAILS", delRect.left + 50f, delRect.top + 45f, paintDarkBlueText)
 
-        // Titles
-        paintDarkBlueText.textSize = 24f
-        paintDarkBlueText.typeface = typeBold
-        canvas.drawText("BILL TO", billRect.left + 50f, billRect.top + 45f, paintDarkBlueText)
-        canvas.drawText("DELIVERY DETAILS", delRect.left + 50f, delRect.top + 45f, paintDarkBlueText)
+            paintDarkText.textSize = 24f
+            canvas.drawText(customerName, billRect.left + 50f, billRect.top + 100f, paintDarkText)
+            canvas.drawText(customerPhone, billRect.left + 50f, billRect.top + 140f, paintDarkText)
 
-        paintDarkText.textSize = 24f
-        canvas.drawText(customerName, billRect.left + 50f, billRect.top + 100f, paintDarkText)
-        canvas.drawText(customerPhone, billRect.left + 50f, billRect.top + 140f, paintDarkText)
+            canvas.drawText(deliveryAddress, delRect.left + 50f, delRect.top + 100f, paintDarkText)
+        } else {
+            val billRect = RectF(margin, yPos, width - margin, yPos + 220f)
+            
+            canvas.drawRoundRect(billRect, 20f, 20f, boxBgPaint)
+            canvas.drawRoundRect(billRect, 20f, 20f, boxBorderPaint)
+            
+            // Titles
+            paintDarkBlueText.textSize = 24f
+            paintDarkBlueText.typeface = typeBold
+            canvas.drawText("BILL TO", billRect.left + 50f, billRect.top + 45f, paintDarkBlueText)
 
-        canvas.drawText(deliveryAddress.takeIf { it.isNotBlank() } ?: "Pickup", delRect.left + 50f, delRect.top + 100f, paintDarkText)
+            paintDarkText.textSize = 24f
+            canvas.drawText(customerName, billRect.left + 50f, billRect.top + 100f, paintDarkText)
+            canvas.drawText(customerPhone, billRect.left + 50f, billRect.top + 140f, paintDarkText)
+        }
         
         // --- TABLE --- //
         yPos += 260f
@@ -192,28 +211,30 @@ object DocumentGenerator {
         canvas.drawRoundRect(tabHeaderRect, 12f, 12f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorDarkBlue })
         
         val thPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorWhite; textSize = 22f; typeface = typeBold }
-        val cx1 = margin + 30f    // #
-        val cx2 = margin + 100f   // PRODUCT
-        val cx3 = margin + 500f   // STRENGTH
-        val cx4 = margin + 700f   // FORM / UNIT
-        val cx5 = margin + 900f   // QTY
-        val cx6 = margin + 1000f  // UNIT PRICE
-        val cx7 = width - margin - 30f // TOTAL (Right aligned)
+        val thPaintRight = Paint(thPaint).apply { textAlign = Paint.Align.RIGHT }
+        
+        val cx1 = margin + 20f    // #
+        val cx2 = margin + 80f    // PRODUCT
+        val cx3 = margin + 450f   // STRENGTH
+        val cx4 = margin + 680f   // FORM / UNIT
+        val cx5 = margin + 880f   // QTY
+        val cx6 = margin + 1090f  // UNIT PRICE
+        val cx7 = width - margin - 20f // TOTAL (Right aligned)
         
         val thY = yPos + 40f
         canvas.drawText("#", cx1, thY, thPaint)
         canvas.drawText("PRODUCT", cx2, thY, thPaint)
         canvas.drawText("STRENGTH", cx3, thY, thPaint)
         canvas.drawText("FORM / UNIT", cx4, thY, thPaint)
-        canvas.drawText("QTY", cx5, thY, thPaint)
-        canvas.drawText("UNIT PRICE", cx6, thY, thPaint)
-        
-        val thPaintRight = Paint(thPaint).apply { textAlign = Paint.Align.RIGHT }
+        canvas.drawText("QTY", cx5, thY, thPaintRight)
+        canvas.drawText("UNIT PRICE", cx6, thY, thPaintRight)
         canvas.drawText("TOTAL", cx7, thY, thPaintRight)
 
         var tY = yPos + tableHeaderHeight
         paintDarkText.textSize = 22f
+        val paintDarkTextRight = Paint(paintDarkText).apply { textAlign = Paint.Align.RIGHT }
         val idxPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorTextDark; textSize = 22f; typeface = typeBold }
+        val idxPaintRight = Paint(idxPaint).apply { textAlign = Paint.Align.RIGHT }
         val valPaintRight = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorTextDark; textSize = 22f; textAlign = Paint.Align.RIGHT; typeface = typeBold }
         val descPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorTextGray; textSize = 18f; typeface = typeRegular }
 
@@ -227,12 +248,12 @@ object DocumentGenerator {
             canvas.drawText(item.inventoryItem.dosage.take(15), cx3, rowMid, paintDarkText)
             canvas.drawText("Pack", cx4, rowMid, paintDarkText)
             
-            canvas.drawText("${item.quantity}", cx5, rowMid, idxPaint)
+            canvas.drawText("${item.quantity}", cx5, rowMid, idxPaintRight)
             
             val priceStr = "₦%,.2f".format(item.inventoryItem.price)
             val totalStr = "₦%,.2f".format(item.inventoryItem.price * item.quantity)
             
-            canvas.drawText(priceStr, cx6, rowMid, paintDarkText)
+            canvas.drawText(priceStr, cx6, rowMid, paintDarkTextRight)
             canvas.drawText(totalStr, cx7, rowMid, valPaintRight)
             
             tY += rowHeight
@@ -285,7 +306,7 @@ object DocumentGenerator {
             nY += 35f
             canvas.drawText("• Prescriptions have been verified by our pharmacist.", leftRect.left + 30f, nY, paintDarkText)
             nY += 35f
-            canvas.drawText("• This invoice is valid for 72 hours.", leftRect.left + 30f, nY, paintDarkText)
+            canvas.drawText("• Careflux is delivering on behalf of $pharmacyName.", leftRect.left + 30f, nY, paintDarkText)
             
         } else {
             canvas.drawText("TOTAL AMOUNT", rtL, rtY + 5f, totLblPaint)
@@ -373,33 +394,48 @@ object DocumentGenerator {
             by += 30f
             canvas.drawText("payment reference.", piLeft, by, pVal)
             by += 40f
-            canvas.drawText("Order ID: ", piLeft, by, pLbl)
+            canvas.drawText("Order ID: ", piLeft, by, pVal)
             canvas.drawText(orderId, piLeft + 100f, by, Paint(pLbl).apply { color = colorDarkBlue })
             
-            yPos += 140f
+            yPos += 220f
         } else {
             yPos += 240f
         }
         
         // --- FOOTER INFO --- //
-        val footerRect = RectF(margin, yPos, width - margin, yPos + 180f)
+        val footerRect = RectF(margin, yPos, width - margin, yPos + 240f)
         canvas.drawRoundRect(footerRect, 16f, 16f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.parseColor("#F8FAFD"); style = Paint.Style.FILL })
         canvas.drawRoundRect(footerRect, 16f, 16f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorLightBlue; style = Paint.Style.STROKE; strokeWidth = 2f })
         
-        val fY = yPos + 60f
+        val fY = yPos + 55f
         
         // Left - Pharmacist details
         paintDarkBlueText.textSize = 22f
         canvas.drawText("PRESCRIPTION VERIFIED", footerRect.left + 30f, fY, paintDarkBlueText)
         paintDarkText.textSize = 18f
-        canvas.drawText("Pharmacist: Pharm. Olawale A.", footerRect.left + 30f, fY + 40f, paintDarkText)
-        // canvas.drawText("PCN Number: PCN-0054321", footerRect.left + 30f, fY + 70f, paintDarkText)
+        canvas.drawText("Pharmacist: $pharmacistName", footerRect.left + 30f, fY + 35f, paintDarkText)
+        canvas.drawText("Pharmacy: $pharmacyName", footerRect.left + 30f, fY + 65f, paintDarkText)
+
+        // Draw cursive signature
+        val sigPath = Path().apply {
+            moveTo(footerRect.left + 30f, fY + 120f)
+            quadTo(footerRect.left + 70f, fY + 85f, footerRect.left + 110f, fY + 120f)
+            quadTo(footerRect.left + 140f, fY + 140f, footerRect.left + 180f, fY + 100f)
+            quadTo(footerRect.left + 200f, fY + 90f, footerRect.left + 220f, fY + 125f)
+        }
+        val sigPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#0066CC")
+            style = Paint.Style.STROKE
+            strokeWidth = 3f
+            strokeCap = Paint.Cap.ROUND
+        }
+        canvas.drawPath(sigPath, sigPaint)
 
         // Middle - Need help
         val mx = footerRect.left + 450f
         canvas.drawText("NEED HELP?", mx, fY, paintDarkBlueText)
         canvas.drawText("WhatsApp: +234 814 757 8314", mx, fY + 40f, paintDarkText)
-        canvas.drawText("Email: support@carefluxpharmacy.com", mx, fY + 70f, paintDarkText)
+        canvas.drawText("Email: support@careflux.com", mx, fY + 70f, paintDarkText)
 
         // Right - Features
         val rx = footerRect.right - 350f
@@ -409,9 +445,9 @@ object DocumentGenerator {
         canvas.drawText("✓ Fast Delivery", rx, fY + 105f, paintDarkText)
 
         // End message
-        yPos += 240f
+        yPos += 280f
         paintDarkBlueText.textSize = 28f
-        canvas.drawText("Thank you for choosing Careflux Pharmacy.", margin, yPos, paintDarkBlueText)
+        canvas.drawText("Thank you for choosing Careflux.", margin, yPos, paintDarkBlueText)
         paintDarkText.textSize = 20f
         canvas.drawText("Your health and trust mean everything to us.", margin, yPos + 35f, paintDarkText)
 

@@ -61,28 +61,41 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
+        // Ensure Firebase is initialized safely
+        try {
+            if (com.google.firebase.FirebaseApp.getApps(this).isEmpty()) {
+                com.google.firebase.FirebaseApp.initializeApp(this)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        
         val sharedPrefs = getSharedPreferences("careflux_prefs", android.content.Context.MODE_PRIVATE)
         com.example.ui.theme.AppThemeManager.isDark = sharedPrefs.getBoolean("theme_dark", true)
         
-        // Schedule secure cloud background synchronization (WorkManager)
-        val syncRequest = PeriodicWorkRequestBuilder<CloudSyncWorker>(15, TimeUnit.MINUTES).build()
-        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
-            "cloud_sync_job",
-            ExistingPeriodicWorkPolicy.KEEP,
-            syncRequest
-        )
-        
-        // Schedule AI Operations Worker
-        val aiRequest = PeriodicWorkRequestBuilder<com.example.work.AIOperationsWorker>(15, TimeUnit.MINUTES).build()
-        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
-            "ai_operations_job",
-            ExistingPeriodicWorkPolicy.KEEP,
-            aiRequest
-        )
-        
-        // Setup initial demo fire so they can see the notification immediately
-        val immediateAiRequest = androidx.work.OneTimeWorkRequestBuilder<com.example.work.AIOperationsWorker>().build()
-        WorkManager.getInstance(this).enqueueUniqueWork("ai_operations_immediate", androidx.work.ExistingWorkPolicy.KEEP, immediateAiRequest)
+        try {
+            // Schedule secure cloud background synchronization (WorkManager)
+            val syncRequest = PeriodicWorkRequestBuilder<CloudSyncWorker>(15, TimeUnit.MINUTES).build()
+            WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+                "cloud_sync_job",
+                ExistingPeriodicWorkPolicy.KEEP,
+                syncRequest
+            )
+            
+            // Schedule AI Operations Worker
+            val aiRequest = PeriodicWorkRequestBuilder<com.example.work.AIOperationsWorker>(15, TimeUnit.MINUTES).build()
+            WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+                "ai_operations_job",
+                ExistingPeriodicWorkPolicy.KEEP,
+                aiRequest
+            )
+            
+            // Trigger immediate run of AI Operations to process baseline clinical alerts and notifications
+            val immediateAiRequest = androidx.work.OneTimeWorkRequestBuilder<com.example.work.AIOperationsWorker>().build()
+            WorkManager.getInstance(this).enqueueUniqueWork("ai_operations_immediate", androidx.work.ExistingWorkPolicy.KEEP, immediateAiRequest)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
 
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
             requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 101)
@@ -93,7 +106,15 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             MyApplicationTheme {
-                var currentUser by remember { mutableStateOf(com.google.firebase.auth.FirebaseAuth.getInstance().currentUser) }
+                var currentUser by remember {
+                    mutableStateOf(
+                        try {
+                            com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+                        } catch (e: Exception) {
+                            null
+                        }
+                    )
+                }
                 val isSuspended by viewModel.isSuspended.collectAsStateWithLifecycle()
                 
                 LaunchedEffect(currentUser) {
@@ -205,6 +226,10 @@ fun PharmacyRootScreen(
     val volumes by viewModel.prescriptionVolumes.collectAsStateWithLifecycle()
     val alerts by viewModel.customerAlerts.collectAsStateWithLifecycle()
 
+    val isOnline by viewModel.isOnline.collectAsStateWithLifecycle()
+    val syncState by viewModel.syncState.collectAsStateWithLifecycle()
+    val lastSyncedTime by viewModel.lastSyncedTime.collectAsStateWithLifecycle()
+
     var activeTab by remember { mutableStateOf(initialTab) } // inventory, volumes, customers, ai_tasks, receipts
 
     // Collect new Customer datasets
@@ -230,6 +255,9 @@ fun PharmacyRootScreen(
     val isAiContentEnabled by viewModel.isAiContentEnabled.collectAsStateWithLifecycle()
     val isCarefluxAiEnabled by viewModel.isCarefluxAiEnabled.collectAsStateWithLifecycle()
     val keyRequests by viewModel.keyRequests.collectAsStateWithLifecycle()
+    val lastFailedSmsLog by viewModel.lastFailedSmsLog.collectAsStateWithLifecycle()
+    val postDispatchConfirmAlert by viewModel.activePostDispatchConfirmAlert.collectAsStateWithLifecycle()
+    val postDispatchConfirmMedData by viewModel.activePostDispatchConfirm.collectAsStateWithLifecycle()
 
     val isUserAdmin = remember(currentUser) {
         val email = currentUser?.email?.lowercase() ?: ""
@@ -256,6 +284,7 @@ fun PharmacyRootScreen(
     // Dialog control states
     var showExportDialog by remember { mutableStateOf(false) }
     var showSettingsDialog by remember { mutableStateOf(false) }
+    var showSyncStatusDialog by remember { mutableStateOf(false) }
     var showPersonalKeyDialog by remember { mutableStateOf(false) }
     var showAddMedDialog by remember { mutableStateOf(false) }
     var showLogVolumeDialog by remember { mutableStateOf(false) }
@@ -333,65 +362,75 @@ fun PharmacyRootScreen(
                 }
                 androidx.compose.material3.HorizontalDivider()
                 androidx.compose.material3.NavigationDrawerItem(
-                    label = { Text("Procurement & Stock Transfers") },
+                    label = { Text("Procurement & Stock Transfers", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
                     selected = activeTab == "procurement",
                     onClick = {
                         activeTab = "procurement"
                         scope.launch { drawerState.close() }
                     },
-                    icon = { Icon(Icons.Filled.LocalShipping, contentDescription = null) },
+                    icon = { Icon(Icons.Filled.LocalShipping, contentDescription = null, modifier = Modifier.size(18.dp)) },
                     modifier = Modifier.padding(androidx.compose.material3.NavigationDrawerItemDefaults.ItemPadding)
                 )
                 androidx.compose.material3.NavigationDrawerItem(
-                    label = { Text("Analytics Dashboard") },
+                    label = { Text("Analytics Dashboard", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
                     selected = activeTab == "analytics",
                     onClick = {
                         activeTab = "analytics"
                         scope.launch { drawerState.close() }
                     },
-                    icon = { Icon(Icons.Filled.Insights, contentDescription = null) },
+                    icon = { Icon(Icons.Filled.Insights, contentDescription = null, modifier = Modifier.size(18.dp)) },
                     modifier = Modifier.padding(androidx.compose.material3.NavigationDrawerItemDefaults.ItemPadding)
                 )
                 androidx.compose.material3.NavigationDrawerItem(
-                    label = { Text("WhatsApp Templates") },
+                    label = { Text("Customer Engagement", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
+                    selected = activeTab == "customer_engagement",
+                    onClick = {
+                        activeTab = "customer_engagement"
+                        scope.launch { drawerState.close() }
+                    },
+                    icon = { Icon(Icons.Filled.Campaign, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                    modifier = Modifier.padding(androidx.compose.material3.NavigationDrawerItemDefaults.ItemPadding)
+                )
+                androidx.compose.material3.NavigationDrawerItem(
+                    label = { Text("WhatsApp Templates", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
                     selected = activeTab == "whatsapp_templates",
                     onClick = {
                         activeTab = "whatsapp_templates"
                         scope.launch { drawerState.close() }
                     },
-                    icon = { Icon(Icons.Filled.Message, contentDescription = null) },
+                    icon = { Icon(Icons.Filled.Message, contentDescription = null, modifier = Modifier.size(18.dp)) },
                     modifier = Modifier.padding(androidx.compose.material3.NavigationDrawerItemDefaults.ItemPadding)
                 )
                 if (isAiContentEnabled) {
                     androidx.compose.material3.NavigationDrawerItem(
-                        label = { Text("AI Content Engine") },
+                        label = { Text("AI Content Engine", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
                         selected = activeTab == "ai_content_engine",
                         onClick = {
                             activeTab = "ai_content_engine"
                             scope.launch { drawerState.close() }
                         },
-                        icon = { Icon(Icons.Filled.AutoAwesome, contentDescription = null) },
+                        icon = { Icon(Icons.Filled.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp)) },
                         modifier = Modifier.padding(androidx.compose.material3.NavigationDrawerItemDefaults.ItemPadding)
                     )
                 }
                 androidx.compose.material3.NavigationDrawerItem(
-                    label = { Text("Pharmacy Triage") },
+                    label = { Text("Pharmacy Triage", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
                     selected = activeTab == "pharmacy_triage",
                     onClick = {
                         activeTab = "pharmacy_triage"
                         scope.launch { drawerState.close() }
                     },
-                    icon = { Icon(Icons.Filled.ContentPasteSearch, contentDescription = null) },
+                    icon = { Icon(Icons.Filled.ContentPasteSearch, contentDescription = null, modifier = Modifier.size(18.dp)) },
                     modifier = Modifier.padding(androidx.compose.material3.NavigationDrawerItemDefaults.ItemPadding)
                 )
                 androidx.compose.material3.NavigationDrawerItem(
-                    label = { Text("Expiry Rescue Marketplace") },
+                    label = { Text("Expiry Rescue Marketplace", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
                     selected = activeTab == "rescue_marketplace",
                     onClick = {
                         activeTab = "rescue_marketplace"
                         scope.launch { drawerState.close() }
                     },
-                    icon = { Icon(Icons.Filled.Storefront, contentDescription = null) },
+                    icon = { Icon(Icons.Filled.Storefront, contentDescription = null, modifier = Modifier.size(18.dp)) },
                     modifier = Modifier.padding(androidx.compose.material3.NavigationDrawerItemDefaults.ItemPadding)
                 )
 
@@ -402,7 +441,11 @@ fun PharmacyRootScreen(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            Text(if (branchIdVal.isNullOrBlank()) "Branch Setup & Team" else "My Branch Team")
+                            Text(
+                                text = if (branchIdVal.isNullOrBlank()) "Branch Setup & Team" else "My Branch Team",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
                             if (branchIdVal.isNullOrBlank()) {
                                 Box(
                                     modifier = Modifier
@@ -419,32 +462,32 @@ fun PharmacyRootScreen(
                         activeTab = "branch_team"
                         scope.launch { drawerState.close() }
                     },
-                    icon = { Icon(Icons.Filled.Group, contentDescription = "Branch Team") },
+                    icon = { Icon(Icons.Filled.Group, contentDescription = "Branch Team", modifier = Modifier.size(18.dp)) },
                     modifier = Modifier.padding(androidx.compose.material3.NavigationDrawerItemDefaults.ItemPadding)
                 )
 
                 if (isUserAdmin) {
                     androidx.compose.material3.NavigationDrawerItem(
-                        label = { Text("Control Room (Admin)", color = TealPrimary, fontWeight = FontWeight.Bold) },
+                        label = { Text("Control Room (Admin)", color = TealPrimary, fontWeight = FontWeight.Bold, fontSize = 12.sp) },
                         selected = activeTab == "admin_dashboard",
                         onClick = {
                             activeTab = "admin_dashboard"
                             scope.launch { drawerState.close() }
                         },
-                        icon = { Icon(Icons.Filled.AdminPanelSettings, contentDescription = "Admin Dashboard", tint = TealPrimary) },
+                        icon = { Icon(Icons.Filled.AdminPanelSettings, contentDescription = "Admin Dashboard", tint = TealPrimary, modifier = Modifier.size(18.dp)) },
                         modifier = Modifier.padding(androidx.compose.material3.NavigationDrawerItemDefaults.ItemPadding)
                     )
                 }
 
                 if (!isUserAdmin) {
                     androidx.compose.material3.NavigationDrawerItem(
-                        label = { Text("Personal Gemini Key") },
+                        label = { Text("Personal Gemini Key", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
                         selected = false,
                         onClick = {
                             scope.launch { drawerState.close() }
                             showPersonalKeyDialog = true
                         },
-                        icon = { Icon(Icons.Filled.Key, contentDescription = "Personal Gemini Key") },
+                        icon = { Icon(Icons.Filled.Key, contentDescription = "Personal Gemini Key", modifier = Modifier.size(18.dp)) },
                         modifier = Modifier.padding(androidx.compose.material3.NavigationDrawerItemDefaults.ItemPadding)
                     )
                 }
@@ -452,17 +495,39 @@ fun PharmacyRootScreen(
 
 
                 androidx.compose.material3.NavigationDrawerItem(
-                    label = { Text("Sign Out", color = MaterialTheme.colorScheme.error) },
+                    label = { Text("Sign Out", color = MaterialTheme.colorScheme.error, fontSize = 12.sp, fontWeight = FontWeight.Bold) },
                     selected = false,
                     onClick = {
                         scope.launch { drawerState.close() }
                         onSignOut()
                     },
-                    icon = { Icon(Icons.Filled.ExitToApp, contentDescription = "Sign Out", tint = MaterialTheme.colorScheme.error) },
+                    icon = { Icon(Icons.Filled.ExitToApp, contentDescription = "Sign Out", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp)) },
                     modifier = Modifier.padding(androidx.compose.material3.NavigationDrawerItemDefaults.ItemPadding)
                 )
 
                 Spacer(modifier = Modifier.weight(1f))
+
+                // Embedded elegant sync status in the side menu
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp)
+                ) {
+                    Text(
+                        text = "DATABASE STATUS",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.padding(bottom = 6.dp, start = 8.dp)
+                    )
+                    GlobalSyncStatusBanner(
+                        isOnline = isOnline,
+                        syncState = syncState,
+                        lastSyncedTime = lastSyncedTime,
+                        onManualSyncClick = { viewModel.triggerImmediateSync() }
+                    )
+                }
+
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -488,12 +553,14 @@ fun PharmacyRootScreen(
         Column(
             modifier = modifier
                 .fillMaxSize()
-                .padding(horizontal = 16.dp)
+                .padding(horizontal = 8.dp)
         ) {
             // --- Custom App Header ---
             HeaderSection(
                 cartCount = cartItems.sumOf { it.quantity },
                 isAdmin = isUserAdmin,
+                isOnline = isOnline,
+                syncState = syncState,
                 onMenuClick = { scope.launch { drawerState.open() } },
                 onExportClick = {
                     showExportDialog = true
@@ -506,6 +573,9 @@ fun PharmacyRootScreen(
                 },
                 onSettingsClick = {
                     showSettingsDialog = true
+                },
+                onSyncStatusClick = {
+                    showSyncStatusDialog = true
                 }
             )
 
@@ -940,6 +1010,91 @@ fun PharmacyRootScreen(
             )
         }
 
+        // --- Federated Cloud Sync Dialog (Polished Pop-up) ---
+        if (showSyncStatusDialog) {
+            androidx.compose.material3.AlertDialog(
+                onDismissRequest = { showSyncStatusDialog = false },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Filled.Sync,
+                            contentDescription = "Sync icon",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Federated Cloud Sync",
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.titleLarge
+                        )
+                    }
+                },
+                text = {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text(
+                            text = "This Careflux node uses local SQLite Room storage paired with an asynchronous background worker that automatically queues and streams transactions to the administrative Firestore cloud database, ensuring absolute offline capability during cellular network dropouts.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = SlateTextMedium
+                        )
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        // Embedded status card inside dialog
+                        GlobalSyncStatusBanner(
+                            isOnline = isOnline,
+                            syncState = syncState,
+                            lastSyncedTime = lastSyncedTime,
+                            onManualSyncClick = { viewModel.triggerImmediateSync() }
+                        )
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        val currentSyncState = syncState
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                                .padding(12.dp)
+                        ) {
+                            Text(
+                                text = "Technical Details:",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            val syncStatusText = if (!isOnline) {
+                                "Offline - Queued changes are stored safely in Room SQLite on-device."
+                            } else when (currentSyncState) {
+                                is com.example.ui.PharmacyViewModel.SyncState.Error -> "Connection blocked: ${currentSyncState.message}"
+                                com.example.ui.PharmacyViewModel.SyncState.Syncing -> "Active - Writing transaction batch directly to node database..."
+                                com.example.ui.PharmacyViewModel.SyncState.Synced -> "Synced - All local records are perfectly in sync with the administrative dashboard."
+                            }
+                            Text(
+                                text = "• Status: $syncStatusText",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Text(
+                                text = "• Network State: ${if (isOnline) "Connected" else "Disconnected"}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { showSyncStatusDialog = false }) {
+                        Text("Dismiss", fontWeight = FontWeight.Bold)
+                    }
+                }
+            )
+        }
+
         // --- Dashboard / Stats Section (Collapsible) ---
         val isCoreTab = activeTab == "inventory"
         if (isCoreTab) {
@@ -956,6 +1111,21 @@ fun PharmacyRootScreen(
                 pendingAlerts = pendingRefills,
                 isExpanded = isDashboardExpanded,
                 onToggleExpand = { isDashboardExpanded = !isDashboardExpanded }
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+
+            // --- Priority Follow-up & Alerts Inbox (Sleek Collapsible Accordion) ---
+            val pendingAlertsList = remember(alerts) {
+                alerts.filter { it.status == "Pending" }.sortedBy { it.timestamp }
+            }
+            PriorityFollowUpInbox(
+                pendingAlerts = pendingAlertsList,
+                onCompleteAlert = { alert ->
+                    viewModel.activePostDispatchConfirmAlert.value = alert
+                },
+                onDeleteAlert = { alert ->
+                    viewModel.deleteCustomerAlert(alert)
+                }
             )
             Spacer(modifier = Modifier.height(8.dp))
 
@@ -1002,7 +1172,7 @@ fun PharmacyRootScreen(
                     isLoading = isInventoryLoading,
                     onMedSelect = { selectedMedForEdit = it },
                     onAddNewClick = { showAddMedDialog = true },
-                    onDeleteClick = { viewModel.deleteInventory(it) },
+                    onDeleteClick = { item, reason -> viewModel.deleteInventory(item, reason) },
                     onIncrementClick = { item -> 
                         viewModel.updateStockLevel(item, item.stockQuantity + 10)
                         Toast.makeText(context, "Added 10 units to ${item.name}", Toast.LENGTH_SHORT).show()
@@ -1014,6 +1184,11 @@ fun PharmacyRootScreen(
                             Toast.makeText(context, "Cannot add to cart: ${item.name} has no price configured!", Toast.LENGTH_LONG).show()
                         } else {
                             selectedMedForCart = item
+                        }
+                    },
+                    onInitializeWorkspaceClick = {
+                        viewModel.initializeBranchWorkspaceData { success, msg ->
+                            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
                         }
                     }
                 )
@@ -1056,7 +1231,7 @@ fun PharmacyRootScreen(
                     onDeliveryFeeChange = { viewModel.setDeliveryFee(it) },
                     onRemoveItem = { viewModel.removeFromCart(it) },
                     onNeedRefillChange = { id, need -> viewModel.updateCartItemNeedsRefill(id, need) },
-                    onCheckout = { customer, total, fileName, isInvoice, status ->
+                    onCheckout = { customer, total, fileName, isInvoice, status, overrideReason, prescribingDoctor, prescriptionRef ->
                         if (fileName.isNotEmpty()) {
                             viewModel.addReceipt(customer?.name ?: "Guest", total, fileName, isInvoice, status)
                         }
@@ -1093,31 +1268,16 @@ fun PharmacyRootScreen(
                                 }
                             }
                         }
-                        // Update stock and stats!
+                        // Update stock and stats via unified recordMedicationSale
                         for (item in cartItems) {
-                            val inv = item.inventoryItem
-                            viewModel.recordMedicationSale(item, customer)
-                            scope.launch {
-                                val latestInv = viewModel.repository.getInventoryItemById(inv.id)
-                                val currentStockInDb = latestInv?.stockQuantity ?: (inv.stockQuantity - item.quantity).coerceAtLeast(0)
-                                viewModel.addOrUpdateInventory(
-                                    id = inv.id,
-                                    name = inv.name,
-                                    dosage = inv.dosage,
-                                    currentStock = currentStockInDb,
-                                    minStock = inv.minRequiredStock,
-                                    category = inv.category,
-                                    price = inv.price,
-                                    updateStockStats = true,
-                                    addedQty = item.quantity
-                                )
-                            }
+                            viewModel.recordMedicationSale(item, customer, overrideReason, prescribingDoctor, prescriptionRef)
                         }
                         viewModel.clearCart()
                         activeTab = "inventory"
                     },
                     onClearCart = { viewModel.clearCartAndRestoreStock() },
-                    context = context
+                    context = context,
+                    viewModel = viewModel
                 )
                 "receipts" -> com.example.ui.ReceiptsTab(
                     receipts = receipts,
@@ -1126,6 +1286,7 @@ fun PharmacyRootScreen(
                     onUpdateReceiptStatus = { receipt, newStatus -> viewModel.updateReceipt(receipt.copy(paymentStatus = newStatus)) }
                 )
                 "analytics" -> com.example.ui.AnalyticsTab(viewModel = viewModel, isUserAdmin = isUserAdmin)
+                "customer_engagement" -> com.example.ui.CustomerEngagementTab(viewModel = viewModel)
                 "ai_content_engine" -> {
                     val aiViewModel: com.example.ui.AIContentEngineViewModel = androidx.lifecycle.viewmodel.compose.viewModel {
                         com.example.ui.AIContentEngineViewModel(viewModel.repository)
@@ -1186,8 +1347,8 @@ fun PharmacyRootScreen(
             item = item,
             viewModel = viewModel,
             onDismiss = { selectedMedForEdit = null },
-            onConfirm = { name, dosage, stock, minStock, category, price, expiryDate, batch, supplier, imageUri, unitForm, brand ->
-                viewModel.addOrUpdateInventory(name = name, dosage = dosage, currentStock = stock, minStock = minStock, category = category, price = price, id = item.id, expiryDate = expiryDate, batchNumber = batch, supplier = supplier, imageUri = imageUri, unitForm = unitForm, brand = brand)
+            onConfirm = { name, dosage, stock, minStock, category, price, expiryDate, batch, supplier, imageUri, unitForm, brand, reason ->
+                viewModel.addOrUpdateInventory(name = name, dosage = dosage, currentStock = stock, minStock = minStock, category = category, price = price, id = item.id, expiryDate = expiryDate, batchNumber = batch, supplier = supplier, imageUri = imageUri, unitForm = unitForm, brand = brand, reason = reason)
                 selectedMedForEdit = null
             }
         )
@@ -1204,12 +1365,46 @@ fun PharmacyRootScreen(
         )
     }
 
+    // --- Post-Dispatch & Note-Alert Smart Dialogs ---
+    if (postDispatchConfirmAlert != null) {
+        RenderPostDispatchConfirmAlert(
+            alert = postDispatchConfirmAlert!!,
+            customers = customers,
+            viewModel = viewModel,
+            context = context,
+            onDismiss = { viewModel.activePostDispatchConfirmAlert.value = null }
+        )
+    }
+
+    if (postDispatchConfirmMedData != null) {
+        RenderPostDispatchConfirmMedData(
+            data = postDispatchConfirmMedData!!,
+            viewModel = viewModel,
+            context = context,
+            onDismiss = { viewModel.activePostDispatchConfirm.value = null }
+        )
+    }
+
     // 3. Add Customer Dialog
     if (showAddCustomerDialog) {
         AddCustomerDialog(
             onDismiss = { showAddCustomerDialog = false },
-            onConfirm = { name, phone, email, notes, age, gender, state, lga, city ->
-                viewModel.addCustomer(name, phone, email, notes, age, gender, state, lga, city)
+            onConfirm = { name, phone, email, notes, age, gender, state, lga, city, consentPresc, consentSms, consentCloud, consentChan ->
+                viewModel.addCustomer(
+                    name = name,
+                    phone = phone,
+                    email = email,
+                    notes = notes,
+                    age = age,
+                    gender = gender,
+                    state = state,
+                    lga = lga,
+                    city = city,
+                    consentPrescriptionTracking = consentPresc,
+                    consentSmsRefills = consentSms,
+                    consentCloudSync = consentCloud,
+                    consentChannel = consentChan
+                )
                 showAddCustomerDialog = false
             }
         )
@@ -1254,6 +1449,100 @@ fun PharmacyRootScreen(
             }
         )
     }
+
+    // 6. Outbound SMS Failure Fallback Dialog
+    lastFailedSmsLog?.let { failedLog ->
+        AlertDialog(
+            onDismissRequest = { viewModel.clearFailedSmsLog() },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(40.dp)
+                )
+            },
+            title = {
+                Text(
+                    text = "SMS Dispatch Failed",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.error
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "The system attempted to send an SMS to ${failedLog.recipientPhone} but it failed or API credentials are not set.",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        text = "Status: ${failedLog.deliveryStatus}",
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Message Content:",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(8.dp))
+                            .padding(8.dp)
+                    ) {
+                        Text(
+                            text = failedLog.messageContent,
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "COMMUNICATION SAFEGUARD: Use the fallback button below to quickly dispatch this pre-filled message via WhatsApp instead.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = AppThemeManager.slateTextMedium
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        try {
+                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                                val url = "https://api.whatsapp.com/send?phone=${failedLog.recipientPhone}&text=${android.net.Uri.encode(failedLog.messageContent)}"
+                                data = android.net.Uri.parse(url)
+                            }
+                            context.startActivity(intent)
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "Could not open WhatsApp. Copying message to clipboard instead.", Toast.LENGTH_LONG).show()
+                            val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                            val clip = android.content.ClipData.newPlainText("Careflux SMS Backup", failedLog.messageContent)
+                            clipboard.setPrimaryClip(clip)
+                        }
+                        viewModel.clearFailedSmsLog()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = OKGreen, contentColor = Color.Black),
+                    modifier = Modifier.testTag("whatsapp_fallback_button")
+                ) {
+                    Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("WhatsApp Fallback")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { viewModel.clearFailedSmsLog() },
+                    modifier = Modifier.testTag("dismiss_sms_fallback_button")
+                ) {
+                    Text("Dismiss")
+                }
+            }
+        )
+    }
 }
 
 // ==========================================
@@ -1263,11 +1552,14 @@ fun PharmacyRootScreen(
 fun HeaderSection(
     cartCount: Int,
     isAdmin: Boolean,
+    isOnline: Boolean,
+    syncState: com.example.ui.PharmacyViewModel.SyncState,
     onMenuClick: () -> Unit,
     onExportClick: () -> Unit,
     onReceiptsClick: () -> Unit,
     onCartClick: () -> Unit,
-    onSettingsClick: () -> Unit
+    onSettingsClick: () -> Unit,
+    onSyncStatusClick: () -> Unit
 ) {
     val todayDate = remember {
         val sdf = SimpleDateFormat("EEEE, MMMM dd, yyyy", Locale.getDefault())
@@ -1303,6 +1595,53 @@ fun HeaderSection(
                     color = SlateTextMedium,
                     fontWeight = FontWeight.SemiBold
                 )
+
+                // Tiny elegant sync status indicator
+                val dotColor = if (!isOnline) {
+                    Color(0xFFFF9800) // Amber
+                } else when (syncState) {
+                    is com.example.ui.PharmacyViewModel.SyncState.Error -> Color(0xFFF44336) // Red
+                    com.example.ui.PharmacyViewModel.SyncState.Syncing -> Color(0xFF2196F3) // Blue
+                    com.example.ui.PharmacyViewModel.SyncState.Synced -> Color(0xFF4CAF50) // Green
+                }
+
+                val syncLabel = if (!isOnline) {
+                    "Offline Mode"
+                } else when (syncState) {
+                    is com.example.ui.PharmacyViewModel.SyncState.Error -> "Sync Error"
+                    com.example.ui.PharmacyViewModel.SyncState.Syncing -> "Syncing..."
+                    com.example.ui.PharmacyViewModel.SyncState.Synced -> "Synced"
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .padding(top = 4.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .clickable { onSyncStatusClick() }
+                        .background(dotColor.copy(alpha = 0.12f))
+                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .background(dotColor, CircleShape)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = syncLabel,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = dotColor
+                    )
+                    Spacer(modifier = Modifier.width(2.dp))
+                    Icon(
+                        imageVector = Icons.Filled.ChevronRight,
+                        contentDescription = "Sync Details",
+                        tint = dotColor,
+                        modifier = Modifier.size(10.dp)
+                    )
+                }
             }
         }
 
@@ -1752,14 +2091,16 @@ fun InventoryTabContent(
     isLoading: Boolean = false,
     onMedSelect: (InventoryItem) -> Unit,
     onAddNewClick: () -> Unit,
-    onDeleteClick: (InventoryItem) -> Unit,
+    onDeleteClick: (InventoryItem, String) -> Unit,
     onIncrementClick: (InventoryItem) -> Unit,
-    onAddToCart: (InventoryItem) -> Unit
+    onAddToCart: (InventoryItem) -> Unit,
+    onInitializeWorkspaceClick: () -> Unit = {}
 ) {
     var searchQuery by remember { mutableStateOf("") }
     var filterCategory by remember { mutableStateOf("All") }
     var showOnlyLowStock by remember { mutableStateOf(false) }
     var itemToDeleteConfirm by remember { mutableStateOf<InventoryItem?>(null) }
+    var deletionReason by remember { mutableStateOf("") }
 
     val categories = remember(inventory) {
         listOf("All") + inventory.map { it.category }.distinct().sorted()
@@ -1777,7 +2118,10 @@ fun InventoryTabContent(
 
     if (itemToDeleteConfirm != null) {
         AlertDialog(
-            onDismissRequest = { itemToDeleteConfirm = null },
+            onDismissRequest = { 
+                itemToDeleteConfirm = null 
+                deletionReason = ""
+            },
             icon = {
                 Icon(
                     imageVector = Icons.Filled.Warning,
@@ -1795,18 +2139,43 @@ fun InventoryTabContent(
                 )
             },
             text = {
-                Text(
-                    text = "Are you sure you want to completely remove \"${itemToDeleteConfirm?.name}\" from the pharmacy inventory? This action is irreversible and will permanently delete all logs of its stock levels.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = "Are you sure you want to completely remove \"${itemToDeleteConfirm?.name}\" from the pharmacy inventory? This action is irreversible and will permanently delete all logs of its stock levels.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Audit Justification Required",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                    
+                    OutlinedTextField(
+                        value = deletionReason,
+                        onValueChange = { deletionReason = it },
+                        label = { Text("Reason for deletion") },
+                        placeholder = { Text("e.g. Expired batch, supplier recall, damaged stock") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        isError = deletionReason.trim().isEmpty()
+                    )
+                }
             },
             confirmButton = {
                 Button(
                     onClick = {
-                        itemToDeleteConfirm?.let { onDeleteClick(it) }
+                        itemToDeleteConfirm?.let { onDeleteClick(it, deletionReason.trim()) }
                         itemToDeleteConfirm = null
+                        deletionReason = ""
                     },
+                    enabled = deletionReason.trim().isNotBlank(),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.error,
                         contentColor = MaterialTheme.colorScheme.onError
@@ -1818,7 +2187,10 @@ fun InventoryTabContent(
             },
             dismissButton = {
                 TextButton(
-                    onClick = { itemToDeleteConfirm = null },
+                    onClick = { 
+                        itemToDeleteConfirm = null 
+                        deletionReason = ""
+                    },
                     modifier = Modifier.testTag("cancel_delete_button")
                 ) {
                     Text("Cancel")
@@ -2027,10 +2399,23 @@ fun InventoryTabContent(
                 }
             }
         } else if (filteredList.isEmpty()) {
-            EmptyStatePlaceholder(
-                message = "No matching medicines in stock logs.",
-                tip = "Tap the + button to catalog a new medication line."
-            )
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                EmptyStatePlaceholder(
+                    message = "No matching medicines in stock logs.",
+                    tip = "Tap the + button to catalog a new medication line."
+                )
+                
+                if (inventory.isEmpty()) {
+                    WorkspaceInitializationCard(onInitializeClick = onInitializeWorkspaceClick)
+                }
+            }
         } else {
             LazyColumn(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -3252,7 +3637,7 @@ fun EditStockQuantityDialog(
     item: InventoryItem,
     viewModel: PharmacyViewModel,
     onDismiss: () -> Unit,
-    onConfirm: (String, String, Int, Int, String, Double, Long?, String, String, String?, String, String) -> Unit
+    onConfirm: (String, String, Int, Int, String, Double, Long?, String, String, String?, String, String, String) -> Unit
 ) {
     var name by remember { mutableStateOf(item.name) }
     var dosage by remember { mutableStateOf(item.dosage) }
@@ -3262,6 +3647,7 @@ fun EditStockQuantityDialog(
     var minStock by remember { mutableStateOf(item.minRequiredStock.toString()) }
     var category by remember { mutableStateOf(item.category) }
     var price by remember { mutableStateOf(item.price.toString()) }
+    var adjustmentReason by remember { mutableStateOf("") }
     var expiryDateStr by remember { 
         mutableStateOf(if (item.expiryDate > 0) java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date(item.expiryDate)) else "") 
     }
@@ -3280,6 +3666,8 @@ fun EditStockQuantityDialog(
     }
 
     var isError by remember { mutableStateOf(false) }
+    val scrollState = rememberScrollState()
+    val coroutineScope = rememberCoroutineScope()
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -3293,7 +3681,7 @@ fun EditStockQuantityDialog(
         text = {
             Column(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
-                modifier = Modifier.verticalScroll(rememberScrollState())
+                modifier = Modifier.verticalScroll(scrollState)
             ) {
                 if (isError) {
                     Text(
@@ -3430,6 +3818,52 @@ fun EditStockQuantityDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
+                val currentStockVal = stock.toIntOrNull() ?: 0
+                val stockChanged = currentStockVal != item.stockQuantity
+
+                if (stockChanged) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f)
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.4f), RoundedCornerShape(12.dp))
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Icon(
+                                    imageVector = Icons.Default.Security, 
+                                    contentDescription = null, 
+                                    tint = MaterialTheme.colorScheme.error, 
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Text(
+                                    text = "Audit Justification Required",
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+                            Text(
+                                text = "You are modifying stock level from ${item.stockQuantity} to $currentStockVal. Please specify an audit justification.",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                            OutlinedTextField(
+                                value = adjustmentReason,
+                                onValueChange = { adjustmentReason = it },
+                                label = { Text("Justification (e.g. Received shipment, Count error)") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                isError = adjustmentReason.trim().isEmpty()
+                            )
+                        }
+                    }
+                }
+
                 Spacer(modifier = Modifier.height(16.dp))
                 HorizontalDivider(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f))
                 Spacer(modifier = Modifier.height(8.dp))
@@ -3475,12 +3909,42 @@ fun EditStockQuantityDialog(
                             var transferQty by remember { mutableStateOf("") }
                             var transferReason by remember { mutableStateOf("") }
 
+                            val isItemExpired = item.expiryDate > 0L && item.expiryDate <= System.currentTimeMillis()
+
+                            if (isItemExpired) {
+                                androidx.compose.material3.Surface(
+                                    color = MaterialTheme.colorScheme.errorContainer,
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.padding(10.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Warning,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.error,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Text(
+                                            text = "⚠️ COMPLIANCE BLOCK: This medication batch has EXPIRED and cannot be transferred to any other branch.",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onErrorContainer,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+
                             OutlinedTextField(
                                 value = destinationBranch,
                                 onValueChange = { destinationBranch = it },
                                 label = { Text("Destination Branch Code/Name") },
                                 singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier.fillMaxWidth(),
+                                enabled = !isItemExpired
                             )
                             Spacer(modifier = Modifier.height(6.dp))
                             OutlinedTextField(
@@ -3489,7 +3953,8 @@ fun EditStockQuantityDialog(
                                 label = { Text("Quantity to Transfer") },
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                 singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier.fillMaxWidth(),
+                                enabled = !isItemExpired
                             )
                             Spacer(modifier = Modifier.height(6.dp))
                             OutlinedTextField(
@@ -3497,7 +3962,8 @@ fun EditStockQuantityDialog(
                                 onValueChange = { transferReason = it },
                                 label = { Text("Authorized Reason / Approval Ref") },
                                 singleLine = true,
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier.fillMaxWidth(),
+                                enabled = !isItemExpired
                             )
                             Spacer(modifier = Modifier.height(8.dp))
                             Button(
@@ -3511,6 +3977,7 @@ fun EditStockQuantityDialog(
                                         stock = (item.stockQuantity - qty).coerceAtLeast(0).toString()
                                     }
                                 },
+                                enabled = !isItemExpired,
                                 modifier = Modifier.align(Alignment.End),
                                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981))
                             ) {
@@ -3655,10 +4122,16 @@ fun EditStockQuantityDialog(
         confirmButton = {
             Button(
                 onClick = {
+                    val stockVal = stock.toIntOrNull() ?: 0
+                    val stockChanged = stockVal != item.stockQuantity
                     if (name.isBlank()) {
                         isError = true
+                    } else if (stockChanged && adjustmentReason.trim().isBlank()) {
+                        android.widget.Toast.makeText(appContext, "Compliance error: Please supply a reason/justification for adjusting stock levels.", android.widget.Toast.LENGTH_LONG).show()
+                        coroutineScope.launch {
+                            scrollState.animateScrollTo(scrollState.maxValue)
+                        }
                     } else {
-                        val stockVal = stock.toIntOrNull() ?: 0
                         val minStockVal = minStock.toIntOrNull() ?: 10
                         val priceVal = price.toDoubleOrNull() ?: 0.0
                         var parsedExpiry: Long? = null
@@ -3667,7 +4140,7 @@ fun EditStockQuantityDialog(
                                 parsedExpiry = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).parse(expiryDateStr)?.time
                             } catch (e: Exception) { }
                         }
-                        onConfirm(name, dosage, stockVal, minStockVal, category, priceVal, parsedExpiry, batchNumber, supplier, imageUri, unitForm, brand)
+                        onConfirm(name, dosage, stockVal, minStockVal, category, priceVal, parsedExpiry, batchNumber, supplier, imageUri, unitForm, brand, adjustmentReason.trim())
                     }
                 }
             ) {
@@ -4519,7 +4992,10 @@ fun AddToCartDialog(
     val confirmedItem = if (recommendation != null && useRecommendation) recommendation else item
     val qParsed = quantity.toIntOrNull()
 
+    val isExpired = confirmedItem.expiryDate > 0L && confirmedItem.expiryDate <= System.currentTimeMillis()
+
     val errorMessage = when {
+        isExpired -> "CRITICAL COMPLIANCE BLOCK: This medication batch has EXPIRED and cannot be added to the sales cart or sold."
         quantity.isBlank() -> "Please enter a quantity"
         qParsed == null || qParsed <= 0 -> "Quantity must be greater than 0"
         qParsed > confirmedItem.stockQuantity -> "Exceeds available stock (${confirmedItem.stockQuantity} available)"
@@ -4602,18 +5078,29 @@ fun CartTabContent(
     onDeliveryFeeChange: (String) -> Unit,
     onRemoveItem: (Int) -> Unit,
     onNeedRefillChange: (Int, Boolean) -> Unit,
-    onCheckout: (Customer?, Double, String, Boolean, String) -> Unit,
+    onCheckout: (Customer?, Double, String, Boolean, String, String, String, String) -> Unit,
     onClearCart: () -> Unit,
-    context: android.content.Context
+    context: android.content.Context,
+    viewModel: com.example.ui.PharmacyViewModel
 ) {
     var selectedCustomer by remember { mutableStateOf<Customer?>(null) }
     var expanded by remember { mutableStateOf(false) }
+
+    val hasExpiredItem = remember(cartItems) { 
+        cartItems.any { it.inventoryItem.expiryDate > 0L && it.inventoryItem.expiryDate <= System.currentTimeMillis() } 
+    }
 
     var deliveryAddress by remember { mutableStateOf("") }
     var paymentMethod by remember { mutableStateOf("Cash") }
 
     // Dynamic delivery check state
     var needsDelivery by remember { mutableStateOf(false) }
+
+    // Clinical Override and Prescription compliance state variables
+    var overrideJustification by remember { mutableStateOf("") }
+    var prescribingDoctor by remember { mutableStateOf("") }
+    var prescriptionRef by remember { mutableStateOf("") }
+    var showPrescriptionFields by remember { mutableStateOf(false) }
 
     LaunchedEffect(deliveryFeeString) {
         val parsedFee = deliveryFeeString.toDoubleOrNull() ?: 0.0
@@ -4626,9 +5113,9 @@ fun CartTabContent(
     val subtotal = cartItems.sumOf { it.inventoryItem.price * it.quantity }
     val total = subtotal + deliveryFee
 
-    val cartWarnings = remember(cartItems) {
+    val cartWarnings = remember(cartItems, selectedCustomer) {
         val names = cartItems.map { it.inventoryItem.name }
-        com.example.data.ClinicalDdiEngine.checkInteractions(names)
+        com.example.data.ClinicalDdiEngine.checkInteractions(names, selectedCustomer)
     }
 
     var showClearCartConfirm by remember { mutableStateOf(false) }
@@ -4812,6 +5299,31 @@ fun CartTabContent(
                                     modifier = Modifier.padding(vertical = 2.dp)
                                 )
                             }
+                            Spacer(modifier = Modifier.height(10.dp))
+                            OutlinedTextField(
+                                value = overrideJustification,
+                                onValueChange = { overrideJustification = it },
+                                label = { Text("Clinical Override Justification *", fontSize = 11.sp, color = MaterialTheme.colorScheme.onErrorContainer) },
+                                placeholder = { Text("e.g. Doctor approved co-administration, patient is under observation...") },
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = MaterialTheme.colorScheme.error,
+                                    focusedLabelColor = MaterialTheme.colorScheme.error,
+                                    unfocusedBorderColor = MaterialTheme.colorScheme.error.copy(alpha = 0.5f),
+                                    focusedTextColor = MaterialTheme.colorScheme.onErrorContainer,
+                                    unfocusedTextColor = MaterialTheme.colorScheme.onErrorContainer
+                                ),
+                                shape = RoundedCornerShape(10.dp),
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth().testTag("override_justification_input")
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Compliance mandate: An override reason (min 5 characters) is required to dispense these interacting medications.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.error,
+                                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                                lineHeight = 12.sp
+                            )
                         }
                     }
                 }
@@ -5126,6 +5638,90 @@ fun CartTabContent(
                                 }
                             }
                         }
+
+                        HorizontalDivider(color = AppThemeManager.slateBorderLight.copy(alpha = 0.5f))
+
+                        // Prescription Details Section
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { showPrescriptionFields = !showPrescriptionFields },
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Assignment,
+                                        contentDescription = null,
+                                        tint = TealPrimary,
+                                        modifier = Modifier.size(18.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "REGULATORY PRESCRIPTION COMPLIANCE",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.outline
+                                    )
+                                }
+                                Icon(
+                                    imageVector = if (showPrescriptionFields) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
+                                    contentDescription = null,
+                                    tint = AppThemeManager.slateTextMedium,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+
+                            val hasRegulatedItem = remember(cartItems) {
+                                val regulatedKeywords = listOf("antibiotic", "augmentin", "cipro", "narcotic", "morphine", "prescription", "pom", "malacide", "artemether")
+                                cartItems.any { item -> 
+                                    regulatedKeywords.any { kw -> 
+                                        item.inventoryItem.name.contains(kw, ignoreCase = true) || 
+                                        item.inventoryItem.category.contains(kw, ignoreCase = true)
+                                    }
+                                }
+                            }
+
+                            if (hasRegulatedItem) {
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(AppThemeManager.pendingOrange.copy(alpha = 0.12f))
+                                        .padding(8.dp)
+                                ) {
+                                    Text(
+                                        text = "⚠️ Prescription check recommended: Cart contains potentially regulated (POM) medications.",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = AppThemeManager.pendingOrange,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+
+                            if (showPrescriptionFields || hasRegulatedItem) {
+                                OutlinedTextField(
+                                    value = prescribingDoctor,
+                                    onValueChange = { prescribingDoctor = it },
+                                    label = { Text("Prescribing Physician Name", fontSize = 11.sp) },
+                                    placeholder = { Text("e.g. Dr. Jude Cole") },
+                                    leadingIcon = { Icon(Icons.Filled.MedicalServices, contentDescription = null, tint = TealPrimary, modifier = Modifier.size(16.dp)) },
+                                    shape = RoundedCornerShape(12.dp),
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth().testTag("prescribing_doctor_input")
+                                )
+                                OutlinedTextField(
+                                    value = prescriptionRef,
+                                    onValueChange = { prescriptionRef = it },
+                                    label = { Text("Prescription Reference / Rx ID", fontSize = 11.sp) },
+                                    placeholder = { Text("e.g. RX-99201-B") },
+                                    leadingIcon = { Icon(Icons.Filled.FactCheck, contentDescription = null, tint = TealPrimary, modifier = Modifier.size(16.dp)) },
+                                    shape = RoundedCornerShape(12.dp),
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth().testTag("prescription_ref_input")
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -5201,6 +5797,34 @@ fun CartTabContent(
                         }
 
                         // Instant User Input Verification Warnings
+                        if (hasExpiredItem) {
+                            Spacer(modifier = Modifier.height(14.dp))
+                            androidx.compose.material3.Surface(
+                                color = MaterialTheme.colorScheme.errorContainer,
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Warning,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "CRITICAL COMPLIANCE BLOCK: One or more medications in your cart have EXPIRED and cannot be sold. Please remove them to continue.",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onErrorContainer,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+
                         if (needsDelivery && deliveryAddress.isBlank()) {
                             Spacer(modifier = Modifier.height(14.dp))
                             androidx.compose.material3.Surface(
@@ -5238,6 +5862,8 @@ fun CartTabContent(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
+                    val isCheckoutEnabled = !hasExpiredItem && (!needsDelivery || deliveryAddress.isNotBlank()) && (cartWarnings.isEmpty() || overrideJustification.trim().length >= 5)
+
                     androidx.compose.material3.Button(
                         onClick = {
                             val (invoiceUri, invoiceFileName) = com.example.DocumentGenerator.generateDocument(
@@ -5248,7 +5874,9 @@ fun CartTabContent(
                                 totalAmount = total,
                                 customerName = selectedCustomer?.name ?: "Guest",
                                 customerPhone = selectedCustomer?.phoneNumber ?: "+234 000 000 0000",
-                                deliveryAddress = if (needsDelivery) deliveryAddress else "In-Store Pickup"
+                                deliveryAddress = if (needsDelivery) deliveryAddress else "In-Store Pickup",
+                                pharmacistName = viewModel.currentPharmacistName.value ?: "Pharm. Olawale A.",
+                                pharmacyName = viewModel.currentPharmacistBranchName.value ?: "Careflux Central Pharmacy"
                             )
                             if (invoiceUri != null) {
                                 val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
@@ -5261,8 +5889,9 @@ fun CartTabContent(
                             } else {
                                 Toast.makeText(context, "Failed to generate invoice image", Toast.LENGTH_SHORT).show()
                             }
-                            onCheckout(selectedCustomer, total, invoiceFileName ?: "", true, "Pending")
+                            onCheckout(selectedCustomer, total, invoiceFileName ?: "", true, "Pending", overrideJustification, prescribingDoctor, prescriptionRef)
                         },
+                        enabled = isCheckoutEnabled,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.secondaryContainer,
                             contentColor = MaterialTheme.colorScheme.onSecondaryContainer
@@ -5302,12 +5931,14 @@ fun CartTabContent(
                                 totalAmount = total,
                                 customerName = selectedCustomer?.name ?: "Guest",
                                 customerPhone = selectedCustomer?.phoneNumber ?: "+234 000 000 0000",
-                                deliveryAddress = if (needsDelivery) deliveryAddress else "In-Store Pickup"
+                                deliveryAddress = if (needsDelivery) deliveryAddress else "In-Store Pickup",
+                                pharmacistName = viewModel.currentPharmacistName.value ?: "Pharm. Olawale A.",
+                                pharmacyName = viewModel.currentPharmacistBranchName.value ?: "Careflux Central Pharmacy"
                             )
-                            onCheckout(selectedCustomer, total, receiptFileName ?: "", false, "Paid")
+                            onCheckout(selectedCustomer, total, receiptFileName ?: "", false, "Paid", overrideJustification, prescribingDoctor, prescriptionRef)
                             Toast.makeText(context, "Sale completed", Toast.LENGTH_SHORT).show()
                         },
-                        enabled = !needsDelivery || deliveryAddress.isNotBlank(),
+                        enabled = isCheckoutEnabled,
                         colors = ButtonDefaults.buttonColors(
                             containerColor = TealPrimary,
                             contentColor = Color.Black
@@ -5582,5 +6213,799 @@ fun CompactDashboardStatsBar(
             }
         }
     }
+}
+
+// =========================================================================
+// CENTRALIZED SYNC & OFFLINE COOP MONITORING ENGINE (CTO DESIGN SPEC)
+// =========================================================================
+@Composable
+fun GlobalSyncStatusBanner(
+    isOnline: Boolean,
+    syncState: com.example.ui.PharmacyViewModel.SyncState,
+    lastSyncedTime: Long,
+    onManualSyncClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val formatter = remember { SimpleDateFormat("HH:mm:ss", Locale.getDefault()) }
+    val formattedTime = remember(lastSyncedTime) { formatter.format(Date(lastSyncedTime)) }
+
+    androidx.compose.material3.Card(
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (!isOnline) {
+                Color(0xFF2C241E) // Warm Amber-Dark
+            } else when (syncState) {
+                is com.example.ui.PharmacyViewModel.SyncState.Error -> Color(0xFF2E1C1D) // Soft Crimson-Dark
+                com.example.ui.PharmacyViewModel.SyncState.Syncing -> Color(0xFF1B2329) // Deep Teal-Grey
+                com.example.ui.PharmacyViewModel.SyncState.Synced -> Color(0xFF132219) // Forest-Dark
+            }
+        ),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            if (!isOnline) {
+                Color(0xFF8B5E3C).copy(alpha = 0.5f)
+            } else when (syncState) {
+                is com.example.ui.PharmacyViewModel.SyncState.Error -> Color(0xFFB3261E).copy(alpha = 0.5f)
+                com.example.ui.PharmacyViewModel.SyncState.Syncing -> Color(0xFF2196F3).copy(alpha = 0.5f)
+                com.example.ui.PharmacyViewModel.SyncState.Synced -> Color(0xFF4CAF50).copy(alpha = 0.5f)
+            }
+        ),
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
+                // Animated Status Dot Indicators
+                Box(
+                    modifier = Modifier.size(12.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (isOnline && syncState == com.example.ui.PharmacyViewModel.SyncState.Syncing) {
+                        androidx.compose.material3.CircularProgressIndicator(
+                            color = Color(0xFF2196F3),
+                            strokeWidth = 2.dp,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        val dotColor = if (!isOnline) {
+                            Color(0xFFFF9800) // Amber
+                        } else when (syncState) {
+                            is com.example.ui.PharmacyViewModel.SyncState.Error -> Color(0xFFF44336) // Red
+                            else -> Color(0xFF4CAF50) // Green
+                        }
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(dotColor, androidx.compose.foundation.shape.CircleShape)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.width(10.dp))
+
+                Column {
+                    val statusHeader = if (!isOnline) {
+                        "Cooperative Local Storage Mode (Offline)"
+                    } else when (syncState) {
+                        is com.example.ui.PharmacyViewModel.SyncState.Error -> "Database Write Blocked"
+                        com.example.ui.PharmacyViewModel.SyncState.Syncing -> "CloudSync Worker active..."
+                        com.example.ui.PharmacyViewModel.SyncState.Synced -> "Federated Cloud Database synced"
+                    }
+                    Text(
+                        text = statusHeader,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+
+                    val statusSub = if (!isOnline) {
+                        "Queueing mutations to SQLite Room. Auto-publishing when connection recovers."
+                    } else when (syncState) {
+                        is com.example.ui.PharmacyViewModel.SyncState.Error -> "Cloud rules/permissions denied: ${syncState.message}"
+                        com.example.ui.PharmacyViewModel.SyncState.Syncing -> "Streaming encrypted transactions to Firestore node..."
+                        com.example.ui.PharmacyViewModel.SyncState.Synced -> "Last synchronized securely at $formattedTime"
+                    }
+                    Text(
+                        text = statusSub,
+                        fontSize = 11.sp,
+                        color = Color.White.copy(alpha = 0.7f),
+                        lineHeight = 14.sp
+                    )
+                }
+            }
+
+            if (isOnline) {
+                IconButton(
+                    onClick = onManualSyncClick,
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Refresh,
+                        contentDescription = "Sync Now",
+                        tint = TealPrimary,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
+        }
+    }
+}
+
+// =========================================================================
+// PRISTINE BRANCH INITIALIZATION & SETUP ENGINE (CTO DESIGN SPEC)
+// =========================================================================
+@Composable
+fun WorkspaceInitializationCard(
+    onInitializeClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var isInitializing by remember { mutableStateOf(false) }
+
+    androidx.compose.material3.Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color(0xFF15181F) // Sleek Premium Slate
+        ),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            androidx.compose.ui.graphics.Brush.horizontalGradient(
+                colors = listOf(TealPrimary, Color(0xFF8A2BE2)) // Teal to Indigo gradient
+            )
+        ),
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(vertical = 12.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.CloudDownload,
+                    contentDescription = null,
+                    tint = TealPrimary,
+                    modifier = Modifier.size(28.dp)
+                )
+                Text(
+                    text = "Initialize Professional Workspace",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "Welcome to Priscilla! Since your branch database is empty, initialize baseline reference datasets and standard medicine catalogs to begin branch operations.",
+                fontSize = 12.sp,
+                color = Color.White.copy(alpha = 0.8f),
+                lineHeight = 16.sp
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Beautiful scannable list of data to be initialized
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                listOf(
+                    "10 Branded Medications (with prices, alerts, and lot batch levels)",
+                    "5 Complete Customer Profiles (featuring chronic conditions & histories)",
+                    "Active Clinical Intervention Trackers (with Day 3 / 7 / 14 follow-ups)",
+                    "7 Days of Historical Medication Sales & Invoices (hydrates analytics charts)",
+                    "5 Operational Tasks assigned to roles with full due urgency levels"
+                ).forEach { item ->
+                    Row(
+                        verticalAlignment = Alignment.Top,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text("✔", color = TealPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = item,
+                            fontSize = 11.sp,
+                            color = Color.White.copy(alpha = 0.7f),
+                            lineHeight = 14.sp
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(20.dp))
+
+            Button(
+                onClick = {
+                    isInitializing = true
+                    onInitializeClick()
+                },
+                enabled = !isInitializing,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = TealPrimary,
+                    contentColor = Color.Black
+                ),
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                if (isInitializing) {
+                    androidx.compose.material3.CircularProgressIndicator(
+                        color = Color.Black,
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Initializing Production Workspace...", fontWeight = FontWeight.Bold)
+                } else {
+                    Icon(
+                        imageVector = Icons.Filled.ElectricBolt,
+                        contentDescription = null,
+                        modifier = Modifier.size(16.dp),
+                        tint = Color.Black
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Initialize Production Workspace", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun PriorityFollowUpInbox(
+    pendingAlerts: List<com.example.data.CustomerAlert>,
+    onCompleteAlert: (com.example.data.CustomerAlert) -> Unit,
+    onDeleteAlert: (com.example.data.CustomerAlert) -> Unit
+) {
+    if (pendingAlerts.isEmpty()) return
+
+    var isDismissed by remember { mutableStateOf(false) }
+    if (isDismissed) return
+
+    var showOverlayDialog by remember { mutableStateOf(false) }
+
+    // Sleek, ultra-compact capsule that occupies very little vertical space
+    Card(
+        shape = RoundedCornerShape(10.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = TealSurface.copy(alpha = 0.15f)
+        ),
+        border = androidx.compose.foundation.BorderStroke(
+            width = 1.dp,
+            color = TealPrimary.copy(alpha = 0.25f)
+        ),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.clickable { showOverlayDialog = true }
+            ) {
+                // Micro alert beacon
+                Box(
+                    modifier = Modifier
+                        .size(6.dp)
+                        .background(Color.Red, CircleShape)
+                )
+                
+                Icon(
+                    imageVector = Icons.Filled.NotificationsActive,
+                    contentDescription = null,
+                    tint = TealPrimary,
+                    modifier = Modifier.size(14.dp)
+                )
+                
+                Text(
+                    text = "Priority Care:",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Bold,
+                    color = TealPrimary,
+                    fontSize = 11.sp
+                )
+                
+                Text(
+                    text = "${pendingAlerts.size} pending",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 11.sp
+                )
+            }
+            
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.clickable { showOverlayDialog = true }
+                ) {
+                    Text(
+                        text = "Manage Inbox",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TealPrimary,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.sp
+                    )
+                    Icon(
+                        imageVector = Icons.Filled.OpenInNew,
+                        contentDescription = "Manage Inbox",
+                        tint = TealPrimary,
+                        modifier = Modifier.size(11.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(4.dp))
+
+                // Smooth close button to dismiss the alerts card from the stock page workspace
+                IconButton(
+                    onClick = { isDismissed = true },
+                    modifier = Modifier.size(20.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Close,
+                        contentDescription = "Dismiss Alerts Card",
+                        tint = SlateTextMedium,
+                        modifier = Modifier.size(14.dp)
+                    )
+                }
+            }
+        }
+    }
+
+    // High-density floating cockpit Dialog overlay
+    if (showOverlayDialog) {
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { showOverlayDialog = false }
+        ) {
+            androidx.compose.material3.Surface(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 24.dp),
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.background,
+                tonalElevation = 8.dp
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    // Title section
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.NotificationsActive,
+                                contentDescription = null,
+                                tint = TealPrimary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Text(
+                                text = "Priority Care Inbox",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .background(TealPrimary, CircleShape)
+                                    .padding(horizontal = 8.dp, vertical = 2.dp)
+                            ) {
+                                Text(
+                                    text = pendingAlerts.size.toString(),
+                                    color = Color.White,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                        
+                        IconButton(
+                            onClick = { showOverlayDialog = false },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Close,
+                                contentDescription = "Close",
+                                tint = SlateTextMedium,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Take action on critical patient care follow-ups, calls, and handshake validations.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = SlateTextMedium
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    androidx.compose.material3.HorizontalDivider(color = SlateBorderLight.copy(alpha = 0.4f))
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Highly compact list
+                    androidx.compose.foundation.lazy.LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f, fill = false)
+                            .heightIn(max = 320.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(pendingAlerts) { alert ->
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = Color.White),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, SlateBorderLight.copy(alpha = 0.4f)),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                        ) {
+                                            Text(
+                                                text = alert.customerName,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Box(
+                                                modifier = Modifier
+                                                    .background(TealSurface, RoundedCornerShape(4.dp))
+                                                    .padding(horizontal = 4.dp, vertical = 1.dp)
+                                            ) {
+                                                Text(
+                                                    text = alert.alertType,
+                                                    color = TealPrimary,
+                                                    fontSize = 8.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(
+                                            text = alert.medicationName,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = "Target Date: ${alert.scheduledTime}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = SlateTextMedium,
+                                            fontWeight = FontWeight.Medium
+                                        )
+                                    }
+
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        // Complete action button
+                                        IconButton(
+                                            onClick = { 
+                                                onCompleteAlert(alert)
+                                                showOverlayDialog = false 
+                                            },
+                                            modifier = Modifier
+                                                .background(TealPrimary.copy(alpha = 0.1f), CircleShape)
+                                                .size(32.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.Check,
+                                                contentDescription = "Mark Complete",
+                                                tint = TealPrimary,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+
+                                        // Dismiss action button
+                                        IconButton(
+                                            onClick = { onDeleteAlert(alert) },
+                                            modifier = Modifier
+                                                .background(Color.Red.copy(alpha = 0.05f), CircleShape)
+                                                .size(32.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.Delete,
+                                                contentDescription = "Dismiss",
+                                                tint = Color.Red.copy(alpha = 0.8f),
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        TextButton(
+                            onClick = { showOverlayDialog = false }
+                        ) {
+                            Text("Close", color = TealPrimary, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun RenderPostDispatchConfirmAlert(
+    alert: com.example.data.CustomerAlert,
+    customers: List<com.example.data.Customer>,
+    viewModel: com.example.ui.PharmacyViewModel,
+    context: android.content.Context,
+    onDismiss: () -> Unit
+) {
+    var notesText by remember { mutableStateOf("") }
+    var validationError by remember { mutableStateOf<String?>(null) }
+    var isSaving by remember { mutableStateOf(false) }
+    
+    // Find current customer notes
+    val customer = remember(alert, customers) {
+        customers.find { it.name.equals(alert.customerName, ignoreCase = true) || it.phoneNumber == alert.phoneNumber }
+    }
+    
+    LaunchedEffect(alert) {
+        notesText = customer?.notes ?: ""
+        validationError = null
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Filled.FactCheck, contentDescription = null, tint = TealPrimary, modifier = Modifier.size(36.dp)) },
+        title = { Text("Complete & Update Patient Note", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = "You are completing the follow-up alert for ${alert.customerName}. To ensure adherence and compliance, you must update their notes section with something different and non-suggestive of an action, unless it is for a future date.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = SlateTextMedium
+                )
+                
+                OutlinedTextField(
+                    value = notesText,
+                    onValueChange = { 
+                        notesText = it 
+                        val (isValid, err) = viewModel.validateCustomerNotes(it)
+                        validationError = err
+                    },
+                    label = { Text("Patient Care Notes") },
+                    isError = validationError != null,
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 100.dp),
+                    textStyle = MaterialTheme.typography.bodyMedium,
+                    shape = RoundedCornerShape(8.dp)
+                )
+                
+                if (validationError != null) {
+                    Text(
+                        text = validationError ?: "",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                } else {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier
+                            .background(TealSurface.copy(alpha = 0.3f), RoundedCornerShape(6.dp))
+                            .padding(8.dp)
+                    ) {
+                        Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = TealPrimary, modifier = Modifier.size(14.dp))
+                        Text(
+                            text = "To schedule a future follow-up, write: 'call patient on 8th of July 2026' or 'follow up in 7 days'. Static updates are saved directly.",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = TealTertiary,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    isSaving = true
+                    viewModel.completeCustomerAlertAndLog(alert, notesText) { success, err ->
+                        isSaving = false
+                        if (success) {
+                            onDismiss()
+                            Toast.makeText(context, "Care follow-up successfully logged and alert marked off!", Toast.LENGTH_SHORT).show()
+                        } else {
+                            validationError = err
+                        }
+                    }
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = TealPrimary),
+                enabled = validationError == null && !isSaving,
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                if (isSaving) {
+                    CircularProgressIndicator(color = Color.White, modifier = Modifier.size(16.dp))
+                } else {
+                    Text("Complete & Log Care")
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+fun RenderPostDispatchConfirmMedData(
+    data: com.example.ui.PostDispatchConfirmData,
+    viewModel: com.example.ui.PharmacyViewModel,
+    context: android.content.Context,
+    onDismiss: () -> Unit
+) {
+    val customer = data.customer
+    val med = data.medication
+    var selectedDateMs by remember { mutableStateOf(System.currentTimeMillis() + med.cycleDays * 24L * 60 * 60 * 1000) }
+    var notesText by remember { mutableStateOf("") }
+    var isSaving by remember { mutableStateOf(false) }
+    val coroutineScope = rememberCoroutineScope()
+
+    val sdf = java.text.SimpleDateFormat("MMM dd, yyyy", java.util.Locale.getDefault())
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Filled.Upcoming, contentDescription = null, tint = TealPrimary, modifier = Modifier.size(36.dp)) },
+        title = { Text("Reschedule Next Refill Cycle", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = "Refill reminder sent for ${med.medicationName}. Review and confirm or adjust the rescheduled next cycle date and notes below.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = SlateTextMedium
+                )
+
+                // Date Selection Box
+                Card(
+                    shape = RoundedCornerShape(8.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, SlateBorderLight),
+                    colors = CardDefaults.cardColors(containerColor = SlateBackgroundLight.copy(alpha = 0.5f)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text("Calculated Next Refill Date", style = MaterialTheme.typography.labelSmall, color = SlateTextMedium)
+                        Text(
+                            text = sdf.format(java.util.Date(selectedDateMs)),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = TealPrimary
+                        )
+                    }
+                }
+
+                // Presets
+                Text("Quick Adjust Date Presets:", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    listOf(15, 30, 45, 60).forEach { days ->
+                        val isSelected = selectedDateMs == (System.currentTimeMillis() + days * 24L * 60 * 60 * 1000)
+                        OutlinedButton(
+                            onClick = { 
+                                selectedDateMs = System.currentTimeMillis() + days * 24L * 60 * 60 * 1000 
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(6.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, if (isSelected) TealPrimary else SlateBorderLight),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = if (isSelected) TealSurface else Color.Transparent
+                            ),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+                        ) {
+                            Text("${days}d", fontSize = 11.sp, color = if (isSelected) TealPrimary else SlateTextMedium)
+                        }
+                    }
+                }
+
+                OutlinedTextField(
+                    value = notesText,
+                    onValueChange = { notesText = it },
+                    label = { Text("Add Patient Care Notes (Optional)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    textStyle = MaterialTheme.typography.bodyMedium,
+                    shape = RoundedCornerShape(8.dp)
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    isSaving = true
+                    coroutineScope.launch {
+                        // 1. Reschedule refill date
+                        val updatedMed = med.copy(nextRefillDate = selectedDateMs)
+                        viewModel.updateCustomerMedication(updatedMed)
+                        
+                        // 2. Append notes if provided
+                        if (notesText.isNotBlank()) {
+                            val currentNotes = customer.notes
+                            val newNotes = if (currentNotes.isBlank()) notesText.trim() else "${currentNotes}\n• ${notesText.trim()}"
+                            viewModel.updateCustomer(customer.copy(notes = newNotes))
+                        }
+                        
+                        // 3. Log compliance event
+                        viewModel.repository.insertAdminAuditLog(
+                            com.example.data.AdminAuditLog(
+                                adminName = "Automated Completion Handler",
+                                actionPerformed = "AUTO_RESCHEDULE_REFILL",
+                                reason = "Rescheduled refill for ${customer.name} -> ${med.medicationName} to ${sdf.format(java.util.Date(selectedDateMs))}.",
+                                affectedNodeId = med.id.toString(),
+                                affectedNodeModel = "CustomerMedication"
+                            )
+                        )
+                        
+                        isSaving = false
+                        onDismiss()
+                        Toast.makeText(context, "Refill successfully rescheduled and logged!", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = TealPrimary),
+                enabled = !isSaving,
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                if (isSaving) {
+                    CircularProgressIndicator(color = Color.White, modifier = Modifier.size(16.dp))
+                } else {
+                    Text("Confirm & Reschedule")
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Dismiss")
+            }
+        }
+    )
 }
 

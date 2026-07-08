@@ -4,6 +4,7 @@ import android.content.Context
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
@@ -42,10 +43,31 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.PickVisualMediaRequest
 import com.example.data.AICarousel
+import com.example.ui.theme.*
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+
+fun copyUriToInternalStorage(context: Context, uri: android.net.Uri): String? {
+    return try {
+        val inputStream = context.contentResolver.openInputStream(uri) ?: return null
+        val file = java.io.File(context.filesDir, "slide_image_${System.currentTimeMillis()}.png")
+        val outputStream = java.io.FileOutputStream(file)
+        inputStream.use { input ->
+            outputStream.use { output ->
+                input.copyTo(output)
+            }
+        }
+        file.absolutePath
+    } catch (e: Exception) {
+        e.printStackTrace()
+        null
+    }
+}
 
 val MinimalistTheme = SlideTheme("Minimalist", Color(0xFFFAFAFA), Color(0xFF121212), Color(0xFF000000), Color(0xFFEEEEEE), true)
 val BoldHealthTheme = SlideTheme("Bold Health", Color(0xFF0D47A1), Color.White, Color(0xFF64B5F6), Color(0xFF1565C0), false)
@@ -87,116 +109,244 @@ fun AIContentEngineTab(viewModel: AIContentEngineViewModel) {
     var isStoryFormat by remember { mutableStateOf(false) }
     var selectedLayoutTheme by remember { mutableStateOf(SlideLayoutTheme.PHARMA_EDITORIAL) }
 
-    Column(modifier = Modifier.fillMaxSize().padding(vertical = 16.dp)) {
+    Column(modifier = Modifier.fillMaxSize().padding(vertical = 8.dp)) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = if (activeSubTab == "promo") "Promo Studio" else "AI Content Engine",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = TealPrimary
                 )
                 Text(
                     text = if (activeSubTab == "promo") "Design high-converting multi-product grid layouts" else "Generate daily educational carousels automatically",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = Color.Gray
+                    style = MaterialTheme.typography.bodySmall,
+                    color = SlateTextMedium
                 )
             }
-            Spacer(modifier = Modifier.width(16.dp))
+            Spacer(modifier = Modifier.width(12.dp))
             if (activeSubTab == "carousel") {
                 if (uiState !is ContentEngineState.Idle && uiState !is ContentEngineState.Error) {
-                    TextButton(onClick = { viewModel.setIdle() }) {
-                        Text("Back to History")
+                    TextButton(
+                        onClick = { viewModel.setIdle() },
+                        colors = ButtonDefaults.textButtonColors(contentColor = TealPrimary)
+                    ) {
+                        Icon(Icons.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("History", fontWeight = FontWeight.Bold)
                     }
                 } else {
                     Button(
                         onClick = { viewModel.startSelection() },
-                        enabled = uiState !is ContentEngineState.Generating && uiState !is ContentEngineState.SelectStrategy && uiState !is ContentEngineState.SelectSpecificProducts
+                        enabled = uiState !is ContentEngineState.Generating && uiState !is ContentEngineState.SelectStrategy && uiState !is ContentEngineState.SelectSpecificProducts,
+                        colors = ButtonDefaults.buttonColors(containerColor = TealPrimary, contentColor = Color.Black),
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                        modifier = Modifier.height(38.dp)
                     ) {
-                        Icon(Icons.Filled.AutoAwesome, contentDescription = "Generate")
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("New Content")
+                        Icon(Icons.Filled.AutoAwesome, contentDescription = "Generate", modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("New Content", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
                 }
             } else {
                 if (promoState.uiMode != PromoUiMode.Selection) {
-                    TextButton(onClick = { viewModel.clearPromoStudioState() }) {
+                    TextButton(
+                        onClick = { viewModel.clearPromoStudioState() },
+                        colors = ButtonDefaults.textButtonColors(contentColor = TealPrimary)
+                    ) {
                         Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("Reset Design")
+                        Text("Reset Design", fontWeight = FontWeight.Bold)
                     }
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Premium Material 3 Sub-Tab selector
-        TabRow(
-            selectedTabIndex = if (activeSubTab == "carousel") 0 else 1,
-            modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)),
-            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-            contentColor = MaterialTheme.colorScheme.primary,
-            indicator = { tabPositions ->
-                TabRowDefaults.SecondaryIndicator(
-                    modifier = Modifier.tabIndicatorOffset(tabPositions[if (activeSubTab == "carousel") 0 else 1]),
-                    color = MaterialTheme.colorScheme.primary
-                )
-            }
+        // Executive Pill Segmented Tab Control
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(10.dp))
+                .background(SlateBackgroundLight)
+                .padding(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
-            Tab(
-                selected = activeSubTab == "carousel",
-                onClick = { activeSubTab = "carousel" },
-                text = { Text("Educational Carousel", fontWeight = FontWeight.Bold, fontSize = 13.sp) }
-            )
-            Tab(
-                selected = activeSubTab == "promo",
-                onClick = { activeSubTab = "promo" },
-                text = { Text("Promo Studio (Grid)", fontWeight = FontWeight.Bold, fontSize = 13.sp) }
-            )
+            listOf(
+                "carousel" to "Educational Carousel",
+                "promo" to "Promo Studio (Grid)"
+            ).forEach { (tabId, label) ->
+                val isSelected = activeSubTab == tabId
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(if (isSelected) TealPrimary else Color.Transparent)
+                        .clickable { activeSubTab = tabId }
+                        .padding(vertical = 8.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = label,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        color = if (isSelected) Color.Black else SlateTextMedium
+                    )
+                }
+            }
         }
 
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(14.dp))
 
         if (activeSubTab == "carousel") {
             when (val state = uiState) {
             is ContentEngineState.Idle -> {
                 if (history.isEmpty()) {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(Icons.Filled.AutoAwesome, contentDescription = "AI", modifier = Modifier.size(64.dp), tint = Color.LightGray)
-                            Spacer(modifier = Modifier.height(16.dp))
-                            Text("No content generated yet.", color = Color.Gray)
-                            Spacer(modifier = Modifier.height(8.dp))
-                            Button(onClick = { viewModel.startSelection() }) {
-                                Text("Generate Fresh Content")
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = TealSurface),
+                            shape = RoundedCornerShape(16.dp),
+                            border = BorderStroke(1.dp, SlateBorderLight.copy(alpha = 0.4f)),
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
+                        ) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.padding(20.dp).fillMaxWidth()
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(48.dp)
+                                        .clip(CircleShape)
+                                        .background(TealPrimary.copy(alpha = 0.12f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.AutoAwesome,
+                                        contentDescription = "AI",
+                                        tint = TealPrimary,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Text(
+                                    text = "No content generated yet.",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "Generate and queue high-conversions educational topics for your customers.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = SlateTextMedium,
+                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                                )
+                                Spacer(modifier = Modifier.height(12.dp))
+                                Button(
+                                    onClick = { viewModel.startSelection() },
+                                    colors = ButtonDefaults.buttonColors(containerColor = TealPrimary, contentColor = Color.Black),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Text("Generate Fresh Content", fontWeight = FontWeight.Bold)
+                                }
                             }
                         }
                     }
                 } else {
-                    Text("History", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "History & Queue",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Surface(
+                            color = TealPrimary.copy(alpha = 0.12f),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text(
+                                text = "${history.size} Carousels",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TealPrimary,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
                         items(history) { carousel ->
-                            ElevatedCard(
+                            Card(
                                 onClick = { viewModel.viewHistoryItem(carousel) },
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(containerColor = TealSurface),
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, SlateBorderLight.copy(alpha = 0.4f))
                             ) {
                                 Row(
-                                    modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp).fillMaxWidth(),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(carousel.topicTitle, fontWeight = FontWeight.Bold)
-                                        val date = SimpleDateFormat("MMM dd, yyyy", Locale.getDefault()).format(Date(carousel.createdAt))
-                                        Text("Generated on $date", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.weight(1f)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(36.dp)
+                                                .clip(RoundedCornerShape(8.dp))
+                                                .background(TealPrimary.copy(alpha = 0.1f)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.Dashboard,
+                                                contentDescription = null,
+                                                tint = TealPrimary,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(12.dp))
+                                        Column {
+                                            Text(
+                                                text = carousel.topicTitle,
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                            val date = SimpleDateFormat("MMM dd, yyyy • HH:mm", Locale.getDefault()).format(Date(carousel.createdAt))
+                                            Text(
+                                                text = "Generated $date",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = SlateTextMedium
+                                            )
+                                        }
                                     }
-                                    IconButton(onClick = { viewModel.deleteCarousel(carousel) }) {
-                                        Icon(Icons.Filled.Delete, contentDescription = "Delete", tint = Color.Red.copy(alpha = 0.6f))
+                                    IconButton(
+                                        onClick = { viewModel.deleteCarousel(carousel) },
+                                        modifier = Modifier.size(36.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Delete,
+                                            contentDescription = "Delete",
+                                            tint = WarningRed.copy(alpha = 0.8f),
+                                            modifier = Modifier.size(18.dp)
+                                        )
                                     }
                                 }
                             }
@@ -429,11 +579,20 @@ fun AIContentEngineTab(viewModel: AIContentEngineViewModel) {
             is ContentEngineState.Success -> {
                 val carousel = state.carousel
                 val theme = AllThemes.find { it.name == state.theme } ?: MinimalistTheme
-                Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-                    Text(carousel.topicTitle, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(carousel.caption, style = MaterialTheme.typography.bodyMedium)
-                    Spacer(modifier = Modifier.height(16.dp))
+                Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
+                    OutlinedTextField(
+                        value = carousel.topicTitle,
+                        onValueChange = { viewModel.updateCarouselMeta(it, carousel.caption) },
+                        label = { Text("Carousel Main Topic") },
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = carousel.caption,
+                        onValueChange = { viewModel.updateCarouselMeta(carousel.topicTitle, it) },
+                        label = { Text("Carousel Caption/Subheading") },
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
+                    )
                     
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -476,10 +635,29 @@ fun AIContentEngineTab(viewModel: AIContentEngineViewModel) {
 
                     LazyRow(
                         horizontalArrangement = Arrangement.spacedBy(16.dp),
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
                     ) {
                         itemsIndexed(carousel.slides) { index, slide ->
                             SlidePreview(slide, index, carousel.slides.size, isStoryFormat, theme, selectedLayoutTheme, context, viewModel)
+                        }
+                        item {
+                            Card(
+                                modifier = Modifier
+                                    .width(180.dp)
+                                    .height(400.dp)
+                                    .clickable { viewModel.addSlide() },
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Icon(Icons.Filled.Add, contentDescription = "Add Slide", modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Text("Add Slide", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -496,6 +674,222 @@ fun AIContentEngineTab(viewModel: AIContentEngineViewModel) {
 }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SlideEditDialog(
+    slide: CarouselSlide,
+    onDismissRequest: () -> Unit,
+    onSave: (CarouselSlide) -> Unit
+) {
+    val context = LocalContext.current
+    var heading by remember { mutableStateOf(slide.heading) }
+    var text by remember { mutableStateOf(slide.text) }
+    var imageUri by remember { mutableStateOf(slide.imageUri) }
+    val keyPoints = remember { mutableStateListOf<String>().apply { addAll(slide.keyPoints) } }
+    val recommendedProducts = remember { mutableStateListOf<String>().apply { addAll(slide.recommendedProducts ?: emptyList()) } }
+
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+        onResult = { uri ->
+            if (uri != null) {
+                val savedPath = copyUriToInternalStorage(context, uri)
+                if (savedPath != null) {
+                    imageUri = savedPath
+                } else {
+                    Toast.makeText(context, "Error processing picked image", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    )
+
+    AlertDialog(
+        onDismissRequest = onDismissRequest,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.Edit, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Edit Slide #${slide.slideNumber} Details", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                OutlinedTextField(
+                    value = heading,
+                    onValueChange = { heading = it },
+                    label = { Text("Heading / Title") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it },
+                    label = { Text("Body Paragraph / Description") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 3
+                )
+
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Slide Image (Optional)", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    if (!imageUri.isNullOrBlank()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(120.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .border(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                        ) {
+                            coil.compose.AsyncImage(
+                                model = imageUri,
+                                contentDescription = "Picked Image",
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                            )
+                            
+                            IconButton(
+                                onClick = { imageUri = null },
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(4.dp)
+                                    .background(Color.Black.copy(alpha = 0.6f), CircleShape)
+                                    .size(32.dp)
+                            ) {
+                                Icon(Icons.Filled.Close, contentDescription = "Remove Image", tint = Color.White, modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    } else {
+                        OutlinedButton(
+                            onClick = {
+                                photoPickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Filled.Image, contentDescription = "Choose Image")
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Upload / Choose Image")
+                        }
+                    }
+                }
+
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Bullet Key Points", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        IconButton(
+                            onClick = { keyPoints.add("New key point text") },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(Icons.Filled.Add, contentDescription = "Add Key Point", modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                    
+                    if (keyPoints.isEmpty()) {
+                        Text("No key points added. Click + to add one.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        keyPoints.forEachIndexed { idx, point ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                OutlinedTextField(
+                                    value = point,
+                                    onValueChange = { keyPoints[idx] = it },
+                                    modifier = Modifier.weight(1f),
+                                    singleLine = true,
+                                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                IconButton(
+                                    onClick = { keyPoints.removeAt(idx) },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(Icons.Filled.Delete, contentDescription = "Delete", modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
+
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Recommended Products", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        IconButton(
+                            onClick = { recommendedProducts.add("Recommended Product Name") },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(Icons.Filled.Add, contentDescription = "Add Recommended Product", modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+
+                    if (recommendedProducts.isEmpty()) {
+                        Text("No products recommended on this slide. Click + to add.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        recommendedProducts.forEachIndexed { idx, prod ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                OutlinedTextField(
+                                    value = prod,
+                                    onValueChange = { recommendedProducts[idx] = it },
+                                    modifier = Modifier.weight(1f),
+                                    singleLine = true,
+                                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                IconButton(
+                                    onClick = { recommendedProducts.removeAt(idx) },
+                                    modifier = Modifier.size(32.dp)
+                                ) {
+                                    Icon(Icons.Filled.Delete, contentDescription = "Delete", modifier = Modifier.size(18.dp), tint = MaterialTheme.colorScheme.error)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val updatedSlide = slide.copy(
+                        heading = heading,
+                        text = text,
+                        keyPoints = keyPoints.toList(),
+                        recommendedProducts = if (recommendedProducts.isEmpty()) null else recommendedProducts.toList(),
+                        imageUri = imageUri
+                    )
+                    onSave(updatedSlide)
+                    onDismissRequest()
+                }
+            ) {
+                Text("Apply & Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismissRequest) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
 @Composable
 fun SlidePreview(
     slide: CarouselSlide, 
@@ -510,6 +904,17 @@ fun SlidePreview(
     val aspectRatio = if (isStoryFormat) 9f / 16f else 4f / 5f
     val height = 400.dp 
     val width = height * aspectRatio
+    var showEditDialog by remember { mutableStateOf(false) }
+
+    if (showEditDialog) {
+        SlideEditDialog(
+            slide = slide,
+            onDismissRequest = { showEditDialog = false },
+            onSave = { updatedSlide ->
+                viewModel.updateSlide(index, updatedSlide)
+            }
+        )
+    }
 
     Column(modifier = Modifier.width(width)) {
         Card(
@@ -532,43 +937,96 @@ fun SlidePreview(
             )
         }
         
-        Spacer(modifier = Modifier.height(8.dp))
-        Button(
-            onClick = {
-                val density = context.resources.displayMetrics.density
-                val aspectRatioVal = if (isStoryFormat) 9f / 16f else 4f / 5f
-                val exportWidthPx = 1080
-                val exportHeightPx = (exportWidthPx / aspectRatioVal).toInt()
-                
-                try {
-                    val result = SlideImageGenerator.generateSlide(context, slide, theme, isStoryFormat, layoutTheme, totalSlides)
-                    val uri = result.first
-                    
-                    if (uri != null) {
-                        val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
-                            setDataAndType(uri, "image/png")
-                            addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                        }
-                        context.startActivity(android.content.Intent.createChooser(intent, "View Slide"))
-                    } else {
-                        Toast.makeText(context, "Failed to capture slide.", Toast.LENGTH_SHORT).show()
-                    }
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                    Toast.makeText(context, "Error saving file: ${e.message}", Toast.LENGTH_LONG).show()
-                }
-            },
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = theme.accentColor,
-                contentColor = if (theme.isLight) Color.White else Color.Black
-            ),
-            shape = RoundedCornerShape(12.dp)
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(Icons.Filled.Share, contentDescription = "View", modifier = Modifier.size(16.dp))
-            Spacer(modifier = Modifier.width(8.dp))
-            Text("View Image", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            IconButton(
+                onClick = { viewModel.moveSlide(index, -1) },
+                enabled = index > 0,
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(Icons.Filled.ArrowBack, contentDescription = "Move Left", modifier = Modifier.size(16.dp))
+            }
+            IconButton(
+                onClick = { viewModel.duplicateSlide(index) },
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(Icons.Filled.ContentCopy, contentDescription = "Duplicate", modifier = Modifier.size(16.dp))
+            }
+            IconButton(
+                onClick = { viewModel.deleteSlide(index) },
+                enabled = totalSlides > 1,
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(Icons.Filled.Delete, contentDescription = "Delete", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.error)
+            }
+            IconButton(
+                onClick = { viewModel.moveSlide(index, 1) },
+                enabled = index < totalSlides - 1,
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(Icons.Filled.ArrowForward, contentDescription = "Move Right", modifier = Modifier.size(16.dp))
+            }
+        }
+
+        Spacer(modifier = Modifier.height(4.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedButton(
+                onClick = { showEditDialog = true },
+                modifier = Modifier.weight(1f),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    contentColor = theme.textColor
+                ),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.dp, theme.textColor.copy(alpha = 0.5f))
+            ) {
+                Icon(Icons.Filled.Edit, contentDescription = "Edit Elements", modifier = Modifier.size(14.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Edit Details", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
+            
+            Button(
+                onClick = {
+                    val density = context.resources.displayMetrics.density
+                    val aspectRatioVal = if (isStoryFormat) 9f / 16f else 4f / 5f
+                    val exportWidthPx = 1080
+                    val exportHeightPx = (exportWidthPx / aspectRatioVal).toInt()
+                    
+                    try {
+                        val result = SlideImageGenerator.generateSlide(context, slide, theme, isStoryFormat, layoutTheme, totalSlides)
+                        val uri = result.first
+                        
+                        if (uri != null) {
+                            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                                setDataAndType(uri, "image/png")
+                                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            context.startActivity(android.content.Intent.createChooser(intent, "View Slide"))
+                        } else {
+                            Toast.makeText(context, "Failed to capture slide.", Toast.LENGTH_SHORT).show()
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        Toast.makeText(context, "Error saving file: ${e.message}", Toast.LENGTH_LONG).show()
+                    }
+                },
+                modifier = Modifier.weight(1.2f),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = theme.accentColor,
+                    contentColor = if (theme.isLight) Color.White else Color.Black
+                ),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Icon(Icons.Filled.Share, contentDescription = "View", modifier = Modifier.size(14.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("View Image", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
         }
     }
 }
@@ -822,6 +1280,25 @@ fun SlideContent(
             
             Spacer(modifier = Modifier.height(16.dp))
             
+            if (!slide.imageUri.isNullOrBlank()) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(130.dp)
+                        .clip(RoundedCornerShape(8.dp)),
+                    colors = CardDefaults.cardColors(containerColor = Color.Transparent),
+                    border = BorderStroke(1.dp, theme.textColor.copy(alpha = 0.15f))
+                ) {
+                    coil.compose.AsyncImage(
+                        model = slide.imageUri,
+                        contentDescription = "Slide Image",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                    )
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+            
             // 4. Keypoints List (Or Asymmetric Cards / Sharp Tech Infographics!)
             if (slide.keyPoints.isNotEmpty()) {
                 when (layoutTheme) {
@@ -927,7 +1404,7 @@ fun SlideContent(
             
             Spacer(modifier = Modifier.weight(1f))
             
-            // 5. Recommended products or Warnings (or Pro tips like the image!)
+            // 5. Recommended products
             if (!slide.recommendedProducts.isNullOrEmpty()) {
                 Box(
                     modifier = Modifier
@@ -965,45 +1442,6 @@ fun SlideContent(
                                 modifier = Modifier.padding(start = 4.dp, bottom = 2.dp)
                             )
                         }
-                    }
-                }
-            } else {
-                // If there are no products, display a super premium callout warning
-                val tipText = if (slide.heading.contains("diarrhea", true) || slide.heading.contains("Dehydration", true)) {
-                    "Consult medical staff immediately if vomiting or severe lethargy persists."
-                } else {
-                    "Always prioritize fresh, clean hydration and sanitary fluid supplies."
-                }
-                
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            color = if (theme.isLight) Color(0xFFFFFAEB) else Color(0xFF292212),
-                            shape = RoundedCornerShape(10.dp)
-                        )
-                        .border(
-                            width = 1.dp,
-                            color = if (theme.isLight) Color(0xFFFEE8BD) else Color(0xFF534120),
-                            shape = RoundedCornerShape(10.dp)
-                        )
-                        .padding(10.dp)
-                ) {
-                    Row(verticalAlignment = Alignment.Top) {
-                        Icon(
-                            imageVector = Icons.Filled.Warning,
-                            contentDescription = "Tip",
-                            tint = Color(0xFFFF9800),
-                            modifier = Modifier.size(15.dp).padding(top = 1.dp)
-                        )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = tipText,
-                            color = if (theme.isLight) Color(0xFF664D03) else Color(0xFFFFD56B),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium,
-                            lineHeight = 14.sp
-                        )
                     }
                 }
             }
@@ -1233,15 +1671,71 @@ fun PromoSelectionScreen(
             }
         }
 
-        // Search and category selectors
-        OutlinedTextField(
+        // Search and category selectors (Using BasicTextField to prevent vertical clipping/tucking)
+        androidx.compose.foundation.text.BasicTextField(
             value = searchQuery,
             onValueChange = { searchQuery = it },
-            placeholder = { Text("Search inventory...") },
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+            textStyle = MaterialTheme.typography.bodyMedium.copy(
+                color = MaterialTheme.colorScheme.onSurface,
+                fontSize = 13.sp
+            ),
             singleLine = true,
-            shape = RoundedCornerShape(12.dp),
-            modifier = Modifier.fillMaxWidth()
+            cursorBrush = androidx.compose.ui.graphics.SolidColor(TealPrimary),
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(44.dp),
+            decorationBox = { innerTextField ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            color = TealSurface,
+                            shape = RoundedCornerShape(10.dp)
+                        )
+                        .border(
+                            width = 1.dp,
+                            color = SlateBorderLight.copy(alpha = 0.4f),
+                            shape = RoundedCornerShape(10.dp)
+                        )
+                        .padding(horizontal = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Search,
+                        contentDescription = "SearchIcon",
+                        tint = SlateTextMedium,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Box(
+                        modifier = Modifier.weight(1f),
+                        contentAlignment = Alignment.CenterStart
+                    ) {
+                        if (searchQuery.isEmpty()) {
+                            Text(
+                                text = "Search inventory...",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = SlateTextMedium,
+                                fontSize = 13.sp
+                            )
+                        }
+                        innerTextField()
+                    }
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(
+                            onClick = { searchQuery = "" },
+                            modifier = Modifier.size(24.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Close,
+                                contentDescription = "ClearSearch",
+                                tint = SlateTextMedium,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+                }
+            }
         )
         
         Spacer(modifier = Modifier.height(8.dp))
@@ -1763,6 +2257,29 @@ fun ManualCarouselCreation(
     state: ContentEngineState.ManualCreation,
     viewModel: AIContentEngineViewModel
 ) {
+    val context = LocalContext.current
+    var activeImagePickIndex by remember { mutableStateOf<Int?>(null) }
+    
+    val manualPhotoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia(),
+        onResult = { uri ->
+            val idx = activeImagePickIndex
+            if (uri != null && idx != null) {
+                val savedPath = copyUriToInternalStorage(context, uri)
+                if (savedPath != null) {
+                    val newSlides = state.slides.toMutableList()
+                    if (idx < newSlides.size) {
+                        newSlides[idx] = newSlides[idx].copy(imageUri = savedPath)
+                        viewModel.updateManualCreationFields(state.topicTitle, state.caption, newSlides)
+                    }
+                } else {
+                    Toast.makeText(context, "Error processing picked image", Toast.LENGTH_SHORT).show()
+                }
+            }
+            activeImagePickIndex = null
+        }
+    )
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -1930,6 +2447,56 @@ fun ManualCarouselCreation(
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text("Slide Image (Optional)", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    if (!slide.imageUri.isNullOrBlank()) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(120.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .border(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                        ) {
+                            coil.compose.AsyncImage(
+                                model = slide.imageUri,
+                                contentDescription = "Picked Image",
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                            )
+                            
+                            IconButton(
+                                onClick = {
+                                    val newSlides = state.slides.toMutableList()
+                                    newSlides[index] = slide.copy(imageUri = null)
+                                    viewModel.updateManualCreationFields(state.topicTitle, state.caption, newSlides)
+                                },
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(4.dp)
+                                    .background(Color.Black.copy(alpha = 0.6f), CircleShape)
+                                    .size(32.dp)
+                            ) {
+                                Icon(Icons.Filled.Close, contentDescription = "Remove Image", tint = Color.White, modifier = Modifier.size(16.dp))
+                            }
+                        }
+                    } else {
+                        OutlinedButton(
+                            onClick = {
+                                activeImagePickIndex = index
+                                manualPhotoPickerLauncher.launch(
+                                    PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
+                                )
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Filled.Image, contentDescription = "Choose Image")
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Upload / Choose Image")
+                        }
+                    }
                 }
             }
         }

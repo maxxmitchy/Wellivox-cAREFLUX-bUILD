@@ -127,7 +127,7 @@ interface PharmacyDao {
     fun getMedicationsForCustomer(customerId: Int): Flow<List<CustomerMedication>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertCustomerMedication(medication: CustomerMedication)
+    suspend fun insertCustomerMedication(medication: CustomerMedication): Long
 
     @Update
     suspend fun updateCustomerMedication(medication: CustomerMedication)
@@ -159,7 +159,7 @@ interface PharmacyDao {
     fun getAllAICarousels(): Flow<List<AICarousel>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertAICarousel(carousel: AICarousel)
+    suspend fun insertAICarousel(carousel: AICarousel): Long
 
     @Delete
     suspend fun deleteAICarousel(carousel: AICarousel)
@@ -249,6 +249,41 @@ interface PharmacyDao {
     @Query("DELETE FROM admin_audit_logs")
     suspend fun clearAdminAuditLogs()
 
+    // --- Inventory Batches Opers ---
+    @Query("SELECT * FROM inventory_batches ORDER BY expiryDate ASC")
+    fun getAllInventoryBatches(): Flow<List<InventoryBatch>>
+
+    @Query("SELECT * FROM inventory_batches WHERE inventoryItemId = :itemId ORDER BY expiryDate ASC")
+    fun getBatchesForItem(itemId: Int): Flow<List<InventoryBatch>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertInventoryBatch(batch: InventoryBatch): Long
+
+    @Update
+    suspend fun updateInventoryBatch(batch: InventoryBatch)
+
+    @Delete
+    suspend fun deleteInventoryBatch(batch: InventoryBatch)
+
+    @Query("DELETE FROM inventory_batches WHERE id = :id")
+    suspend fun deleteInventoryBatchById(id: Int)
+
+    @Query("DELETE FROM inventory_batches")
+    suspend fun clearInventoryBatches()
+
+    // --- Outbound SMS Logs Opers ---
+    @Query("SELECT * FROM outbound_sms_logs ORDER BY timestamp DESC")
+    fun getAllSmsLogs(): Flow<List<OutboundSmsLog>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertSmsLog(log: OutboundSmsLog): Long
+
+    @Update
+    suspend fun updateSmsLog(log: OutboundSmsLog)
+
+    @Query("DELETE FROM outbound_sms_logs")
+    suspend fun clearSmsLogs()
+
     @Transaction
     suspend fun clearAllData() {
         clearOperationTasks()
@@ -264,5 +299,7 @@ interface PharmacyDao {
         clearMedicationSales()
         clearRescueListings()
         clearAdminAuditLogs()
+        clearInventoryBatches()
+        clearSmsLogs()
     }
 }

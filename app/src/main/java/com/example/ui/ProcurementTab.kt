@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -50,6 +51,7 @@ fun ProcurementTabContent(
     val currentBranchId by viewModel.currentPharmacistBranchId.collectAsStateWithLifecycle()
     val currentBranchName by viewModel.currentPharmacistBranchName.collectAsStateWithLifecycle()
     val transfersList by viewModel.branchTransfers.collectAsStateWithLifecycle()
+    val currentRole by viewModel.currentPharmacistRole.collectAsStateWithLifecycle()
 
     // Exclude current branch from destination options
     val destinationBranches = remember(branches, currentBranchId) {
@@ -142,7 +144,8 @@ fun ProcurementTabContent(
         when (activeSubTab) {
             0 -> ReorderTabContent(
                 procurementList = procurementList,
-                onExportCsv = { exportProcurementList(context, procurementList) }
+                onExportCsv = { exportProcurementList(context, procurementList) },
+                viewModel = viewModel
             )
             1 -> BulkTransferTabContent(
                 inventory = inventory,
@@ -154,7 +157,9 @@ fun ProcurementTabContent(
             2 -> TransferLedgerContent(
                 transfers = transfersList,
                 destinationBranches = branches,
-                currentBranchName = currentBranchName ?: "Current Branch"
+                currentBranchName = currentBranchName ?: "Current Branch",
+                isUserManager = currentRole == "Branch Manager",
+                onVerifyClick = { logId -> viewModel.verifyStockAdjustment(logId) }
             )
         }
     }
@@ -164,8 +169,11 @@ fun ProcurementTabContent(
 @Composable
 fun ReorderTabContent(
     procurementList: List<Pair<InventoryItem, Int>>,
-    onExportCsv: () -> Unit
+    onExportCsv: () -> Unit,
+    viewModel: com.example.ui.PharmacyViewModel
 ) {
+    val rescueListings by viewModel.rescueListings.collectAsStateWithLifecycle()
+
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -247,98 +255,169 @@ fun ReorderTabContent(
                 contentPadding = PaddingValues(bottom = 80.dp)
             ) {
                 items(procurementList) { (item, suggestedAmount) ->
+                    val matchingListing = rescueListings.find {
+                        it.productName.equals(item.name, ignoreCase = true) &&
+                        it.ownerDeviceId != viewModel.deviceId &&
+                        it.status == "Available"
+                    }
+
                     Card(
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(containerColor = TealSurface),
-                        border = BorderStroke(1.dp, SlateBorderLight),
+                        border = BorderStroke(1.dp, if (matchingListing != null) TealPrimary.copy(alpha = 0.8f) else SlateBorderLight),
                         shape = RoundedCornerShape(12.dp)
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text(
-                                        text = item.name,
-                                        style = MaterialTheme.typography.titleSmall,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onSurface,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.weight(1f, fill = false)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Box(
-                                        modifier = Modifier
-                                            .background(
-                                                WarningRedContainerSoft,
-                                                RoundedCornerShape(6.dp)
-                                            )
-                                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.fillMaxWidth()
                                     ) {
                                         Text(
-                                            text = "Low Stock",
-                                            color = WarningRed,
-                                            fontSize = 9.sp,
+                                            text = item.name,
+                                            style = MaterialTheme.typography.titleSmall,
                                             fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurface,
                                             maxLines = 1,
-                                            softWrap = false
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f, fill = false)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Box(
+                                            modifier = Modifier
+                                                .background(
+                                                    WarningRedContainerSoft,
+                                                    RoundedCornerShape(6.dp)
+                                                )
+                                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                                        ) {
+                                            Text(
+                                                text = "Low Stock",
+                                                color = WarningRed,
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                maxLines = 1,
+                                                softWrap = false
+                                            )
+                                        }
+                                    }
+                                    Spacer(modifier = Modifier.height(3.dp))
+                                    Text(
+                                        text = "Dosage: ${item.dosage} | Form: ${item.unitForm}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = SlateTextMedium
+                                    )
+                                    Text(
+                                        text = "Stock: ${item.stockQuantity} (Min: ${item.minRequiredStock})",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = SlateTextMedium,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                    if (item.brand.isNotBlank()) {
+                                        Text(
+                                            text = "Brand: ${item.brand}",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = TealPrimary,
+                                            fontWeight = FontWeight.SemiBold
                                         )
                                     }
                                 }
-                                Spacer(modifier = Modifier.height(3.dp))
-                                Text(
-                                    text = "Dosage: ${item.dosage} | Form: ${item.unitForm}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = SlateTextMedium
-                                )
-                                Text(
-                                    text = "Stock: ${item.stockQuantity} (Min: ${item.minRequiredStock})",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = SlateTextMedium,
-                                    fontWeight = FontWeight.Medium
-                                )
-                                if (item.brand.isNotBlank()) {
-                                    Text(
-                                        text = "Brand: ${item.brand}",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = TealPrimary,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                }
-                            }
-                            
-                            // High density suggested restock badge
-                            Column(
-                                horizontalAlignment = Alignment.End, 
-                                modifier = Modifier.padding(start = 12.dp)
-                            ) {
-                                Text(
-                                    text = "Suggested Order", 
-                                    style = MaterialTheme.typography.labelSmall, 
-                                    color = SlateTextMedium,
-                                    fontSize = 9.sp
-                                )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Box(
-                                    modifier = Modifier
-                                        .background(WarningRedContainerSoft, RoundedCornerShape(10.dp))
-                                        .padding(horizontal = 10.dp, vertical = 4.dp),
-                                    contentAlignment = Alignment.Center
+                                
+                                // High density suggested restock badge
+                                Column(
+                                    horizontalAlignment = Alignment.End, 
+                                    modifier = Modifier.padding(start = 12.dp)
                                 ) {
                                     Text(
-                                        text = "+$suggestedAmount",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.Black,
-                                        color = WarningRed
+                                        text = "Suggested Order", 
+                                        style = MaterialTheme.typography.labelSmall, 
+                                        color = SlateTextMedium,
+                                        fontSize = 9.sp
                                     )
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Box(
+                                        modifier = Modifier
+                                            .background(WarningRedContainerSoft, RoundedCornerShape(10.dp))
+                                            .padding(horizontal = 10.dp, vertical = 4.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = "+$suggestedAmount",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Black,
+                                            color = WarningRed
+                                        )
+                                    }
+                                }
+                            }
+
+                            if (matchingListing != null) {
+                                val context = LocalContext.current
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(TealPrimary.copy(alpha = 0.08f))
+                                        .border(
+                                            width = 1.dp,
+                                            color = TealPrimary.copy(alpha = 0.3f)
+                                        )
+                                        .padding(10.dp)
+                                ) {
+                                    Column {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.Lightbulb,
+                                                contentDescription = null,
+                                                tint = TealPrimary,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Text(
+                                                text = "Real-Time Match Alert",
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 11.sp,
+                                                color = TealTertiary
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = "Another branch in ${matchingListing.ownerLga}, ${matchingListing.ownerState} listed ${matchingListing.quantity} units of this exact item for ₦${"%,.2f".format(matchingListing.sellingPrice)}!",
+                                            fontSize = 10.5.sp,
+                                            color = SlateTextMedium,
+                                            modifier = Modifier.padding(bottom = 6.dp)
+                                        )
+                                        Button(
+                                            onClick = {
+                                                viewModel.acceptRescueListing(matchingListing) { success, msg ->
+                                                    android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
+                                                }
+                                            },
+                                            shape = RoundedCornerShape(6.dp),
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = TealPrimary,
+                                                contentColor = Color.Black
+                                            ),
+                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                            modifier = Modifier.height(30.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.AssignmentTurnedIn,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(12.dp)
+                                            )
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Text("Claim Surplus Handoff", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -555,25 +634,71 @@ fun BulkTransferTabContent(
                 )
                 Spacer(modifier = Modifier.height(6.dp))
 
-                // Search Bar
-                OutlinedTextField(
+                // Search Bar (Using BasicTextField for robust vertical alignment and clipping-free 44dp height styling)
+                androidx.compose.foundation.text.BasicTextField(
                     value = searchQuery,
                     onValueChange = { searchQuery = it },
-                    placeholder = { Text("Search product name, brand or category...", fontSize = 13.sp) },
-                    leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                    trailingIcon = {
-                        if (searchQuery.isNotBlank()) {
-                            IconButton(onClick = { searchQuery = "" }) {
-                                Icon(Icons.Filled.Close, contentDescription = null, modifier = Modifier.size(18.dp))
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(
+                        color = MaterialTheme.colorScheme.onSurface,
+                        fontSize = 13.sp
+                    ),
+                    singleLine = true,
+                    cursorBrush = androidx.compose.ui.graphics.SolidColor(TealPrimary),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(44.dp),
+                    decorationBox = { innerTextField ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(
+                                    color = TealSurface,
+                                    shape = RoundedCornerShape(10.dp)
+                                )
+                                .border(
+                                    width = 1.dp,
+                                    color = SlateBorderLight.copy(alpha = 0.4f),
+                                    shape = RoundedCornerShape(10.dp)
+                                )
+                                .padding(horizontal = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Search,
+                                contentDescription = "Search",
+                                tint = SlateTextMedium,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Box(
+                                modifier = Modifier.weight(1f),
+                                contentAlignment = Alignment.CenterStart
+                            ) {
+                                if (searchQuery.isEmpty()) {
+                                    Text(
+                                        text = "Search product name, brand or category...",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = SlateTextMedium,
+                                        fontSize = 13.sp
+                                    )
+                                }
+                                innerTextField()
+                            }
+                            if (searchQuery.isNotEmpty()) {
+                                IconButton(
+                                    onClick = { searchQuery = "" },
+                                    modifier = Modifier.size(24.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Close,
+                                        contentDescription = "Clear",
+                                        tint = SlateTextMedium,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
                             }
                         }
-                    },
-                    modifier = Modifier.fillMaxWidth().height(48.dp),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        unfocusedBorderColor = SlateBorderLight,
-                        focusedBorderColor = TealPrimary
-                    )
+                    }
                 )
             }
         }
@@ -784,7 +909,9 @@ fun BulkTransferTabContent(
 fun TransferLedgerContent(
     transfers: List<Map<String, Any>>,
     destinationBranches: List<Map<String, Any>>,
-    currentBranchName: String
+    currentBranchName: String,
+    isUserManager: Boolean = false,
+    onVerifyClick: (String) -> Unit = {}
 ) {
     var filterBranchName by remember { mutableStateOf("") }
     var ledgerSearchQuery by remember { mutableStateOf("") }
@@ -843,7 +970,7 @@ fun TransferLedgerContent(
                     placeholder = { Text("Search products...", fontSize = 13.sp) },
                     textStyle = MaterialTheme.typography.bodyMedium,
                     leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, modifier = Modifier.size(16.dp), tint = SlateTextMedium) },
-                    modifier = Modifier.weight(1.2f).height(54.dp),
+                    modifier = Modifier.weight(1.2f),
                     shape = RoundedCornerShape(8.dp),
                     colors = OutlinedTextFieldDefaults.colors(
                         unfocusedBorderColor = SlateBorderLight,
@@ -862,7 +989,7 @@ fun TransferLedgerContent(
                         ),
                         shape = RoundedCornerShape(8.dp),
                         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
-                        modifier = Modifier.fillMaxWidth().height(54.dp)
+                        modifier = Modifier.fillMaxWidth().height(56.dp)
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
@@ -951,11 +1078,16 @@ fun TransferLedgerContent(
                         // Horizontal layout to accommodate a beautiful left vertical timeline tag
                         Row(modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Max)) {
                             // Visual Left timeline accent tag
+                            val leftTagColor = when (action) {
+                                "BULK_TRANSFER" -> TealPrimary
+                                "STOCK_ADJUSTMENT" -> Color(0xFF8B5CF6)
+                                else -> OKGreen
+                            }
                             Box(
                                 modifier = Modifier
                                     .width(5.dp)
                                     .fillMaxHeight()
-                                    .background(if (action == "BULK_TRANSFER") TealPrimary else OKGreen)
+                                    .background(leftTagColor)
                             )
 
                             Column(modifier = Modifier.padding(10.dp).weight(1f)) {
@@ -965,18 +1097,25 @@ fun TransferLedgerContent(
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
+                                        val badgeBg = when (action) {
+                                            "BULK_TRANSFER" -> TealPrimary.copy(alpha = 0.15f)
+                                            "STOCK_ADJUSTMENT" -> Color(0xFF8B5CF6).copy(alpha = 0.15f)
+                                            else -> OKGreenContainer
+                                        }
+                                        val badgeColor = when (action) {
+                                            "BULK_TRANSFER" -> TealPrimary
+                                            "STOCK_ADJUSTMENT" -> Color(0xFF8B5CF6)
+                                            else -> OKGreenText
+                                        }
                                         Box(
                                             modifier = Modifier
-                                                .background(
-                                                    if (action == "BULK_TRANSFER") TealPrimary.copy(alpha = 0.15f) else OKGreenContainer,
-                                                    RoundedCornerShape(4.dp)
-                                                )
-                                                .padding(horizontal = 5.dp, vertical = 2.dp)
+                                                .background(badgeBg, RoundedCornerShape(4.dp))
+                                                .padding(horizontal = 6.dp, vertical = 3.dp)
                                         ) {
                                             Text(
-                                                text = action,
-                                                color = if (action == "BULK_TRANSFER") TealPrimary else OKGreenText,
-                                                fontSize = 8.sp,
+                                                text = action.replace("_", " "),
+                                                color = badgeColor,
+                                                fontSize = 9.sp,
                                                 fontWeight = FontWeight.Bold
                                             )
                                         }
@@ -998,6 +1137,77 @@ fun TransferLedgerContent(
                                     fontWeight = FontWeight.Medium,
                                     color = MaterialTheme.colorScheme.onSurface
                                 )
+
+                                val reason = log["reason"] as? String ?: ""
+                                if (reason.isNotBlank()) {
+                                    Spacer(modifier = Modifier.height(4.dp))
+                                    Text(
+                                        text = "Justification: \"$reason\"",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                                        color = SlateTextMedium,
+                                        fontSize = 10.sp
+                                    )
+                                }
+
+                                if (action == "STOCK_ADJUSTMENT") {
+                                    val verified = log["verified"] as? Boolean ?: true
+                                    val verifiedBy = log["verifiedBy"] as? String ?: ""
+                                    
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .background(
+                                                if (verified) OKGreenContainer.copy(alpha = 0.5f)
+                                                else WarningRedContainerSoft.copy(alpha = 0.5f),
+                                                RoundedCornerShape(6.dp)
+                                            )
+                                            .padding(horizontal = 8.dp, vertical = 6.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = if (verified) Icons.Filled.Verified else Icons.Filled.PendingActions,
+                                            contentDescription = null,
+                                            tint = if (verified) OKGreenText else WarningRed,
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Column {
+                                            Text(
+                                                text = if (verified) "Verified Compliance" else "Awaiting Manager Sign-off",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (verified) OKGreenText else WarningRed,
+                                                fontSize = 11.sp
+                                            )
+                                            if (verified && verifiedBy.isNotBlank()) {
+                                                Text(
+                                                    text = "Signed off by $verifiedBy",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = SlateTextMedium,
+                                                    fontSize = 9.sp
+                                                )
+                                            }
+                                        }
+                                        
+                                        if (!verified && isUserManager) {
+                                            Spacer(modifier = Modifier.weight(1f))
+                                            Button(
+                                                onClick = { onVerifyClick(log["id"] as? String ?: "") },
+                                                colors = ButtonDefaults.buttonColors(
+                                                    containerColor = OKGreen,
+                                                    contentColor = Color.White
+                                                ),
+                                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                                modifier = Modifier.height(28.dp),
+                                                shape = RoundedCornerShape(6.dp)
+                                            ) {
+                                                Text("Sign & Verify", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                            }
+                                        }
+                                    }
+                                }
 
                                 Spacer(modifier = Modifier.height(8.dp))
                                 HorizontalDivider(color = SlateBorderLight.copy(alpha = 0.5f))

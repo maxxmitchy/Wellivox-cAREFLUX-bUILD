@@ -17,5 +17,12 @@ data class Customer(
     val gender: String = "Male",   // Male, Female, Other
     val state: String = "Lagos",   // e.g., Lagos, Abuja, Rivers
     val lga: String = "Ikeja",     // Local Government Area
-    val city: String = "Ikeja"
+    val city: String = "Ikeja",
+    
+    // NDPA Compliance & Consent Fields
+    val consentPrescriptionTracking: Boolean = true,
+    val consentSmsRefills: Boolean = false,
+    val consentCloudSync: Boolean = false,
+    val consentLastUpdated: Long = System.currentTimeMillis(),
+    val consentChannel: String = "Verbal Consent"
 )
