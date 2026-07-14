@@ -123,9 +123,11 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 
-                val isUserAdmin = remember(currentUser) {
+                val currentRole by viewModel.currentPharmacistRole.collectAsStateWithLifecycle()
+                
+                val isUserAdmin = remember(currentUser, currentRole) {
                     val email = currentUser?.email?.lowercase() ?: ""
-                    email == "maduemeziachinedu6@gmail.com"
+                    email == "maduemeziachinedu6@gmail.com" || currentRole == "Admin" || currentRole == "Branch Manager"
                 }
 
                 Scaffold(
@@ -188,6 +190,7 @@ class MainActivity : ComponentActivity() {
                                 initialTab = initialTab,
                                 currentUser = user,
                                 onSignOut = {
+                                    viewModel.clearAllData()
                                     com.google.firebase.auth.FirebaseAuth.getInstance().signOut()
                                     currentUser = null
                                 },
@@ -254,14 +257,21 @@ fun PharmacyRootScreen(
 
     val isAiContentEnabled by viewModel.isAiContentEnabled.collectAsStateWithLifecycle()
     val isCarefluxAiEnabled by viewModel.isCarefluxAiEnabled.collectAsStateWithLifecycle()
+    val isClinicalEnabled by viewModel.isClinicalEnabled.collectAsStateWithLifecycle()
+    val isMessagingEnabled by viewModel.isMessagingEnabled.collectAsStateWithLifecycle()
+    val isTriageEnabled by viewModel.isTriageEnabled.collectAsStateWithLifecycle()
+    val isMarketplaceEnabled by viewModel.isMarketplaceEnabled.collectAsStateWithLifecycle()
+    val isProcurementEnabled by viewModel.isProcurementEnabled.collectAsStateWithLifecycle()
     val keyRequests by viewModel.keyRequests.collectAsStateWithLifecycle()
     val lastFailedSmsLog by viewModel.lastFailedSmsLog.collectAsStateWithLifecycle()
     val postDispatchConfirmAlert by viewModel.activePostDispatchConfirmAlert.collectAsStateWithLifecycle()
     val postDispatchConfirmMedData by viewModel.activePostDispatchConfirm.collectAsStateWithLifecycle()
 
-    val isUserAdmin = remember(currentUser) {
+    val currentRole by viewModel.currentPharmacistRole.collectAsStateWithLifecycle()
+
+    val isUserAdmin = remember(currentUser, currentRole) {
         val email = currentUser?.email?.lowercase() ?: ""
-        email == "maduemeziachinedu6@gmail.com"
+        email == "maduemeziachinedu6@gmail.com" || currentRole == "Admin" || currentRole == "Branch Manager"
     }
 
     LaunchedEffect(currentUser) {
@@ -277,6 +287,26 @@ fun PharmacyRootScreen(
     }
     LaunchedEffect(isAiContentEnabled) {
         if (!isAiContentEnabled && activeTab == "ai_content_engine") {
+            activeTab = "inventory"
+        }
+    }
+    LaunchedEffect(isMessagingEnabled) {
+        if (!isMessagingEnabled && activeTab == "customer_engagement") {
+            activeTab = "inventory"
+        }
+    }
+    LaunchedEffect(isTriageEnabled) {
+        if (!isTriageEnabled && activeTab == "pharmacy_triage") {
+            activeTab = "inventory"
+        }
+    }
+    LaunchedEffect(isMarketplaceEnabled) {
+        if (!isMarketplaceEnabled && activeTab == "rescue_marketplace") {
+            activeTab = "inventory"
+        }
+    }
+    LaunchedEffect(isProcurementEnabled) {
+        if (!isProcurementEnabled && activeTab == "procurement") {
             activeTab = "inventory"
         }
     }
@@ -300,7 +330,7 @@ fun PharmacyRootScreen(
     val productsCsvFilePickerLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
     ) { uri: android.net.Uri? ->
-        if (viewModel.currentPharmacistRole.value != "Branch Manager") {
+        if (viewModel.currentPharmacistRole.value != "Branch Manager" && !isUserAdmin) {
             Toast.makeText(context, "Access Denied: Only the Branch Manager can perform data imports.", Toast.LENGTH_LONG).show()
             return@rememberLauncherForActivityResult
         }
@@ -312,7 +342,7 @@ fun PharmacyRootScreen(
     val customersCsvFilePickerLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
     ) { uri: android.net.Uri? ->
-        if (viewModel.currentPharmacistRole.value != "Branch Manager") {
+        if (viewModel.currentPharmacistRole.value != "Branch Manager" && !isUserAdmin) {
             Toast.makeText(context, "Access Denied: Only the Branch Manager can perform data imports.", Toast.LENGTH_LONG).show()
             return@rememberLauncherForActivityResult
         }
@@ -324,7 +354,7 @@ fun PharmacyRootScreen(
     val medicationsCsvFilePickerLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         contract = androidx.activity.result.contract.ActivityResultContracts.GetContent()
     ) { uri: android.net.Uri? ->
-        if (viewModel.currentPharmacistRole.value != "Branch Manager") {
+        if (viewModel.currentPharmacistRole.value != "Branch Manager" && !isUserAdmin) {
             Toast.makeText(context, "Access Denied: Only the Branch Manager can perform data imports.", Toast.LENGTH_LONG).show()
             return@rememberLauncherForActivityResult
         }
@@ -361,16 +391,18 @@ fun PharmacyRootScreen(
                     Text("Careflux Menu", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 }
                 androidx.compose.material3.HorizontalDivider()
-                androidx.compose.material3.NavigationDrawerItem(
-                    label = { Text("Procurement & Stock Transfers", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
-                    selected = activeTab == "procurement",
-                    onClick = {
-                        activeTab = "procurement"
-                        scope.launch { drawerState.close() }
-                    },
-                    icon = { Icon(Icons.Filled.LocalShipping, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                    modifier = Modifier.padding(androidx.compose.material3.NavigationDrawerItemDefaults.ItemPadding)
-                )
+                if (isProcurementEnabled) {
+                    androidx.compose.material3.NavigationDrawerItem(
+                        label = { Text("Procurement & Stock Transfers", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
+                        selected = activeTab == "procurement",
+                        onClick = {
+                            activeTab = "procurement"
+                            scope.launch { drawerState.close() }
+                        },
+                        icon = { Icon(Icons.Filled.LocalShipping, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                        modifier = Modifier.padding(androidx.compose.material3.NavigationDrawerItemDefaults.ItemPadding)
+                    )
+                }
                 androidx.compose.material3.NavigationDrawerItem(
                     label = { Text("Analytics Dashboard", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
                     selected = activeTab == "analytics",
@@ -381,26 +413,19 @@ fun PharmacyRootScreen(
                     icon = { Icon(Icons.Filled.Insights, contentDescription = null, modifier = Modifier.size(18.dp)) },
                     modifier = Modifier.padding(androidx.compose.material3.NavigationDrawerItemDefaults.ItemPadding)
                 )
-                androidx.compose.material3.NavigationDrawerItem(
-                    label = { Text("Customer Engagement", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
-                    selected = activeTab == "customer_engagement",
-                    onClick = {
-                        activeTab = "customer_engagement"
-                        scope.launch { drawerState.close() }
-                    },
-                    icon = { Icon(Icons.Filled.Campaign, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                    modifier = Modifier.padding(androidx.compose.material3.NavigationDrawerItemDefaults.ItemPadding)
-                )
-                androidx.compose.material3.NavigationDrawerItem(
-                    label = { Text("WhatsApp Templates", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
-                    selected = activeTab == "whatsapp_templates",
-                    onClick = {
-                        activeTab = "whatsapp_templates"
-                        scope.launch { drawerState.close() }
-                    },
-                    icon = { Icon(Icons.Filled.Message, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                    modifier = Modifier.padding(androidx.compose.material3.NavigationDrawerItemDefaults.ItemPadding)
-                )
+                if (isMessagingEnabled) {
+                    androidx.compose.material3.NavigationDrawerItem(
+                        label = { Text("Customer Engagement", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
+                        selected = activeTab == "customer_engagement",
+                        onClick = {
+                            activeTab = "customer_engagement"
+                            scope.launch { drawerState.close() }
+                        },
+                        icon = { Icon(Icons.Filled.Campaign, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                        modifier = Modifier.padding(androidx.compose.material3.NavigationDrawerItemDefaults.ItemPadding)
+                    )
+                }
+ 
                 if (isAiContentEnabled) {
                     androidx.compose.material3.NavigationDrawerItem(
                         label = { Text("AI Content Engine", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
@@ -413,26 +438,30 @@ fun PharmacyRootScreen(
                         modifier = Modifier.padding(androidx.compose.material3.NavigationDrawerItemDefaults.ItemPadding)
                     )
                 }
-                androidx.compose.material3.NavigationDrawerItem(
-                    label = { Text("Pharmacy Triage", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
-                    selected = activeTab == "pharmacy_triage",
-                    onClick = {
-                        activeTab = "pharmacy_triage"
-                        scope.launch { drawerState.close() }
-                    },
-                    icon = { Icon(Icons.Filled.ContentPasteSearch, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                    modifier = Modifier.padding(androidx.compose.material3.NavigationDrawerItemDefaults.ItemPadding)
-                )
-                androidx.compose.material3.NavigationDrawerItem(
-                    label = { Text("Expiry Rescue Marketplace", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
-                    selected = activeTab == "rescue_marketplace",
-                    onClick = {
-                        activeTab = "rescue_marketplace"
-                        scope.launch { drawerState.close() }
-                    },
-                    icon = { Icon(Icons.Filled.Storefront, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                    modifier = Modifier.padding(androidx.compose.material3.NavigationDrawerItemDefaults.ItemPadding)
-                )
+                if (isTriageEnabled) {
+                    androidx.compose.material3.NavigationDrawerItem(
+                        label = { Text("Pharmacy Triage", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
+                        selected = activeTab == "pharmacy_triage",
+                        onClick = {
+                            activeTab = "pharmacy_triage"
+                            scope.launch { drawerState.close() }
+                        },
+                        icon = { Icon(Icons.Filled.ContentPasteSearch, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                        modifier = Modifier.padding(androidx.compose.material3.NavigationDrawerItemDefaults.ItemPadding)
+                    )
+                }
+                if (isMarketplaceEnabled) {
+                    androidx.compose.material3.NavigationDrawerItem(
+                        label = { Text("Expiry Rescue Marketplace", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
+                        selected = activeTab == "rescue_marketplace",
+                        onClick = {
+                            activeTab = "rescue_marketplace"
+                            scope.launch { drawerState.close() }
+                        },
+                        icon = { Icon(Icons.Filled.Storefront, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                        modifier = Modifier.padding(androidx.compose.material3.NavigationDrawerItemDefaults.ItemPadding)
+                    )
+                }
 
                 val branchIdVal by viewModel.currentPharmacistBranchId.collectAsStateWithLifecycle()
                 androidx.compose.material3.NavigationDrawerItem(
@@ -1223,7 +1252,6 @@ fun PharmacyRootScreen(
                     operationTasks = operationTasks,
                     viewModel = viewModel
                 )
-                "whatsapp_templates" -> WhatsAppTemplatesTabContent(viewModel = viewModel)
                 "cart" -> CartTabContent(
                     cartItems = cartItems,
                     deliveryFeeString = deliveryFeeString,
@@ -2411,10 +2439,6 @@ fun InventoryTabContent(
                     message = "No matching medicines in stock logs.",
                     tip = "Tap the + button to catalog a new medication line."
                 )
-                
-                if (inventory.isEmpty()) {
-                    WorkspaceInitializationCard(onInitializeClick = onInitializeWorkspaceClick)
-                }
             }
         } else {
             LazyColumn(
@@ -6226,7 +6250,11 @@ fun GlobalSyncStatusBanner(
     onManualSyncClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val formatter = remember { SimpleDateFormat("HH:mm:ss", Locale.getDefault()) }
+    val formatter = remember { 
+        SimpleDateFormat("HH:mm:ss", Locale.getDefault()).apply {
+            timeZone = TimeZone.getTimeZone("Africa/Lagos")
+        }
+    }
     val formattedTime = remember(lastSyncedTime) { formatter.format(Date(lastSyncedTime)) }
 
     androidx.compose.material3.Card(

@@ -655,7 +655,7 @@ fun AuthScreen(
                                                     val updateMap = hashMapOf<String, Any>(
                                                         "uid" to user.uid,
                                                         "email" to user.email.orEmpty(),
-                                                        "displayName" to user.displayName.orEmpty(),
+                                                        // "displayName" to user.displayName.orEmpty(),
                                                         "deviceId" to devId,
                                                         "deviceModel" to deviceModel,
                                                         "lastLoginAt" to System.currentTimeMillis()
@@ -665,6 +665,9 @@ fun AuthScreen(
                                                         .update(updateMap)
                                                         .addOnFailureListener {
                                                             updateMap["registeredAt"] = System.currentTimeMillis()
+                                                            if (updateMap["displayName"] == null) {
+                                                                updateMap["displayName"] = user.displayName ?: user.email?.substringBefore("@") ?: "Staff Pharmacist"
+                                                            }
                                                             dbFirestore.collection("registered_pharmacists")
                                                                 .document(user.uid)
                                                                 .set(updateMap, com.google.firebase.firestore.SetOptions.merge())

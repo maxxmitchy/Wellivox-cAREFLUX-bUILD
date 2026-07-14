@@ -32,6 +32,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.Customer
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
@@ -99,6 +101,14 @@ fun RescueMarketplaceScreen(viewModel: PharmacyViewModel) {
 
     var contactToEdit by remember { mutableStateOf<VerifiedPharmacy?>(null) }
     var contactToDelete by remember { mutableStateOf<VerifiedPharmacy?>(null) }
+
+    // Stock Query Broadcaster states (Pre-populated for the customer scenario: Maxi Vision eye supplements in Ikeja)
+    var showBroadcasterDialog by remember { mutableStateOf(false) }
+    var broadcastProduct by remember { mutableStateOf("Maxi Vision Eye Supplements") }
+    var broadcastAddress by remember { mutableStateOf("Road 1 Ikeja") }
+    var broadcastState by remember { mutableStateOf("Lagos") }
+    var broadcastLga by remember { mutableStateOf("Ikeja") }
+    var broadcastResponses by remember { mutableStateOf(mapOf<String, String>()) } // Key: phone, Value: "Pending" | "Yes" | "No"
     
     // Posting form states
     var selectedItemForPost by remember { mutableStateOf<InventoryItem?>(null) }
@@ -116,12 +126,13 @@ fun RescueMarketplaceScreen(viewModel: PharmacyViewModel) {
 
     val currentDeviceId = viewModel.deviceId
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
         // Highly polished, space-efficient executive Header Row
         Row(
             modifier = Modifier
@@ -1275,6 +1286,402 @@ fun RescueMarketplaceScreen(viewModel: PharmacyViewModel) {
                         .weight(1f),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
+
+
+                    // MODAL DIALOG CONTAINER FOR PROXIMITY BROADCASTER
+                    if (showBroadcasterDialog) {
+                        Dialog(
+                            onDismissRequest = { showBroadcasterDialog = false },
+                            properties = DialogProperties(usePlatformDefaultWidth = false)
+                        ) {
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth(0.95f)
+                                    .fillMaxHeight(0.92f)
+                                    .padding(16.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (AppThemeManager.isDark) Color(0xFF1E293B) else Color.White
+                                ),
+                                shape = RoundedCornerShape(16.dp),
+                                border = BorderStroke(1.dp, TealPrimary.copy(alpha = 0.2f))
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(16.dp),
+                                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    // Header
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.Hub,
+                                                contentDescription = null,
+                                                tint = TealPrimary,
+                                                modifier = Modifier.size(22.dp)
+                                            )
+                                            Column {
+                                                Text(
+                                                    text = "LGA Proximity Stock Broadcaster",
+                                                    style = MaterialTheme.typography.titleMedium,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (AppThemeManager.isDark) Color.White else Color(0xFF0F172A)
+                                                )
+                                                Text(
+                                                    text = "Query & route inquiries outward by proximity tiers",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    color = SlateTextMedium
+                                                )
+                                            }
+                                        }
+                                        IconButton(
+                                            onClick = { showBroadcasterDialog = false },
+                                            modifier = Modifier.size(32.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.Close,
+                                                contentDescription = "Close",
+                                                tint = SlateTextMedium,
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+                                    }
+
+                                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
+
+                                    // Content Scroll State
+                                    Column(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .verticalScroll(rememberScrollState()),
+                                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                                    ) {
+                                        Text(
+                                            text = "Enter requested medication and customer delivery address below. The system automatically partitions and ranks cooperative network nodes into Proximity Escalation Tiers.",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = SlateTextMedium,
+                                            lineHeight = 15.sp
+                                        )
+
+                                        // 1. INPUT FIELDS (Proper spacing, responsive layout, no hardcoded heights)
+                                        OutlinedTextField(
+                                            value = broadcastProduct,
+                                            onValueChange = { broadcastProduct = it },
+                                            label = { Text("Product Requested") },
+                                            placeholder = { Text("e.g., Maxi Vision Eye Supplements") },
+                                            singleLine = true,
+                                            shape = RoundedCornerShape(8.dp),
+                                            colors = OutlinedTextFieldDefaults.colors(
+                                                focusedBorderColor = TealPrimary,
+                                                unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                                            ),
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+
+                                        OutlinedTextField(
+                                            value = broadcastAddress,
+                                            onValueChange = { broadcastAddress = it },
+                                            label = { Text("Customer Delivery Address") },
+                                            placeholder = { Text("e.g., Road 1 Ikeja") },
+                                            singleLine = true,
+                                            shape = RoundedCornerShape(8.dp),
+                                            colors = OutlinedTextFieldDefaults.colors(
+                                                focusedBorderColor = TealPrimary,
+                                                unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                                            ),
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            OutlinedTextField(
+                                                value = broadcastLga,
+                                                onValueChange = { broadcastLga = it },
+                                                label = { Text("Target LGA") },
+                                                placeholder = { Text("e.g., Ikeja") },
+                                                singleLine = true,
+                                                shape = RoundedCornerShape(8.dp),
+                                                colors = OutlinedTextFieldDefaults.colors(
+                                                    focusedBorderColor = TealPrimary,
+                                                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                                                ),
+                                                modifier = Modifier.weight(1f)
+                                            )
+
+                                            OutlinedTextField(
+                                                value = broadcastState,
+                                                onValueChange = { broadcastState = it },
+                                                label = { Text("Target State") },
+                                                placeholder = { Text("e.g., Lagos") },
+                                                singleLine = true,
+                                                shape = RoundedCornerShape(8.dp),
+                                                colors = OutlinedTextFieldDefaults.colors(
+                                                    focusedBorderColor = TealPrimary,
+                                                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                                                ),
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                        }
+
+                                        Spacer(modifier = Modifier.height(4.dp))
+
+                                        // Proximity Escalation Tiers Computation
+                                        val tier1Local = remember(pharmaciesList, broadcastState, broadcastLga) {
+                                            pharmaciesList.filter { 
+                                                it.state.trim().equals(broadcastState.trim(), ignoreCase = true) && 
+                                                it.lga.trim().equals(broadcastLga.trim(), ignoreCase = true)
+                                            }
+                                        }
+                                        val tier2State = remember(pharmaciesList, broadcastState, broadcastLga) {
+                                            pharmaciesList.filter { 
+                                                it.state.trim().equals(broadcastState.trim(), ignoreCase = true) && 
+                                                !it.lga.trim().equals(broadcastLga.trim(), ignoreCase = true)
+                                            }
+                                        }
+                                        val tier3National = remember(pharmaciesList, broadcastState) {
+                                            pharmaciesList.filter { 
+                                                !it.state.trim().equals(broadcastState.trim(), ignoreCase = true)
+                                            }
+                                        }
+
+                                        Text(
+                                            text = "PROXIMITY ESCALATION TIERS",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = TealPrimary
+                                        )
+
+                                        var selectedTierTab by remember { mutableStateOf(1) } // 1 = Local, 2 = State, 3 = National
+
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .background(TealBackground, RoundedCornerShape(6.dp))
+                                                .padding(2.dp),
+                                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            listOf(
+                                                Triple(1, "Tier 1: Local LGA (${tier1Local.size})", TealPrimary),
+                                                Triple(2, "Tier 2: State (${tier2State.size})", Color(0xFFFF9800)),
+                                                Triple(3, "Tier 3: National (${tier3National.size})", Color.LightGray)
+                                            ).forEach { (tierNum, label, accentColor) ->
+                                                val isSelected = selectedTierTab == tierNum
+                                                Box(
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .clip(RoundedCornerShape(4.dp))
+                                                        .background(if (isSelected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent)
+                                                        .clickable { selectedTierTab = tierNum }
+                                                        .padding(vertical = 8.dp),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    Text(
+                                                        text = label,
+                                                        fontSize = 9.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = if (isSelected) accentColor else SlateTextMedium
+                                                    )
+                                                }
+                                            }
+                                        }
+
+                                        val activeTierNodes = when (selectedTierTab) {
+                                            1 -> tier1Local
+                                            2 -> tier2State
+                                            else -> tier3National
+                                        }
+
+                                        if (activeTierNodes.isEmpty()) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(20.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    text = "No cooperative nodes registered in this proximity tier.",
+                                                    fontSize = 11.sp,
+                                                    color = SlateTextMedium
+                                                )
+                                            }
+                                        } else {
+                                            Column(
+                                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                activeTierNodes.forEach { ph ->
+                                                    val responseStatus = broadcastResponses[ph.phone] ?: "Pending"
+                                                    val cardBorderColor = when (responseStatus) {
+                                                        "Yes" -> Color(0xFF4CAF50)
+                                                        "No" -> Color(0xFFF44336).copy(alpha = 0.4f)
+                                                        else -> MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)
+                                                    }
+                                                    val cardBg = when (responseStatus) {
+                                                        "Yes" -> Color(0xFF4CAF50).copy(alpha = 0.08f)
+                                                        "No" -> Color(0xFFF44336).copy(alpha = 0.02f)
+                                                        else -> if (AppThemeManager.isDark) Color(0xFF334155) else Color(0xFFF1F5F9)
+                                                    }
+
+                                                    Card(
+                                                        modifier = Modifier.fillMaxWidth(),
+                                                        shape = RoundedCornerShape(8.dp),
+                                                        colors = CardDefaults.cardColors(containerColor = cardBg),
+                                                        border = BorderStroke(1.dp, cardBorderColor)
+                                                    ) {
+                                                        Column(
+                                                            modifier = Modifier.padding(8.dp),
+                                                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                                                        ) {
+                                                            Row(
+                                                                modifier = Modifier.fillMaxWidth(),
+                                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                                verticalAlignment = Alignment.CenterVertically
+                                                            ) {
+                                                                Column(modifier = Modifier.weight(1f)) {
+                                                                    Row(
+                                                                        verticalAlignment = Alignment.CenterVertically,
+                                                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                                    ) {
+                                                                        Text(
+                                                                            text = ph.name,
+                                                                            fontSize = 12.sp,
+                                                                            fontWeight = FontWeight.Bold,
+                                                                            color = if (AppThemeManager.isDark) Color.White else Color(0xFF0F172A)
+                                                                        )
+                                                                        if (responseStatus == "Yes") {
+                                                                            Surface(
+                                                                                color = Color(0xFF4CAF50).copy(alpha = 0.15f),
+                                                                                shape = RoundedCornerShape(4.dp)
+                                                                            ) {
+                                                                                Text(
+                                                                                    text = "STOCK CONFIRMED",
+                                                                                    fontSize = 8.sp,
+                                                                                    fontWeight = FontWeight.Bold,
+                                                                                    color = Color(0xFF4CAF50),
+                                                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                                                                )
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                    Text(
+                                                                        text = "${ph.lga}, ${ph.state} • ${ph.phone}",
+                                                                        fontSize = 10.sp,
+                                                                        color = SlateTextMedium
+                                                                    )
+                                                                }
+
+                                                                IconButton(
+                                                                    onClick = {
+                                                                        try {
+                                                                            val rawPhone = ph.phone.replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+                                                                            val cleanPhone = if (rawPhone.startsWith("0")) {
+                                                                                "234" + rawPhone.substring(1)
+                                                                            } else if (rawPhone.startsWith("+")) {
+                                                                                rawPhone.substring(1)
+                                                                            } else {
+                                                                                rawPhone
+                                                                            }
+                                                                            val textMessage = "Hello ${ph.name}! Do you have *${broadcastProduct}* in stock? We have a client at *${broadcastAddress}* asking for it. Please reply YES or NO. Thank you!"
+                                                                            val encodedText = java.net.URLEncoder.encode(textMessage, "UTF-8")
+                                                                            val intent = android.content.Intent(
+                                                                                android.content.Intent.ACTION_VIEW,
+                                                                                android.net.Uri.parse("https://api.whatsapp.com/send?phone=$cleanPhone&text=$encodedText")
+                                                                            )
+                                                                            context.startActivity(intent)
+                                                                        } catch (e: Exception) {
+                                                                            Toast.makeText(context, "Could not open WhatsApp.", Toast.LENGTH_SHORT).show()
+                                                                        }
+                                                                    },
+                                                                    modifier = Modifier.size(28.dp)
+                                                                ) {
+                                                                    Icon(
+                                                                        imageVector = Icons.Filled.Chat,
+                                                                        contentDescription = "WhatsApp Query",
+                                                                        tint = Color(0xFF25D366),
+                                                                        modifier = Modifier.size(16.dp)
+                                                                    )
+                                                                }
+                                                            }
+
+                                                            // Response Status Selector
+                                                            Row(
+                                                                modifier = Modifier.fillMaxWidth(),
+                                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                                verticalAlignment = Alignment.CenterVertically
+                                                            ) {
+                                                                Text(text = "Response Status:", fontSize = 9.sp, color = SlateTextMedium)
+                                                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                                    listOf(
+                                                                        "Pending" to Color.Gray,
+                                                                        "Yes" to Color(0xFF4CAF50),
+                                                                        "No" to Color(0xFFF44336)
+                                                                    ).forEach { (status, color) ->
+                                                                        val isCurrent = responseStatus == status
+                                                                        Surface(
+                                                                            color = if (isCurrent) color.copy(alpha = 0.2f) else Color.Transparent,
+                                                                            border = BorderStroke(1.dp, if (isCurrent) color else MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)),
+                                                                            shape = RoundedCornerShape(4.dp),
+                                                                            modifier = Modifier
+                                                                                .clickable {
+                                                                                    val updatedResponses = broadcastResponses.toMutableMap()
+                                                                                    updatedResponses[ph.phone] = status
+                                                                                    broadcastResponses = updatedResponses
+                                                                                }
+                                                                        ) {
+                                                                            Text(
+                                                                                text = status,
+                                                                                fontSize = 8.sp,
+                                                                                fontWeight = FontWeight.Bold,
+                                                                                color = if (isCurrent) color else SlateTextMedium,
+                                                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                                            )
+                                                                        }
+                                                                    }
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        Spacer(modifier = Modifier.height(4.dp))
+
+                                        // Strategy recommendation text
+                                        Card(
+                                            colors = CardDefaults.cardColors(containerColor = TealBackground),
+                                            shape = RoundedCornerShape(8.dp),
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.padding(8.dp),
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Icon(Icons.Filled.Lightbulb, contentDescription = null, tint = TealPrimary, modifier = Modifier.size(14.dp))
+                                                Text(
+                                                    text = "ESCALATION TIP: Open chats for Tier 1 first. If all reply NO or fail to reply in 5 mins, select Tier 2 tab above to query other Lagos State nodes, followed by Tier 3.",
+                                                    fontSize = 8.sp,
+                                                    lineHeight = 10.sp,
+                                                    color = SlateTextMedium,
+                                                    modifier = Modifier.weight(1f)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     // Search & Filter Panel (Compact & Polish)
                     Card(
                         colors = CardDefaults.cardColors(containerColor = SlateBackgroundLight),
@@ -1351,7 +1758,14 @@ fun RescueMarketplaceScreen(viewModel: PharmacyViewModel) {
 
                                 Spacer(modifier = Modifier.width(8.dp))
 
-                                // State Filters (Scrollable Row)
+                                // State Filters (Scrollable Row - dynamically computed to support custom added states)
+                                val dynamicStates = remember(pharmaciesList) {
+                                    val defaultStates = listOf("Lagos", "Abuja", "Rivers", "Enugu", "Anambra", "Cross River", "Imo", "Akwa Ibom")
+                                    val actualStates = pharmaciesList.map { it.state.trim() }.filter { it.isNotBlank() }
+                                    val uniqueStates = (defaultStates + actualStates).distinct().sortedBy { it.lowercase() }
+                                    listOf("All") + uniqueStates
+                                }
+
                                 Row(
                                     modifier = Modifier
                                         .weight(1f)
@@ -1359,7 +1773,7 @@ fun RescueMarketplaceScreen(viewModel: PharmacyViewModel) {
                                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    listOf("All", "Lagos", "Abuja", "Rivers", "Enugu", "Anambra", "Cross River", "Imo", "Akwa Ibom").forEach { stateName ->
+                                    dynamicStates.forEach { stateName ->
                                         val displayLabel = if (stateName == "All") "All States" else stateName
                                         val isSelected = networkFilterState == stateName
                                         Box(
@@ -1729,6 +2143,428 @@ fun RescueMarketplaceScreen(viewModel: PharmacyViewModel) {
         }
     }
 
+    // MODAL DIALOG CONTAINER FOR PROXIMITY BROADCASTER
+    if (showBroadcasterDialog) {
+        Dialog(
+            onDismissRequest = { showBroadcasterDialog = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth(0.95f)
+                    .fillMaxHeight(0.92f)
+                    .padding(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (AppThemeManager.isDark) Color(0xFF1E293B) else Color.White
+                ),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, TealPrimary.copy(alpha = 0.2f))
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    // Header
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Hub,
+                                contentDescription = null,
+                                tint = TealPrimary,
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Column {
+                                Text(
+                                    text = "LGA Proximity Stock Broadcaster",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (AppThemeManager.isDark) Color.White else Color(0xFF0F172A)
+                                )
+                                Text(
+                                    text = "Query & route inquiries outward by proximity tiers",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = SlateTextMedium
+                                )
+                            }
+                        }
+                        IconButton(
+                            onClick = { showBroadcasterDialog = false },
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Close,
+                                contentDescription = "Close",
+                                tint = SlateTextMedium,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+                    }
+
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
+
+                    // Content Scroll State
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text(
+                            text = "Enter requested medication and customer delivery address below. The system automatically partitions and ranks cooperative network nodes into Proximity Escalation Tiers.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = SlateTextMedium,
+                            lineHeight = 15.sp
+                        )
+
+                        // 1. INPUT FIELDS (Proper spacing, responsive layout, no hardcoded heights)
+                        OutlinedTextField(
+                            value = broadcastProduct,
+                            onValueChange = { broadcastProduct = it },
+                            label = { Text("Product Requested") },
+                            placeholder = { Text("e.g., Maxi Vision Eye Supplements") },
+                            singleLine = true,
+                            shape = RoundedCornerShape(8.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = TealPrimary,
+                                unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        OutlinedTextField(
+                            value = broadcastAddress,
+                            onValueChange = { broadcastAddress = it },
+                            label = { Text("Customer Delivery Address") },
+                            placeholder = { Text("e.g., Road 1 Ikeja") },
+                            singleLine = true,
+                            shape = RoundedCornerShape(8.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = TealPrimary,
+                                unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = broadcastLga,
+                                onValueChange = { broadcastLga = it },
+                                label = { Text("Target LGA") },
+                                placeholder = { Text("e.g., Ikeja") },
+                                singleLine = true,
+                                shape = RoundedCornerShape(8.dp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = TealPrimary,
+                                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                                ),
+                                modifier = Modifier.weight(1f)
+                            )
+
+                            OutlinedTextField(
+                                value = broadcastState,
+                                onValueChange = { broadcastState = it },
+                                label = { Text("Target State") },
+                                placeholder = { Text("e.g., Lagos") },
+                                singleLine = true,
+                                shape = RoundedCornerShape(8.dp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = TealPrimary,
+                                    unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)
+                                ),
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        // Proximity Escalation Tiers Computation
+                        val tier1Local = remember(pharmaciesList, broadcastState, broadcastLga) {
+                            pharmaciesList.filter { 
+                                it.state.trim().equals(broadcastState.trim(), ignoreCase = true) && 
+                                it.lga.trim().equals(broadcastLga.trim(), ignoreCase = true)
+                            }
+                        }
+                        val tier2State = remember(pharmaciesList, broadcastState, broadcastLga) {
+                            pharmaciesList.filter { 
+                                it.state.trim().equals(broadcastState.trim(), ignoreCase = true) && 
+                                !it.lga.trim().equals(broadcastLga.trim(), ignoreCase = true)
+                            }
+                        }
+                        val tier3National = remember(pharmaciesList, broadcastState) {
+                            pharmaciesList.filter { 
+                                !it.state.trim().equals(broadcastState.trim(), ignoreCase = true)
+                            }
+                        }
+
+                        Text(
+                            text = "PROXIMITY ESCALATION TIERS",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = TealPrimary
+                        )
+
+                        var selectedTierTab by remember { mutableStateOf(1) } // 1 = Local, 2 = State, 3 = National
+
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(TealBackground, RoundedCornerShape(6.dp))
+                                .padding(2.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            listOf(
+                                Triple(1, "Tier 1: Local LGA (${tier1Local.size})", TealPrimary),
+                                Triple(2, "Tier 2: State (${tier2State.size})", Color(0xFFFF9800)),
+                                Triple(3, "Tier 3: National (${tier3National.size})", Color.LightGray)
+                            ).forEach { (tierNum, label, accentColor) ->
+                                val isSelected = selectedTierTab == tierNum
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(RoundedCornerShape(4.dp))
+                                        .background(if (isSelected) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent)
+                                        .clickable { selectedTierTab = tierNum }
+                                        .padding(vertical = 8.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = label,
+                                        fontSize = 9.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isSelected) accentColor else SlateTextMedium
+                                    )
+                                }
+                            }
+                        }
+
+                        val activeTierNodes = when (selectedTierTab) {
+                            1 -> tier1Local
+                            2 -> tier2State
+                            else -> tier3National
+                        }
+
+                        if (activeTierNodes.isEmpty()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(20.dp),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "No cooperative nodes registered in this proximity tier.",
+                                    fontSize = 11.sp,
+                                    color = SlateTextMedium
+                                )
+                            }
+                        } else {
+                            Column(
+                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                activeTierNodes.forEach { ph ->
+                                    val responseStatus = broadcastResponses[ph.phone] ?: "Pending"
+                                    val cardBorderColor = when (responseStatus) {
+                                        "Yes" -> Color(0xFF4CAF50)
+                                        "No" -> Color(0xFFF44336).copy(alpha = 0.4f)
+                                        else -> MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)
+                                    }
+                                    val cardBg = when (responseStatus) {
+                                        "Yes" -> Color(0xFF4CAF50).copy(alpha = 0.08f)
+                                        "No" -> Color(0xFFF44336).copy(alpha = 0.02f)
+                                        else -> if (AppThemeManager.isDark) Color(0xFF334155) else Color(0xFFF1F5F9)
+                                    }
+
+                                    Card(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(8.dp),
+                                        colors = CardDefaults.cardColors(containerColor = cardBg),
+                                        border = BorderStroke(1.dp, cardBorderColor)
+                                    ) {
+                                        Column(
+                                            modifier = Modifier.padding(8.dp),
+                                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                                    ) {
+                                                        Text(
+                                                            text = ph.name,
+                                                            fontSize = 12.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = if (AppThemeManager.isDark) Color.White else Color(0xFF0F172A)
+                                                        )
+                                                        if (responseStatus == "Yes") {
+                                                            Surface(
+                                                                color = Color(0xFF4CAF50).copy(alpha = 0.15f),
+                                                                shape = RoundedCornerShape(4.dp)
+                                                            ) {
+                                                                Text(
+                                                                    text = "STOCK CONFIRMED",
+                                                                    fontSize = 8.sp,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    color = Color(0xFF4CAF50),
+                                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+                                                    Text(
+                                                        text = "${ph.lga}, ${ph.state} • ${ph.phone}",
+                                                        fontSize = 10.sp,
+                                                        color = SlateTextMedium
+                                                    )
+                                                }
+
+                                                IconButton(
+                                                    onClick = {
+                                                        try {
+                                                            val rawPhone = ph.phone.replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+                                                            val cleanPhone = if (rawPhone.startsWith("0")) {
+                                                                "234" + rawPhone.substring(1)
+                                                            } else if (rawPhone.startsWith("+")) {
+                                                                rawPhone.substring(1)
+                                                            } else {
+                                                                rawPhone
+                                                            }
+                                                            val textMessage = "Hello ${ph.name}! Do you have *${broadcastProduct}* in stock? We have a client at *${broadcastAddress}* asking for it. Please reply YES or NO. Thank you!"
+                                                            val encodedText = java.net.URLEncoder.encode(textMessage, "UTF-8")
+                                                            val intent = android.content.Intent(
+                                                                android.content.Intent.ACTION_VIEW,
+                                                                android.net.Uri.parse("https://api.whatsapp.com/send?phone=$cleanPhone&text=$encodedText")
+                                                            )
+                                                            context.startActivity(intent)
+                                                        } catch (e: Exception) {
+                                                            Toast.makeText(context, "Could not open WhatsApp.", Toast.LENGTH_SHORT).show()
+                                                        }
+                                                    },
+                                                    modifier = Modifier.size(28.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Filled.Chat,
+                                                        contentDescription = "WhatsApp Query",
+                                                        tint = Color(0xFF25D366),
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
+                                            }
+
+                                            // Response Status Selector
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Text(text = "Response Status:", fontSize = 9.sp, color = SlateTextMedium)
+                                                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                    listOf(
+                                                        "Pending" to Color.Gray,
+                                                        "Yes" to Color(0xFF4CAF50),
+                                                        "No" to Color(0xFFF44336)
+                                                    ).forEach { (status, color) ->
+                                                        val isCurrent = responseStatus == status
+                                                        Surface(
+                                                            color = if (isCurrent) color.copy(alpha = 0.2f) else Color.Transparent,
+                                                            border = BorderStroke(1.dp, if (isCurrent) color else MaterialTheme.colorScheme.outline.copy(alpha = 0.1f)),
+                                                            shape = RoundedCornerShape(4.dp),
+                                                            modifier = Modifier
+                                                                .clickable {
+                                                                    val updatedResponses = broadcastResponses.toMutableMap()
+                                                                    updatedResponses[ph.phone] = status
+                                                                    broadcastResponses = updatedResponses
+                                                                }
+                                                        ) {
+                                                            Text(
+                                                                text = status,
+                                                                fontSize = 8.sp,
+                                                                fontWeight = FontWeight.Bold,
+                                                                color = if (isCurrent) color else SlateTextMedium,
+                                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        // Strategy recommendation text
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = TealBackground),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Filled.Lightbulb, contentDescription = null, tint = TealPrimary, modifier = Modifier.size(14.dp))
+                                Text(
+                                    text = "ESCALATION TIP: Open chats for Tier 1 first. If all reply NO or fail to reply in 5 mins, select Tier 2 tab above to query other Lagos State nodes, followed by Tier 3.",
+                                    fontSize = 8.sp,
+                                    lineHeight = 10.sp,
+                                    color = SlateTextMedium,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Extended Floating Action Button for LGA Proximity Stock Broadcaster (instantly launch from any tab)
+    ExtendedFloatingActionButton(
+        onClick = { showBroadcasterDialog = true },
+        modifier = Modifier
+            .align(Alignment.BottomEnd)
+            .padding(bottom = 24.dp, end = 16.dp)
+            .testTag("proximity_broadcaster_fab"),
+        containerColor = TealPrimary,
+        contentColor = Color.Black,
+        icon = {
+            Icon(
+                imageVector = Icons.Filled.Hub,
+                contentDescription = "Stock Broadcaster",
+                tint = Color.Black,
+                modifier = Modifier.size(20.dp)
+            )
+        },
+        text = {
+            Text(
+                text = "Stock Broadcaster",
+                fontWeight = FontWeight.Bold,
+                fontSize = 12.sp,
+                color = Color.Black
+            )
+        }
+    )
+}
+
     // Checkout / Sell rescued stock dialog
     if (listingToSell != null) {
         val activeListing = listingToSell!!
@@ -1850,7 +2686,9 @@ fun RescueMarketplaceScreen(viewModel: PharmacyViewModel) {
         var isCategoryDropdownExpanded by remember { mutableStateOf(false) }
         var isStateDropdownExpanded by remember { mutableStateOf(false) }
 
-        val statesList = listOf("Lagos", "Abuja", "Rivers", "Enugu", "Anambra", "Cross River", "Imo", "Akwa Ibom")
+        val defaultStates = listOf("Lagos", "Abuja", "Rivers", "Enugu", "Anambra", "Cross River", "Imo", "Akwa Ibom")
+        var isCustomState by remember { mutableStateOf(false) }
+        var customStateInput by remember { mutableStateOf("") }
 
         AlertDialog(
             onDismissRequest = { showAddContactDialog = false },
@@ -1955,7 +2793,7 @@ fun RescueMarketplaceScreen(viewModel: PharmacyViewModel) {
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text(stateInput)
+                                    Text(if (isCustomState) "Other (Custom State)..." else stateInput)
                                     Icon(Icons.Filled.ArrowDropDown, contentDescription = null)
                                 }
                             }
@@ -1963,17 +2801,36 @@ fun RescueMarketplaceScreen(viewModel: PharmacyViewModel) {
                                 expanded = isStateDropdownExpanded,
                                 onDismissRequest = { isStateDropdownExpanded = false }
                             ) {
-                                statesList.forEach { stateName ->
+                                DropdownMenuItem(
+                                    text = { Text("Other (Custom State)...") },
+                                    onClick = {
+                                        isCustomState = true
+                                        isStateDropdownExpanded = false
+                                    }
+                                )
+                                defaultStates.forEach { stateName ->
                                     DropdownMenuItem(
                                         text = { Text(stateName) },
                                         onClick = {
                                             stateInput = stateName
+                                            isCustomState = false
                                             isStateDropdownExpanded = false
                                         }
                                     )
                                 }
                             }
                         }
+                    }
+
+                    if (isCustomState) {
+                        OutlinedTextField(
+                            value = customStateInput,
+                            onValueChange = { customStateInput = it },
+                            label = { Text("Custom State Name") },
+                            placeholder = { Text("e.g., Oyo") },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth().testTag("add_contact_custom_state_input")
+                        )
                     }
 
                     OutlinedTextField(
@@ -1989,7 +2846,8 @@ fun RescueMarketplaceScreen(viewModel: PharmacyViewModel) {
             confirmButton = {
                 Button(
                     onClick = {
-                        if (nameInput.isBlank() || phoneInput.isBlank() || addressInput.isBlank() || lgaInput.isBlank()) {
+                        val finalState = if (isCustomState) customStateInput.trim() else stateInput
+                        if (nameInput.isBlank() || phoneInput.isBlank() || addressInput.isBlank() || lgaInput.isBlank() || finalState.isBlank()) {
                             Toast.makeText(context, "Please fill in all fields.", Toast.LENGTH_SHORT).show()
                             return@Button
                         }
@@ -1999,7 +2857,7 @@ fun RescueMarketplaceScreen(viewModel: PharmacyViewModel) {
                             phone = phoneInput.trim(),
                             address = addressInput.trim(),
                             category = categoryInput,
-                            state = stateInput,
+                            state = finalState,
                             lga = lgaInput.trim()
                         )
 
@@ -2044,7 +2902,9 @@ fun RescueMarketplaceScreen(viewModel: PharmacyViewModel) {
         var isCategoryDropdownExpanded by remember { mutableStateOf(false) }
         var isStateDropdownExpanded by remember { mutableStateOf(false) }
 
-        val statesList = listOf("Lagos", "Abuja", "Rivers", "Enugu", "Anambra", "Cross River", "Imo", "Akwa Ibom")
+        val defaultStates = listOf("Lagos", "Abuja", "Rivers", "Enugu", "Anambra", "Cross River", "Imo", "Akwa Ibom")
+        var isCustomState by remember { mutableStateOf(!defaultStates.contains(original.state)) }
+        var customStateInput by remember { mutableStateOf(if (!defaultStates.contains(original.state)) original.state else "") }
 
         AlertDialog(
             onDismissRequest = { contactToEdit = null },
@@ -2146,7 +3006,7 @@ fun RescueMarketplaceScreen(viewModel: PharmacyViewModel) {
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Text(stateInput)
+                                    Text(if (isCustomState) "Other (Custom State)..." else stateInput)
                                     Icon(Icons.Filled.ArrowDropDown, contentDescription = null)
                                 }
                             }
@@ -2154,17 +3014,36 @@ fun RescueMarketplaceScreen(viewModel: PharmacyViewModel) {
                                 expanded = isStateDropdownExpanded,
                                 onDismissRequest = { isStateDropdownExpanded = false }
                             ) {
-                                statesList.forEach { stateName ->
+                                DropdownMenuItem(
+                                    text = { Text("Other (Custom State)...") },
+                                    onClick = {
+                                        isCustomState = true
+                                        isStateDropdownExpanded = false
+                                    }
+                                )
+                                defaultStates.forEach { stateName ->
                                     DropdownMenuItem(
                                         text = { Text(stateName) },
                                         onClick = {
                                             stateInput = stateName
+                                            isCustomState = false
                                             isStateDropdownExpanded = false
                                         }
                                     )
                                 }
                             }
                         }
+                    }
+
+                    if (isCustomState) {
+                        OutlinedTextField(
+                            value = customStateInput,
+                            onValueChange = { customStateInput = it },
+                            label = { Text("Custom State Name") },
+                            placeholder = { Text("e.g., Oyo") },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth().testTag("edit_contact_custom_state_input")
+                        )
                     }
 
                     OutlinedTextField(
@@ -2179,7 +3058,8 @@ fun RescueMarketplaceScreen(viewModel: PharmacyViewModel) {
             confirmButton = {
                 Button(
                     onClick = {
-                        if (nameInput.isBlank() || phoneInput.isBlank() || addressInput.isBlank() || lgaInput.isBlank()) {
+                        val finalState = if (isCustomState) customStateInput.trim() else stateInput
+                        if (nameInput.isBlank() || phoneInput.isBlank() || addressInput.isBlank() || lgaInput.isBlank() || finalState.isBlank()) {
                             Toast.makeText(context, "Please fill in all fields.", Toast.LENGTH_SHORT).show()
                             return@Button
                         }
@@ -2189,7 +3069,7 @@ fun RescueMarketplaceScreen(viewModel: PharmacyViewModel) {
                             phone = phoneInput.trim(),
                             address = addressInput.trim(),
                             category = categoryInput,
-                            state = stateInput,
+                            state = finalState,
                             lga = lgaInput.trim()
                         )
 

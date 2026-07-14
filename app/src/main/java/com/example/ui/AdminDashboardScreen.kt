@@ -47,6 +47,9 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
     // Local override state for instant, offline-resilient UI reactive feedback and sync fallback
     var localIsSuspendedOverrides by remember { mutableStateOf<Map<String, Boolean>>(emptyMap()) }
     var localCarefluxAiOverrides by remember { mutableStateOf<Map<String, Boolean>>(emptyMap()) }
+    var localBranchManagerOverrides by remember { mutableStateOf<Map<String, Map<String, String>>>(emptyMap()) }
+    var localPharmacistRoleOverrides by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var localPharmacistBranchOverrides by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
 
     var selectedSubTab by remember { mutableStateOf(0) } // 0 = Nodes, 1 = Pharmacies, 2 = LGA Analytics, 3 = Key Requests, 4 = Audit Trail
     var pharmacistsList by remember { mutableStateOf<List<Map<String, Any>>>(emptyList()) }
@@ -219,6 +222,9 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
     var suspendReason by remember { mutableStateOf("") }
     var actionType by remember { mutableStateOf("SUSPEND") } // SUSPEND or REACTIVATE
 
+    var showDeleteNodeDialog by remember { mutableStateOf(false) }
+    var nodeToDelete by remember { mutableStateOf<Map<String, Any>?>(null) }
+
     val currentAuthUser = remember { com.google.firebase.auth.FirebaseAuth.getInstance().currentUser }
     val currentDeviceId = viewModel.deviceId
     val isCurrentSuspended by viewModel.isSuspended.collectAsStateWithLifecycle()
@@ -237,6 +243,10 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                         android.util.Log.e("AdminDashboardScreen", "Error listening to registered_pharmacists collection", e)
                     }
                     if (snapshot != null) {
+                        if (snapshot.metadata.isFromCache && viewModel.isOnline.value) {
+                            db.collection("registered_pharmacists")
+                                .get(com.google.firebase.firestore.Source.SERVER)
+                        }
                         pharmacistsList = snapshot.documents.map { doc ->
                             val data = doc.data?.toMutableMap() ?: mutableMapOf()
                             data["id"] = doc.id
@@ -252,6 +262,10 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                         android.util.Log.e("AdminDashboardScreen", "Error listening to device_configs collection", e)
                     }
                     if (snapshot != null) {
+                        if (snapshot.metadata.isFromCache && viewModel.isOnline.value) {
+                            db.collection("device_configs")
+                                .get(com.google.firebase.firestore.Source.SERVER)
+                        }
                         deviceConfigsList = snapshot.documents.map { doc ->
                             val data = doc.data?.toMutableMap() ?: mutableMapOf()
                             data["id"] = doc.id
@@ -277,6 +291,11 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                     .document(currentAuthUser.uid)
                     .addSnapshotListener { snapshot, e ->
                         if (snapshot != null && snapshot.exists()) {
+                            if (snapshot.metadata.isFromCache && viewModel.isOnline.value) {
+                                db.collection("registered_pharmacists")
+                                    .document(currentAuthUser.uid)
+                                    .get(com.google.firebase.firestore.Source.SERVER)
+                            }
                             val data = snapshot.data?.toMutableMap() ?: mutableMapOf()
                             data["id"] = snapshot.id
                             
@@ -296,6 +315,11 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                     .document(currentDeviceId)
                     .addSnapshotListener { snapshot, e ->
                         if (snapshot != null && snapshot.exists()) {
+                            if (snapshot.metadata.isFromCache && viewModel.isOnline.value) {
+                                db.collection("device_configs")
+                                    .document(currentDeviceId)
+                                    .get(com.google.firebase.firestore.Source.SERVER)
+                            }
                             val data = snapshot.data?.toMutableMap() ?: mutableMapOf()
                             data["id"] = snapshot.id
                             
@@ -1495,7 +1519,9 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                                                 }
                                                 Spacer(modifier = Modifier.height(1.dp))
                                                 val dateStr = if (lastActiveTime > 0) {
-                                                    SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).format(Date(lastActiveTime))
+                                                    SimpleDateFormat("MM-dd HH:mm", Locale.getDefault()).apply {
+                                                        timeZone = TimeZone.getTimeZone("Africa/Lagos")
+                                                    }.format(Date(lastActiveTime))
                                                 } else "Never"
                                                 Text(dateStr, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                             }
@@ -1563,6 +1589,59 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
 
                                             OutlinedButton(
                                                 onClick = {
+                                                    val db = FirebaseFirestore.getInstance()
+                                                    val currentTime = System.currentTimeMillis()
+                                                    db.collection("device_configs")
+                                                        .document(nodeId)
+                                                        .update("lastActive", currentTime)
+                                                        .addOnSuccessListener {
+                                                              val sdf = java.text.SimpleDateFormat("MMMM d, yyyy, h:mm:ss a", java.util.Locale.getDefault()).apply {
+                                                                  timeZone = java.util.TimeZone.getTimeZone("Africa/Lagos")
+                                                              }
+                                                              val dateString = sdf.format(java.util.Date(currentTime))
+                                                              android.widget.Toast.makeText(context, "Node sync forced: $dateString", android.widget.Toast.LENGTH_SHORT).show()
+                                                             viewModel.logAdminAction(
+                                                                 admin = "Chinedu (Admin)",
+                                                                 action = "FORCE_SYNC_NODE",
+                                                                 nodeId = nodeId,
+                                                                 nodeModel = modelName,
+                                                                 reason = "Manual Admin Force Sync"
+                                                             )
+                                                        }
+                                                        .addOnFailureListener {
+                                                            db.collection("device_configs")
+                                                                .document(nodeId)
+                                                                .set(mapOf(
+                                                                    "deviceId" to nodeId,
+                                                                    "deviceModel" to modelName,
+                                                                    "aiContentEnabled" to true,
+                                                                    "carefluxAiEnabled" to true,
+                                                                    "lastActive" to currentTime
+                                                                ), com.google.firebase.firestore.SetOptions.merge())
+                                                                .addOnSuccessListener {
+                                                                    val sdf = java.text.SimpleDateFormat("MMMM d, yyyy, h:mm:ss a", java.util.Locale.getDefault()).apply {
+                                                                        timeZone = java.util.TimeZone.getTimeZone("Africa/Lagos")
+                                                                    }.apply {
+                                                                  timeZone = java.util.TimeZone.getTimeZone("Africa/Lagos")
+                                                              }
+                                                              val dateString = sdf.format(java.util.Date(currentTime))
+                                                              android.widget.Toast.makeText(context, "Node sync forced: $dateString", android.widget.Toast.LENGTH_SHORT).show()
+                                                                }
+                                                        }
+                                                },
+                                                border = BorderStroke(1.dp, TealPrimary.copy(alpha = 0.5f)),
+                                                modifier = Modifier.weight(1f).height(32.dp),
+                                                contentPadding = PaddingValues(0.dp),
+                                                shape = RoundedCornerShape(6.dp),
+                                                colors = ButtonDefaults.outlinedButtonColors(contentColor = TealPrimary)
+                                            ) {
+                                                Icon(Icons.Filled.Sync, contentDescription = null, modifier = Modifier.size(12.dp))
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text("Force Sync", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                            }
+
+                                            OutlinedButton(
+                                                onClick = {
                                                     val newAiVal = !carefluxAi
                                                     localCarefluxAiOverrides = localCarefluxAiOverrides + (nodeId to newAiVal)
                                                     
@@ -1602,6 +1681,24 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                                                 Spacer(modifier = Modifier.width(4.dp))
                                                 Text(if (carefluxAi) "Mute AI" else "Unmute AI", fontSize = 10.sp, fontWeight = FontWeight.Bold)
                                             }
+
+                                            OutlinedButton(
+                                                onClick = {
+                                                    nodeToDelete = node
+                                                    showDeleteNodeDialog = true
+                                                },
+                                                colors = ButtonDefaults.outlinedButtonColors(contentColor = com.example.ui.theme.WarningRed),
+                                                border = BorderStroke(1.dp, com.example.ui.theme.WarningRed.copy(alpha = 0.5f)),
+                                                modifier = Modifier.height(32.dp).width(44.dp),
+                                                contentPadding = PaddingValues(0.dp),
+                                                shape = RoundedCornerShape(6.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Filled.Delete,
+                                                    contentDescription = "Delete Node",
+                                                    modifier = Modifier.size(14.dp)
+                                                )
+                                            }
                                         }
                                     }
                                 }
@@ -1625,6 +1722,15 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
             var showManagerDialog by remember { mutableStateOf(false) }
             var selectedBranchForManager by remember { mutableStateOf<Map<String, Any>?>(null) }
             var managerSearchQuery by remember { mutableStateOf("") }
+
+            var showFeaturesDialog by remember { mutableStateOf(false) }
+            var selectedBranchForFeatures by remember { mutableStateOf<Map<String, Any>?>(null) }
+
+            var expandedBranchStaffId by remember { mutableStateOf<String?>(null) }
+            var showDeletePharmacistDialog by remember { mutableStateOf(false) }
+            var selectedPharmacistForDelete by remember { mutableStateOf<Map<String, Any>?>(null) }
+            var showEditStaffRoleDialog by remember { mutableStateOf(false) }
+            var selectedStaffForRoleEdit by remember { mutableStateOf<Map<String, Any>?>(null) }
 
             val filteredBranches = remember(allBranches, searchQuery) {
                 if (searchQuery.isBlank()) {
@@ -1823,6 +1929,22 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                                                     }
                                                 }
 
+                                                // Feature Toggles button
+                                                IconButton(
+                                                    onClick = {
+                                                        selectedBranchForFeatures = branch
+                                                        showFeaturesDialog = true
+                                                     },
+                                                     modifier = Modifier.size(24.dp)
+                                                 ) {
+                                                     Icon(
+                                                         imageVector = Icons.Filled.ToggleOn,
+                                                         contentDescription = "Feature Toggles",
+                                                         tint = TealPrimary,
+                                                         modifier = Modifier.size(18.dp)
+                                                     )
+                                                 }
+
                                                 // Edit button
                                                 IconButton(
                                                     onClick = {
@@ -1885,6 +2007,7 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                                                 modifier = Modifier
                                                     .clip(RoundedCornerShape(6.dp))
                                                     .background(TealPrimary.copy(alpha = 0.08f))
+                                                    .clickable { expandedBranchStaffId = if (expandedBranchStaffId == bId) null else bId }
                                                     .padding(horizontal = 6.dp, vertical = 2.dp)
                                             ) {
                                                 Icon(
@@ -1898,6 +2021,12 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                                                     fontSize = 9.sp,
                                                     fontWeight = FontWeight.Bold,
                                                     color = TealPrimary
+                                                )
+                                                Icon(
+                                                    imageVector = if (expandedBranchStaffId == bId) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
+                                                    contentDescription = null,
+                                                    tint = TealPrimary,
+                                                    modifier = Modifier.size(12.dp)
                                                 )
                                             }
                                         }
@@ -1913,8 +2042,9 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                                             horizontalArrangement = Arrangement.SpaceBetween,
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            val mName = branch["managerName"] as? String ?: pharmacistsList.find { (it["branchId"] as? String) == bId && it["role"] == "Branch Manager" }?.let { it["displayName"] as? String } ?: ""
-                                            val mEmail = branch["managerEmail"] as? String ?: pharmacistsList.find { (it["branchId"] as? String) == bId && it["role"] == "Branch Manager" }?.let { it["email"] as? String } ?: ""
+                                            val managerOverride = localBranchManagerOverrides[bId]
+                                            val mName = managerOverride?.get("managerName") ?: branch["managerName"] as? String ?: pharmacistsList.find { (it["branchId"] as? String) == bId && (localPharmacistRoleOverrides[it["id"] as? String ?: ""] ?: it["role"]) == "Branch Manager" }?.let { it["displayName"] as? String } ?: ""
+                                            val mEmail = managerOverride?.get("managerEmail") ?: branch["managerEmail"] as? String ?: pharmacistsList.find { (it["branchId"] as? String) == bId && (localPharmacistRoleOverrides[it["id"] as? String ?: ""] ?: it["role"]) == "Branch Manager" }?.let { it["email"] as? String } ?: ""
                                             
                                             if (mName.isNotBlank()) {
                                                 Row(
@@ -1994,11 +2124,341 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                                                 }
                                             }
                                         }
+
+                                        if (expandedBranchStaffId == bId) {
+                                            val branchStaff = pharmacistsList.filter { 
+                                                val staffId = it["id"] as? String ?: ""
+                                                (localPharmacistBranchOverrides[staffId] != null && localPharmacistBranchOverrides[staffId] == bName) || 
+                                                (localPharmacistBranchOverrides[staffId] == null && (it["branchId"] as? String) == bId)
+                                            }
+                                            Column(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(top = 8.dp)
+                                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.1f))
+                                                    .padding(8.dp),
+                                                verticalArrangement = Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                Text(
+                                                    text = "Registered Staff Members (${branchStaff.size})",
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = TealPrimary
+                                                )
+                                                if (branchStaff.isEmpty()) {
+                                                    Text("No pharmacists registered in this branch.", fontSize = 10.sp, color = SlateTextMedium)
+                                                } else {
+                                                    branchStaff.forEach { staff ->
+                                                        val staffName = staff["displayName"] as? String ?: "Unknown Name"
+                                                        val staffEmail = staff["email"] as? String ?: "No email"
+                                                        val staffRole = localPharmacistRoleOverrides[staff["id"] as? String ?: ""] ?: staff["role"] as? String ?: "Pharmacist"
+                                                        val staffUid = staff["id"] as? String ?: ""
+                                                        
+                                                        Row(
+                                                            modifier = Modifier
+                                                                .fillMaxWidth()
+                                                                .clip(RoundedCornerShape(6.dp))
+                                                                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.5f))
+                                                                .padding(horizontal = 8.dp, vertical = 6.dp),
+                                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
+                                                            Column(modifier = Modifier.weight(1f)) {
+                                                                Text(staffName, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                                                Text("$staffEmail • $staffRole", fontSize = 10.sp, color = SlateTextMedium)
+                                                            }
+                                                            Row(
+                                                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                                                verticalAlignment = Alignment.CenterVertically
+                                                            ) {
+                                                                IconButton(
+                                                                    onClick = {
+                                                                        selectedStaffForRoleEdit = staff
+                                                                        showEditStaffRoleDialog = true
+                                                                    },
+                                                                    modifier = Modifier.size(24.dp)
+                                                                ) {
+                                                                    Icon(
+                                                                        imageVector = Icons.Filled.Settings,
+                                                                        contentDescription = "Edit Role",
+                                                                        tint = TealPrimary,
+                                                                        modifier = Modifier.size(16.dp)
+                                                                    )
+                                                                }
+                                                                IconButton(
+                                                                    onClick = {
+                                                                        selectedPharmacistForDelete = staff
+                                                                        showDeletePharmacistDialog = true
+                                                                    },
+                                                                    modifier = Modifier.size(24.dp)
+                                                                ) {
+                                                                    Icon(
+                                                                        imageVector = Icons.Filled.Delete,
+                                                                        contentDescription = "Delete Pharmacist",
+                                                                        tint = MaterialTheme.colorScheme.error,
+                                                                        modifier = Modifier.size(16.dp)
+                                                                    )
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
                         }
                     }
+                }
+
+                val unassignedStaff = pharmacistsList.filter { 
+                    val staffId = it["id"] as? String ?: ""
+                    (localPharmacistBranchOverrides[staffId] == null && (it["branchId"] as? String).isNullOrBlank()) || 
+                    (localPharmacistBranchOverrides[staffId] != null && localPharmacistBranchOverrides[staffId]!!.isBlank())
+                }
+                if (unassignedStaff.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = "Unassigned / Pending Pharmacists (${unassignedStaff.size})",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = TealPrimary
+                    )
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            unassignedStaff.forEach { staff ->
+                                val staffName = staff["displayName"] as? String ?: "Unknown Name"
+                                val staffEmail = staff["email"] as? String ?: "No email"
+                                val staffRole = localPharmacistRoleOverrides[staff["id"] as? String ?: ""] ?: staff["role"] as? String ?: "Pharmacist"
+                                val staffUid = staff["id"] as? String ?: ""
+                                
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f))
+                                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(staffName, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        Text("$staffEmail • $staffRole", fontSize = 10.sp, color = SlateTextMedium)
+                                    }
+                                    Row(
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        IconButton(
+                                            onClick = {
+                                                selectedStaffForRoleEdit = staff
+                                                showEditStaffRoleDialog = true
+                                            },
+                                            modifier = Modifier.size(24.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.Settings,
+                                                contentDescription = "Edit Role",
+                                                tint = TealPrimary,
+                                                modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                        IconButton(
+                                            onClick = {
+                                                selectedPharmacistForDelete = staff
+                                                showDeletePharmacistDialog = true
+                                            },
+                                            modifier = Modifier.size(24.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.Delete,
+                                                contentDescription = "Delete Pharmacist",
+                                                tint = MaterialTheme.colorScheme.error,
+                                                modifier = Modifier.size(16.dp)
+                                        )
+                                    }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (showFeaturesDialog && selectedBranchForFeatures != null) {
+                    val bId = selectedBranchForFeatures!!["id"] as? String ?: ""
+                    val bName = selectedBranchForFeatures!!["name"] as? String ?: "this branch"
+                    
+                    var fAiContent by remember(selectedBranchForFeatures) { mutableStateOf(selectedBranchForFeatures!!["aiContentEnabled"] as? Boolean ?: true) }
+                    var fCarefluxAi by remember(selectedBranchForFeatures) { mutableStateOf(selectedBranchForFeatures!!["carefluxAiEnabled"] as? Boolean ?: true) }
+                    var fClinical by remember(selectedBranchForFeatures) { mutableStateOf(selectedBranchForFeatures!!["clinicalEnabled"] as? Boolean ?: true) }
+                    var fMessaging by remember(selectedBranchForFeatures) { mutableStateOf(selectedBranchForFeatures!!["messagingEnabled"] as? Boolean ?: true) }
+                    var fTriage by remember(selectedBranchForFeatures) { mutableStateOf(selectedBranchForFeatures!!["triageEnabled"] as? Boolean ?: true) }
+                    var fMarketplace by remember(selectedBranchForFeatures) { mutableStateOf(selectedBranchForFeatures!!["marketplaceEnabled"] as? Boolean ?: true) }
+                    var fProcurement by remember(selectedBranchForFeatures) { mutableStateOf(selectedBranchForFeatures!!["procurementEnabled"] as? Boolean ?: true) }
+                    
+                    var isSaving by remember { mutableStateOf(false) }
+
+                    AlertDialog(
+                        onDismissRequest = {
+                            if (!isSaving) {
+                                showFeaturesDialog = false
+                                selectedBranchForFeatures = null
+                            }
+                        },
+                        title = {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Icon(Icons.Filled.ToggleOn, contentDescription = null, tint = TealPrimary)
+                                Text("Feature Controls: $bName", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                            }
+                        },
+                        text = {
+                            Column(
+                                modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                                verticalArrangement = Arrangement.spacedBy(14.dp)
+                            ) {
+                                Text(
+                                    text = "Enable or disable specific features for this pharmacy location dynamically. Connected devices will synchronize instantly.",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
+
+                                // Helper Switch Row
+                                @Composable
+                                fun FeatureSwitchRow(
+                                    title: String,
+                                    description: String,
+                                    checked: Boolean,
+                                    onCheckedChange: (Boolean) -> Unit
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .clickable { onCheckedChange(!checked) }
+                                            .padding(vertical = 4.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f).padding(end = 12.dp)) {
+                                            Text(title, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                                            Text(description, fontSize = 10.sp, color = SlateTextMedium, lineHeight = 12.sp)
+                                        }
+                                        Switch(
+                                            checked = checked,
+                                            onCheckedChange = onCheckedChange,
+                                            colors = SwitchDefaults.colors(
+                                                checkedThumbColor = TealPrimary,
+                                                checkedTrackColor = TealPrimary.copy(alpha = 0.4f)
+                                            )
+                                        )
+                                    }
+                                }
+
+                                FeatureSwitchRow(
+                                    title = "AI Content Engine",
+                                    description = "Enables campaign & outreach messaging powered by the Gemini AI Engine.",
+                                    checked = fAiContent,
+                                    onCheckedChange = { fAiContent = it }
+                                )
+
+                                FeatureSwitchRow(
+                                    title = "Careflux AI Assistant",
+                                    description = "Enables the local AI tasks companion and general medical intelligence chat.",
+                                    checked = fCarefluxAi,
+                                    onCheckedChange = { fCarefluxAi = it }
+                                )
+
+                                FeatureSwitchRow(
+                                    title = "Clinical Decision Support (DDI Checks)",
+                                    description = "Enables automatic DDI warnings, clinical audits, and intervention logging.",
+                                    checked = fClinical,
+                                    onCheckedChange = { fClinical = it }
+                                )
+
+                                FeatureSwitchRow(
+                                    title = "Customer Engagement & WhatsApp",
+                                    description = "Enables welfare checks, automated refill alerts, and WhatsApp messaging.",
+                                    checked = fMessaging,
+                                    onCheckedChange = { fMessaging = it }
+                                )
+
+                                FeatureSwitchRow(
+                                    title = "Pharmacy Triage Dashboard",
+                                    description = "Enables digital triage logs and emergency clinical routing.",
+                                    checked = fTriage,
+                                    onCheckedChange = { fTriage = it }
+                                )
+
+                                FeatureSwitchRow(
+                                    title = "Expiry Rescue Marketplace",
+                                    description = "Enables inter-pharmacy stock rescue sharing and marketplace swaps.",
+                                    checked = fMarketplace,
+                                    onCheckedChange = { fMarketplace = it }
+                                )
+
+                                FeatureSwitchRow(
+                                    title = "Procurement & Stock Transfers",
+                                    description = "Enables wholesale procurement requests and branch-to-branch stock transfers.",
+                                    checked = fProcurement,
+                                    onCheckedChange = { fProcurement = it }
+                                )
+                            }
+                        },
+                        confirmButton = {
+                            Button(
+                                enabled = !isSaving,
+                                onClick = {
+                                    isSaving = true
+                                    val features = mapOf(
+                                        "aiContentEnabled" to fAiContent,
+                                        "carefluxAiEnabled" to fCarefluxAi,
+                                        "clinicalEnabled" to fClinical,
+                                        "messagingEnabled" to fMessaging,
+                                        "triageEnabled" to fTriage,
+                                        "marketplaceEnabled" to fMarketplace,
+                                        "procurementEnabled" to fProcurement
+                                    )
+                                    viewModel.updateBranchFeatures(bId, features) { success, msg ->
+                                        isSaving = false
+                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                        if (success) {
+                                            showFeaturesDialog = false
+                                            selectedBranchForFeatures = null
+                                        }
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = TealPrimary)
+                            ) {
+                                if (isSaving) {
+                                    CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.Black, strokeWidth = 2.dp)
+                                } else {
+                                    Text("Apply Changes", color = Color.Black, fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(
+                                enabled = !isSaving,
+                                onClick = {
+                                    showFeaturesDialog = false
+                                    selectedBranchForFeatures = null
+                                }
+                            ) {
+                                Text("Cancel")
+                            }
+                        }
+                    )
                 }
 
                 if (showDeleteDialog && selectedBranchForDelete != null) {
@@ -2150,8 +2610,8 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                                                 val pUid = pharmacist["id"] as? String ?: ""
                                                 val pName = pharmacist["displayName"] as? String ?: "Unknown"
                                                 val pEmail = pharmacist["email"] as? String ?: ""
-                                                val pRole = pharmacist["role"] as? String ?: "Pharmacist"
-                                                val pBranch = pharmacist["branchName"] as? String ?: "No Branch"
+                                                val pRole = localPharmacistRoleOverrides[pUid] ?: pharmacist["role"] as? String ?: "Pharmacist"
+                                                val pBranch = localPharmacistBranchOverrides[pUid] ?: pharmacist["branchName"] as? String ?: "No Branch"
 
                                                 Card(
                                                     colors = CardDefaults.cardColors(
@@ -2160,10 +2620,33 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                                                     modifier = Modifier
                                                         .fillMaxWidth()
                                                         .clickable {
+                                                            // 1. Optimistic UI updates
+                                                            localBranchManagerOverrides = localBranchManagerOverrides + (bId to mapOf(
+                                                                "managerId" to pUid,
+                                                                "managerName" to pName,
+                                                                "managerEmail" to pEmail
+                                                            ))
+                                                            localPharmacistRoleOverrides = localPharmacistRoleOverrides + (pUid to "Branch Manager")
+                                                            localPharmacistBranchOverrides = localPharmacistBranchOverrides + (pUid to bName)
+                                                            
+                                                            // Demote any other managers in this same branch optimistically
+                                                            pharmacistsList.forEach { p ->
+                                                                val otherUid = p["id"] as? String ?: ""
+                                                                if (otherUid != pUid && (p["branchId"] as? String) == bId) {
+                                                                    val currentRole = localPharmacistRoleOverrides[otherUid] ?: p["role"] as? String ?: ""
+                                                                    if (currentRole == "Branch Manager") {
+                                                                        localPharmacistRoleOverrides = localPharmacistRoleOverrides + (otherUid to "Pharmacist")
+                                                                    }
+                                                                }
+                                                            }
+
+                                                            // Dismiss immediately for instantaneous UX response
+                                                            showManagerDialog = false
+                                                            selectedBranchForManager = null
+
+                                                            // Trigger Firebase write in background
                                                             viewModel.appointManager(bId, bName, pUid, pName, pEmail) { success, msg ->
                                                                 Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                                                showManagerDialog = false
-                                                                selectedBranchForManager = null
                                                             }
                                                         }
                                                 ) {
@@ -2197,6 +2680,144 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                                 onClick = {
                                     showManagerDialog = false
                                     selectedBranchForManager = null
+                                }
+                            ) {
+                                Text("Cancel")
+                            }
+                        }
+                    )
+                }
+
+                if (showDeletePharmacistDialog && selectedPharmacistForDelete != null) {
+                    val pUid = selectedPharmacistForDelete!!["id"] as? String ?: ""
+                    val pName = selectedPharmacistForDelete!!["displayName"] as? String ?: "this pharmacist"
+                    val pBranchId = selectedPharmacistForDelete!!["branchId"] as? String
+                    val pRole = selectedPharmacistForDelete!!["role"] as? String
+
+                    AlertDialog(
+                        onDismissRequest = {
+                            showDeletePharmacistDialog = false
+                            selectedPharmacistForDelete = null
+                        },
+                        title = { Text("Delete Pharmacist Account", fontWeight = FontWeight.Bold) },
+                        text = {
+                            Text("Are you sure you want to permanently delete the pharmacist account for '$pName'? This action is irreversible and they will lose all access.")
+                        },
+                        confirmButton = {
+                            Button(
+                                onClick = {
+                                    viewModel.deletePharmacist(pUid, pName, pBranchId, pRole) { success, msg ->
+                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                        showDeletePharmacistDialog = false
+                                        selectedPharmacistForDelete = null
+                                    }
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error, contentColor = Color.White)
+                            ) {
+                                Text("Delete", fontWeight = FontWeight.Bold)
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(
+                                onClick = {
+                                    showDeletePharmacistDialog = false
+                                    selectedPharmacistForDelete = null
+                                }
+                            ) {
+                                Text("Cancel")
+                            }
+                        }
+                    )
+                }
+
+                if (showEditStaffRoleDialog && selectedStaffForRoleEdit != null) {
+                    val pUid = selectedStaffForRoleEdit!!["id"] as? String ?: ""
+                    val pName = selectedStaffForRoleEdit!!["displayName"] as? String ?: "this pharmacist"
+                    val currentRoleInDoc = selectedStaffForRoleEdit!!["role"] as? String ?: "Pharmacist"
+                    val isApprovedInDoc = selectedStaffForRoleEdit!!["isApproved"] as? Boolean ?: true
+
+                    var selectedRole by remember { mutableStateOf(localPharmacistRoleOverrides[pUid] ?: currentRoleInDoc) }
+                    var isApproved by remember { mutableStateOf(isApprovedInDoc) }
+
+                    AlertDialog(
+                        onDismissRequest = {
+                            showEditStaffRoleDialog = false
+                            selectedStaffForRoleEdit = null
+                        },
+                        title = { Text("Configure Pharmacist Settings", fontWeight = FontWeight.Bold) },
+                        text = {
+                            Column(
+                                verticalArrangement = Arrangement.spacedBy(16.dp),
+                                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                            ) {
+                                Text("Edit system role and access permission for '$pName'.", fontSize = 13.sp, color = SlateTextMedium)
+
+                                // Role Dropdown / Selector
+                                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                    Text("Role Assignment", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = TealPrimary)
+                                    val roles = listOf("Pharmacist", "Branch Manager", "Admin", "Intern Pharmacist", "Technician")
+                                    roles.forEach { role ->
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable { selectedRole = role }
+                                                .padding(vertical = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            RadioButton(
+                                                selected = (selectedRole == role),
+                                                onClick = { selectedRole = role },
+                                                colors = RadioButtonDefaults.colors(selectedColor = TealPrimary)
+                                            )
+                                            Text(role, fontSize = 14.sp)
+                                        }
+                                    }
+                                }
+
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f))
+
+                                // Access Permission Toggle
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text("Workspace Access Approved", fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                                        Text("If turned off, this staff member will be locked out.", fontSize = 11.sp, color = SlateTextMedium)
+                                    }
+                                    Switch(
+                                        checked = isApproved,
+                                        onCheckedChange = { isApproved = it },
+                                        colors = SwitchDefaults.colors(checkedThumbColor = TealPrimary)
+                                    )
+                                }
+                            }
+                        },
+                        confirmButton = {
+                            Button(
+                                onClick = {
+                                    // 1. Optimistic UI update so the change reflects instantly on screen
+                                    localPharmacistRoleOverrides = localPharmacistRoleOverrides + (pUid to selectedRole)
+                                    
+                                    // 2. Perform write to Firestore in background
+                                    viewModel.updateStaffRoleOrApproval(pUid, selectedRole, isApproved)
+                                    Toast.makeText(context, "Role updated to $selectedRole successfully", Toast.LENGTH_SHORT).show()
+                                    
+                                    showEditStaffRoleDialog = false
+                                    selectedStaffForRoleEdit = null
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = TealPrimary)
+                            ) {
+                                Text("Save Settings", color = Color.Black, fontWeight = FontWeight.Bold)
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(
+                                onClick = {
+                                    showEditStaffRoleDialog = false
+                                    selectedStaffForRoleEdit = null
                                 }
                             ) {
                                 Text("Cancel")
@@ -3440,6 +4061,62 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
             },
             dismissButton = {
                 TextButton(onClick = { nodeToSuspend = null }) {
+                    Text("Cancel", fontWeight = FontWeight.Bold)
+                }
+            }
+        )
+    }
+
+    if (showDeleteNodeDialog && nodeToDelete != null) {
+        val targetNode = nodeToDelete!!
+        val model = targetNode["deviceModel"] as? String ?: "Unknown Node"
+        val nId = targetNode["id"] as? String ?: ""
+
+        AlertDialog(
+            onDismissRequest = {
+                showDeleteNodeDialog = false
+                nodeToDelete = null
+            },
+            title = {
+                Text(
+                    text = "Delete Node Configuration",
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = (-0.5).sp
+                )
+            },
+            text = {
+                Text(
+                    text = "Are you sure you want to delete '$model' ($nId) from the network? This action is irreversible and will remove its configuration and sync registry from Firestore.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.deleteDeviceConfig(nId) { success, msg ->
+                            android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                            if (success) {
+                                showDeleteNodeDialog = false
+                                nodeToDelete = null
+                            }
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.error,
+                        contentColor = MaterialTheme.colorScheme.onError
+                    ),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text("Delete", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteNodeDialog = false
+                        nodeToDelete = null
+                    }
+                ) {
                     Text("Cancel", fontWeight = FontWeight.Bold)
                 }
             }

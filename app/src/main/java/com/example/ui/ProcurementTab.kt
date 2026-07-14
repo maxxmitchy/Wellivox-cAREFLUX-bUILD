@@ -158,7 +158,7 @@ fun ProcurementTabContent(
                 transfers = transfersList,
                 destinationBranches = branches,
                 currentBranchName = currentBranchName ?: "Current Branch",
-                isUserManager = currentRole == "Branch Manager",
+                isUserManager = currentRole == "Branch Manager" || viewModel.isCurrentUserAdmin(),
                 onVerifyClick = { logId -> viewModel.verifyStockAdjustment(logId) }
             )
         }

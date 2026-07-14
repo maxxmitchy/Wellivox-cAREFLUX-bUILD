@@ -815,6 +815,7 @@ fun CustomerCard(
     var medToPushRefill by remember { mutableStateOf<CustomerMedication?>(null) }
     var pushDaysText by remember { mutableStateOf("") }
     val customTemplates by viewModel.customTemplates.collectAsStateWithLifecycle()
+    var showSendMessageDialog by remember { mutableStateOf(false) }
 
     val customerDdiAlerts = remember(medications, customer) {
         val names = medications.map { it.medicationName }
@@ -857,6 +858,16 @@ fun CustomerCard(
                     Text("Cancel")
                 }
             }
+        )
+    }
+
+    if (showSendMessageDialog) {
+        SendCustomerMessageDialog(
+            customer = customer,
+            medications = medications,
+            viewModel = viewModel,
+            onDismiss = { showSendMessageDialog = false },
+            context = context
         )
     }
 
@@ -1008,6 +1019,13 @@ fun CustomerCard(
                         expanded = showGeneralWhatsAppMenu,
                         onDismissRequest = { showGeneralWhatsAppMenu = false }
                     ) {
+                        DropdownMenuItem(
+                            text = { Text("💬 Customize & Send Template...") },
+                            onClick = {
+                                showGeneralWhatsAppMenu = false
+                                showSendMessageDialog = true
+                            }
+                        )
                         DropdownMenuItem(
                             text = { Text("General Check-in (WhatsApp)") },
                             onClick = {
@@ -1785,26 +1803,39 @@ fun CustomerCard(
                     Spacer(modifier = Modifier.height(12.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.End,
+                        horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         TextButton(
-                            onClick = onEditClick,
+                            onClick = { showSendMessageDialog = true },
+                            colors = ButtonDefaults.textButtonColors(contentColor = TealPrimary),
                             modifier = Modifier.height(36.dp)
                         ) {
-                            Icon(Icons.Filled.Edit, contentDescription = "Edit Profile", modifier = Modifier.size(16.dp))
+                            Icon(Icons.Filled.Chat, contentDescription = "Send Message", modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Edit Profile", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                            Text("Send Message", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
                         }
-                        Spacer(modifier = Modifier.width(12.dp))
-                        TextButton(
-                            onClick = onDeleteClick,
-                            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                            modifier = Modifier.height(36.dp)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Icon(Icons.Filled.Delete, contentDescription = "Delete Profile", modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Delete Profile", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                            TextButton(
+                                onClick = onEditClick,
+                                modifier = Modifier.height(36.dp)
+                            ) {
+                                Icon(Icons.Filled.Edit, contentDescription = "Edit Profile", modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Edit Profile", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            TextButton(
+                                onClick = onDeleteClick,
+                                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                                modifier = Modifier.height(36.dp)
+                            ) {
+                                Icon(Icons.Filled.Delete, contentDescription = "Delete Profile", modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Delete Profile", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 }
@@ -1812,6 +1843,240 @@ fun CustomerCard(
         }
     }
 }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SendCustomerMessageDialog(
+    customer: Customer,
+    medications: List<CustomerMedication>,
+    viewModel: PharmacyViewModel,
+    onDismiss: () -> Unit,
+    context: Context
+) {
+    val templates by viewModel.customTemplates.collectAsStateWithLifecycle()
+    var selectedTemplateIndex by remember { mutableStateOf(-1) }
+    var messageText by remember { mutableStateOf("") }
+    var selectedMedication by remember { mutableStateOf("") }
+    
+    // States for adding a new template
+    var showAddTemplateForm by remember { mutableStateOf(false) }
+    var newTemplateTitle by remember { mutableStateOf("") }
+    var newTemplateMessage by remember { mutableStateOf("") }
+
+    // List of medications options
+    val medOptions = medications.map { it.medicationName }.distinct()
+    
+    // Auto-update message preview when selected template or medication changes
+    LaunchedEffect(selectedTemplateIndex, selectedMedication) {
+        val baseMsg = when (selectedTemplateIndex) {
+            -1 -> ""
+            0 -> "Hi {NAME}, just checking in to see how you are doing! Let us know if you need any assistance."
+            1 -> "Hello {NAME}! We have some special offers happening this week at Careflux Pharmacy. Stop by to check them out!"
+            else -> templates.getOrNull(selectedTemplateIndex - 2)?.message ?: ""
+        }
+        val currentMed = if (selectedMedication.isNotEmpty()) selectedMedication else "your medication"
+        messageText = baseMsg
+            .replace("{NAME}", customer.name)
+            .replace("{MED}", currentMed)
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Filled.Chat, contentDescription = null, tint = TealPrimary)
+                Text("Send Message to ${customer.name}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Medication Picker (if they want to substitute {MED})
+                if (medOptions.isNotEmpty()) {
+                    Text("Select Medication for Context (Optional)", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = SlateTextMedium)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        modifier = Modifier.horizontalScroll(rememberScrollState())
+                    ) {
+                        medOptions.forEach { med ->
+                            FilterChip(
+                                selected = selectedMedication == med,
+                                onClick = { selectedMedication = if (selectedMedication == med) "" else med },
+                                label = { Text(med, fontSize = 11.sp) }
+                            )
+                        }
+                    }
+                }
+
+                // Choose a template
+                Text("Choose Template", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = SlateTextMedium)
+                
+                // Template list
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    val templateList = listOf(
+                        "General Check-in" to "Hi {NAME}, just checking in to see how you are doing! Let us know if you need any assistance.",
+                        "Special Promo" to "Hello {NAME}! We have some special offers happening this week at Careflux Pharmacy. Stop by to check them out!"
+                    ) + templates.map { it.title to it.message }
+
+                    var showTemplateDropdown by remember { mutableStateOf(false) }
+                    val currentLabel = if (selectedTemplateIndex == -1) "Custom Text (No Template)" else {
+                        if (selectedTemplateIndex < 2) templateList[selectedTemplateIndex].first else templates[selectedTemplateIndex - 2].title
+                    }
+
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedButton(
+                            onClick = { showTemplateDropdown = true },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(currentLabel, maxLines = 1)
+                                Icon(Icons.Filled.ArrowDropDown, contentDescription = null)
+                            }
+                        }
+                        DropdownMenu(
+                            expanded = showTemplateDropdown,
+                            onDismissRequest = { showTemplateDropdown = false },
+                            modifier = Modifier.fillMaxWidth(0.9f)
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("Custom Text (No Template)") },
+                                onClick = {
+                                    selectedTemplateIndex = -1
+                                    messageText = ""
+                                    showTemplateDropdown = false
+                                }
+                            )
+                            templateList.forEachIndexed { idx, pair ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(pair.first, modifier = Modifier.weight(1f))
+                                            if (idx >= 2) {
+                                                IconButton(
+                                                    onClick = {
+                                                        val targetTemplate = templates[idx - 2]
+                                                        viewModel.deleteWhatsAppTemplate(targetTemplate)
+                                                        if (selectedTemplateIndex == idx) {
+                                                            selectedTemplateIndex = -1
+                                                        }
+                                                    },
+                                                    modifier = Modifier.size(24.dp)
+                                                ) {
+                                                    Icon(Icons.Filled.Delete, contentDescription = "Delete Template", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
+                                                }
+                                            }
+                                        }
+                                    },
+                                    onClick = {
+                                        selectedTemplateIndex = idx
+                                        showTemplateDropdown = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Create a template toggle
+                if (!showAddTemplateForm) {
+                    TextButton(
+                        onClick = { showAddTemplateForm = true },
+                        modifier = Modifier.align(Alignment.End)
+                    ) {
+                        Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Create New Template", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                } else {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Create New Template", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = TealTertiary)
+                            Text("Use {NAME} and {MED} as placeholders. Example: Hello {NAME}, your {MED} is ready.", fontSize = 9.sp, lineHeight = 11.sp, color = SlateTextMedium)
+                            OutlinedTextField(
+                                value = newTemplateTitle,
+                                onValueChange = { newTemplateTitle = it },
+                                label = { Text("Template Title", fontSize = 11.sp) },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            OutlinedTextField(
+                                value = newTemplateMessage,
+                                onValueChange = { newTemplateMessage = it },
+                                label = { Text("Template Message", fontSize = 11.sp) },
+                                modifier = Modifier.fillMaxWidth(),
+                                minLines = 2
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.End,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                TextButton(onClick = { showAddTemplateForm = false }) {
+                                    Text("Cancel", fontSize = 12.sp)
+                                }
+                                Button(
+                                    onClick = {
+                                        if (newTemplateTitle.isNotBlank() && newTemplateMessage.isNotBlank()) {
+                                            viewModel.addWhatsAppTemplate(newTemplateTitle, newTemplateMessage)
+                                            newTemplateTitle = ""
+                                            newTemplateMessage = ""
+                                            showAddTemplateForm = false
+                                        }
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = TealPrimary)
+                                ) {
+                                    Text("Save Template", fontSize = 12.sp, color = Color.Black)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Preview & Edit
+                Text("Message Preview & Customization", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = SlateTextMedium)
+                OutlinedTextField(
+                    value = messageText,
+                    onValueChange = { messageText = it },
+                    label = { Text("Message Body") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 4
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    sendWhatsAppTemplate(context, customer, "", "WhatsApp Message", messageText)
+                    onDismiss()
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = TealPrimary)
+            ) {
+                Icon(Icons.Filled.Send, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Send (WhatsApp)")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close")
+            }
+        }
+    )
+}
+
 
 fun sendWhatsAppTemplate(context: Context, customer: Customer, medName: String, templateTitle: String, message: String) {
     val intent = Intent(Intent.ACTION_VIEW).apply {

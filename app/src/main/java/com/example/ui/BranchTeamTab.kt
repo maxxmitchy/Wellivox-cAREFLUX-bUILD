@@ -771,7 +771,7 @@ fun BranchTeamTab(
                                     }
 
                                     // Manager exclusive configuration
-                                    if (currentRole == "Branch Manager" && role != "Branch Manager") {
+                                    if ((currentRole == "Branch Manager" || viewModel.isCurrentUserAdmin()) && role != "Branch Manager") {
                                         IconButton(onClick = { showRoleDialogForStaff = staff }) {
                                             Icon(Icons.Default.Settings, contentDescription = "Edit permissions", tint = TealPrimary, modifier = Modifier.size(18.dp))
                                         }
@@ -782,7 +782,7 @@ fun BranchTeamTab(
                     }
                 } else {
                     // --- SUB-TAB 1: OPERATIONAL TASKS & DELEGATION BOARD ---
-                    val isManager = currentRole == "Branch Manager"
+                    val isManager = currentRole == "Branch Manager" || viewModel.isCurrentUserAdmin()
 
                     item {
                         // Task Summary Metrics Row
