@@ -12,6 +12,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -53,9 +54,34 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import java.util.concurrent.TimeUnit
 import com.example.work.CloudSyncWorker
 
+data class IntentTargetDestination(
+    val tab: String?,
+    val subTab: String?,
+    val taskId: Long?,
+    val customerQuery: String?
+)
+
 class MainActivity : ComponentActivity() {
     private val viewModel: PharmacyViewModel by viewModels {
         PharmacyViewModel.Factory(application)
+    }
+
+    private val intentTargetState = mutableStateOf<IntentTargetDestination?>(null)
+
+    private fun updateIntentTarget(intent: android.content.Intent?) {
+        if (intent == null) return
+        val tab = intent.getStringExtra("OPEN_TAB")
+        val subTab = intent.getStringExtra("TARGET_SUB_TAB")
+        val taskId = intent.getStringExtra("TARGET_TASK_ID")?.toLongOrNull()
+            ?: intent.getLongExtra("TARGET_TASK_ID", -1L).takeIf { it != -1L }
+        val customerQuery = intent.getStringExtra("TARGET_CUSTOMER_NAME")
+            ?: intent.getStringExtra("TARGET_CUSTOMER_ID")
+            ?: intent.getStringExtra("TARGET_CUSTOMER")
+            ?: intent.getStringExtra("TARGET_SEARCH_QUERY")
+
+        if (!tab.isNullOrBlank() || !subTab.isNullOrBlank() || taskId != null || !customerQuery.isNullOrBlank()) {
+            intentTargetState.value = IntentTargetDestination(tab, subTab, taskId, customerQuery)
+        }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -102,10 +128,25 @@ class MainActivity : ComponentActivity() {
         }
 
         val initialTab = intent.getStringExtra("OPEN_TAB") ?: "inventory"
+        val initialSubTab = intent.getStringExtra("TARGET_SUB_TAB")
+        val initialTaskId = intent.getStringExtra("TARGET_TASK_ID")?.toLongOrNull()
+            ?: intent.getLongExtra("TARGET_TASK_ID", -1L).takeIf { it != -1L }
+        val initialCustomerQuery = intent.getStringExtra("TARGET_CUSTOMER_NAME")
+            ?: intent.getStringExtra("TARGET_CUSTOMER_ID")
+            ?: intent.getStringExtra("TARGET_CUSTOMER")
+            ?: intent.getStringExtra("TARGET_SEARCH_QUERY")
         
+        updateIntentTarget(intent)
+
         enableEdgeToEdge()
         setContent {
             MyApplicationTheme {
+                val activeTarget by intentTargetState
+                val currentTab = activeTarget?.tab ?: initialTab
+                val currentSubTab = activeTarget?.subTab ?: initialSubTab
+                val currentTaskId = activeTarget?.taskId ?: initialTaskId
+                val currentCustomerQuery = activeTarget?.customerQuery ?: initialCustomerQuery
+
                 var currentUser by remember {
                     mutableStateOf(
                         try {
@@ -187,7 +228,10 @@ class MainActivity : ComponentActivity() {
                         if (user != null && (user.isEmailVerified || com.example.ui.isGoogleProvider(user))) {
                             PharmacyRootScreen(
                                 viewModel = viewModel,
-                                initialTab = initialTab,
+                                initialTab = currentTab,
+                                initialSubTab = currentSubTab,
+                                initialTaskId = currentTaskId,
+                                initialCustomerQuery = currentCustomerQuery,
                                 currentUser = user,
                                 onSignOut = {
                                     viewModel.clearAllData()
@@ -209,6 +253,12 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        updateIntentTarget(intent)
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -216,6 +266,9 @@ class MainActivity : ComponentActivity() {
 fun PharmacyRootScreen(
     viewModel: PharmacyViewModel,
     initialTab: String = "inventory",
+    initialSubTab: String? = null,
+    initialTaskId: Long? = null,
+    initialCustomerQuery: String? = null,
     currentUser: com.google.firebase.auth.FirebaseUser? = null,
     onSignOut: () -> Unit = {},
     modifier: Modifier = Modifier
@@ -232,8 +285,29 @@ fun PharmacyRootScreen(
     val isOnline by viewModel.isOnline.collectAsStateWithLifecycle()
     val syncState by viewModel.syncState.collectAsStateWithLifecycle()
     val lastSyncedTime by viewModel.lastSyncedTime.collectAsStateWithLifecycle()
+    val csvImportSessionState by viewModel.csvImportSession.collectAsStateWithLifecycle()
 
-    var activeTab by remember { mutableStateOf(initialTab) } // inventory, volumes, customers, ai_tasks, receipts
+    val mappedInitialTab = if (initialTab == "ai_tasks" || initialTab == "branch_team") "branch_team" else initialTab
+    var activeTab by remember { mutableStateOf(mappedInitialTab) } // inventory, volumes, customers, branch_team, receipts
+    var activeSubTab by remember { mutableStateOf<String?>(initialSubTab) }
+    var highlightTaskId by remember { mutableStateOf<Long?>(initialTaskId) }
+    var targetCustomerQuery by remember { mutableStateOf<String?>(initialCustomerQuery) }
+
+    LaunchedEffect(initialTab, initialSubTab, initialTaskId, initialCustomerQuery) {
+        if (!initialTab.isNullOrBlank()) {
+            activeTab = if (initialTab == "ai_tasks" || initialTab == "branch_team") "branch_team" else initialTab
+        }
+        if (!initialSubTab.isNullOrBlank()) {
+            activeSubTab = initialSubTab
+        }
+        if (initialTaskId != null && initialTaskId > 0L) {
+            highlightTaskId = initialTaskId
+            viewModel.setHighlightTaskId(initialTaskId)
+        }
+        if (!initialCustomerQuery.isNullOrBlank()) {
+            targetCustomerQuery = initialCustomerQuery
+        }
+    }
 
     // Collect new Customer datasets
     val customers by viewModel.customers.collectAsStateWithLifecycle()
@@ -463,37 +537,7 @@ fun PharmacyRootScreen(
                     )
                 }
 
-                val branchIdVal by viewModel.currentPharmacistBranchId.collectAsStateWithLifecycle()
-                androidx.compose.material3.NavigationDrawerItem(
-                    label = { 
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(
-                                text = if (branchIdVal.isNullOrBlank()) "Branch Setup & Team" else "My Branch Team",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                            if (branchIdVal.isNullOrBlank()) {
-                                Box(
-                                    modifier = Modifier
-                                        .background(TealPrimary.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
-                                        .padding(horizontal = 6.dp, vertical = 2.dp)
-                                ) {
-                                    Text("Setup", color = TealPrimary, fontSize = 9.sp, fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        }
-                    },
-                    selected = activeTab == "branch_team",
-                    onClick = {
-                        activeTab = "branch_team"
-                        scope.launch { drawerState.close() }
-                    },
-                    icon = { Icon(Icons.Filled.Group, contentDescription = "Branch Team", modifier = Modifier.size(18.dp)) },
-                    modifier = Modifier.padding(androidx.compose.material3.NavigationDrawerItemDefaults.ItemPadding)
-                )
+
 
                 if (isUserAdmin) {
                     androidx.compose.material3.NavigationDrawerItem(
@@ -582,7 +626,6 @@ fun PharmacyRootScreen(
         Column(
             modifier = modifier
                 .fillMaxSize()
-                .padding(horizontal = 8.dp)
         ) {
             // --- Custom App Header ---
             HeaderSection(
@@ -595,7 +638,7 @@ fun PharmacyRootScreen(
                     showExportDialog = true
                 },
                 onReceiptsClick = {
-                    activeTab = "receipts"
+                    activeTab = "analytics"
                 },
                 onCartClick = {
                     activeTab = "cart"
@@ -611,11 +654,10 @@ fun PharmacyRootScreen(
         // --- Settings Dialog ---
         if (showSettingsDialog) {
             var tempApiKey by remember { mutableStateOf(viewModel.getApiKey()) }
-            var tempTermiiApiKey by remember { mutableStateOf(viewModel.getTermiiApiKey()) }
-            var tempTermiiSenderId by remember { mutableStateOf(viewModel.getTermiiSenderId()) }
             var tempPharmacyName by remember { mutableStateOf(viewModel.getPharmacyName()) }
             var tempPharmacyLga by remember { mutableStateOf(viewModel.getPharmacyLga()) }
             var tempPharmacyState by remember { mutableStateOf(viewModel.getPharmacyState()) }
+            var tempNotificationsEnabled by remember { mutableStateOf(viewModel.getNotificationsEnabled()) }
             var showClearDbDialog by remember { mutableStateOf(false) }
 
             if (showClearDbDialog) {
@@ -713,29 +755,10 @@ fun PharmacyRootScreen(
                                 )
                                 
                                 Spacer(modifier = Modifier.height(16.dp))
-                                Text("Termii SMS API Key", style = MaterialTheme.typography.labelMedium)
-                                Spacer(modifier = Modifier.height(4.dp))
-                                OutlinedTextField(
-                                    value = tempTermiiApiKey,
-                                    onValueChange = { tempTermiiApiKey = it },
-                                    placeholder = { Text("At_...") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    singleLine = true
-                                )
-                                
-                                Spacer(modifier = Modifier.height(12.dp))
-                                Text("Termii Registered Sender ID", style = MaterialTheme.typography.labelMedium)
-                                Spacer(modifier = Modifier.height(4.dp))
-                                OutlinedTextField(
-                                    value = tempTermiiSenderId,
-                                    onValueChange = { tempTermiiSenderId = it },
-                                    placeholder = { Text("e.g. N-Alert") },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    singleLine = true
-                                )
+                                Text("Twilio Messaging Engine", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    "Requires a verified Termii.com sender; unregistered values will fail delivery.",
+                                    "Multi-Channel WhatsApp & SMS messaging is active and managed globally with fallback support and automated compliance rate limiting.",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
@@ -777,7 +800,7 @@ fun PharmacyRootScreen(
                                             
                                             if (status == "PENDING") {
                                                 Text(
-                                                    text = "Your request for a personal Gemini & Termii suite is submitted and pending review by administrative compliance officers.",
+                                                    text = "Your request for a personal Gemini API suite is submitted and pending review by administrative compliance officers.",
                                                     style = MaterialTheme.typography.bodySmall,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                                 )
@@ -806,6 +829,51 @@ fun PharmacyRootScreen(
                                             }
                                         }
                                     }
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(16.dp))
+                            HorizontalDivider()
+                            Spacer(modifier = Modifier.height(14.dp))
+
+                            Text("Notification Preferences", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            Card(
+                                colors = CardDefaults.cardColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                                ),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            "System & Push Notifications",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                        Text(
+                                            "Alerts for refills, expiry, and 3-6 PM restock cutoffs",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Switch(
+                                        checked = tempNotificationsEnabled,
+                                        onCheckedChange = { tempNotificationsEnabled = it },
+                                        colors = SwitchDefaults.colors(
+                                            checkedThumbColor = Color.White,
+                                            checkedTrackColor = TealPrimary
+                                        )
+                                    )
                                 }
                             }
 
@@ -838,11 +906,10 @@ fun PharmacyRootScreen(
                     confirmButton = {
                         TextButton(onClick = {
                             viewModel.setApiKey(tempApiKey)
-                            viewModel.setTermiiApiKey(tempTermiiApiKey)
-                            viewModel.setTermiiSenderId(tempTermiiSenderId)
                             viewModel.setPharmacyName(tempPharmacyName)
                             viewModel.setPharmacyLga(tempPharmacyLga)
                             viewModel.setPharmacyState(tempPharmacyState)
+                            viewModel.setNotificationsEnabled(tempNotificationsEnabled)
                             showSettingsDialog = false
                         }) {
                             Text("Save")
@@ -900,6 +967,14 @@ fun PharmacyRootScreen(
                         Text("Cancel")
                     }
                 }
+            )
+        }
+
+        csvImportSessionState?.let { session ->
+            CsvImportDiscrepancyDialog(
+                sessionState = session,
+                onResolveAction = { action -> viewModel.resolveCsvDiscrepancy(action) },
+                onDismiss = { viewModel.dismissCsvImportSession() }
             )
         }
 
@@ -1127,218 +1202,254 @@ fun PharmacyRootScreen(
         // --- Dashboard / Stats Section (Collapsible) ---
         val isCoreTab = activeTab == "inventory"
         if (isCoreTab) {
-            var isDashboardExpanded by remember { mutableStateOf(false) }
-            val pendingRefills = remember(customerMeds) {
-                customerMeds.count { it.nextRefillDate < System.currentTimeMillis() + (7L * 24 * 60 * 60 * 1000) }
-            }
-
-            // Compact/Expandable Dashboard Toggle Bar
-            CompactDashboardStatsBar(
-                medsCount = inventory.size,
-                lowStockCount = lowStockMeds.size,
-                todayVolume = volumes.firstOrNull()?.volume ?: 0,
-                pendingAlerts = pendingRefills,
-                isExpanded = isDashboardExpanded,
-                onToggleExpand = { isDashboardExpanded = !isDashboardExpanded }
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // --- Priority Follow-up & Alerts Inbox (Sleek Collapsible Accordion) ---
-            val pendingAlertsList = remember(alerts) {
-                alerts.filter { it.status == "Pending" }.sortedBy { it.timestamp }
-            }
-            PriorityFollowUpInbox(
-                pendingAlerts = pendingAlertsList,
-                onCompleteAlert = { alert ->
-                    viewModel.activePostDispatchConfirmAlert.value = alert
-                },
-                onDeleteAlert = { alert ->
-                    viewModel.deleteCustomerAlert(alert)
-                }
-            )
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Expandable full widgets with sleek animated slide/fade transitions
-            androidx.compose.animation.AnimatedVisibility(
-                visible = isDashboardExpanded,
-                enter = androidx.compose.animation.expandVertically(
-                    animationSpec = androidx.compose.animation.core.tween(300)
-                ) + androidx.compose.animation.fadeIn(),
-                exit = androidx.compose.animation.shrinkVertically(
-                    animationSpec = androidx.compose.animation.core.tween(250)
-                ) + androidx.compose.animation.fadeOut()
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp)
             ) {
-                Column {
-                    if (lowStockMeds.isNotEmpty()) {
-                        LowStockBanner(
-                            lowStockCount = lowStockMeds.size,
-                            onClick = { isDashboardExpanded = false }
-                        )
-                        Spacer(modifier = Modifier.height(10.dp))
-                    }
+                var isDashboardExpanded by remember { mutableStateOf(false) }
+                val pendingRefills = remember(customerMeds) {
+                    customerMeds.count { it.nextRefillDate < System.currentTimeMillis() + (7L * 24 * 60 * 60 * 1000) }
+                }
 
-                    StatsSection(
-                        medsCount = inventory.size,
-                        lowStockCount = lowStockMeds.size,
-                        todayVolume = volumes.firstOrNull()?.volume ?: 0,
-                        pendingAlerts = pendingRefills,
-                        onLowStockClick = { activeTab = "procurement" }
+                // Compact/Expandable Dashboard Toggle Bar
+                CompactDashboardStatsBar(
+                    medsCount = inventory.size,
+                    lowStockCount = lowStockMeds.size,
+                    todayVolume = volumes.firstOrNull()?.volume ?: 0,
+                    pendingAlerts = pendingRefills,
+                    isExpanded = isDashboardExpanded,
+                    onToggleExpand = { isDashboardExpanded = !isDashboardExpanded }
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // --- Priority Follow-up & Alerts Inbox (Sleek Collapsible Accordion) ---
+                val isPriorityRefillWindow = com.example.util.RefillNotificationSchedule.isPriorityRefillWindow()
+                val pendingAlertsList = remember(alerts, isPriorityRefillWindow) {
+                    alerts.filter { it.status == "Pending" }.sortedWith(
+                        compareByDescending<com.example.data.CustomerAlert> { alert ->
+                            val isRefill = alert.alertType.contains("Refill", ignoreCase = true) || alert.medicationName.contains("Refill", ignoreCase = true)
+                            if (isPriorityRefillWindow && isRefill) 100 else if (isRefill) 50 else 0
+                        }.thenBy { it.timestamp }
                     )
-                    Spacer(modifier = Modifier.height(12.dp))
+                }
+                PriorityFollowUpInbox(
+                    pendingAlerts = pendingAlertsList,
+                    onCompleteAlert = { alert ->
+                        viewModel.activePostDispatchConfirmAlert.value = alert
+                    },
+                    onDeleteAlert = { alert ->
+                        viewModel.deleteCustomerAlert(alert)
+                    },
+                    onScanRadar = {
+                        viewModel.generatePatientFirstAutomaticAlerts()
+                    },
+                    onNavigateToCustomer = { customerName ->
+                        activeTab = "customers"
+                        targetCustomerQuery = customerName
+                    }
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Expandable full widgets with sleek animated slide/fade transitions
+                androidx.compose.animation.AnimatedVisibility(
+                    visible = isDashboardExpanded,
+                    enter = androidx.compose.animation.expandVertically(
+                        animationSpec = androidx.compose.animation.core.tween(300)
+                    ) + androidx.compose.animation.fadeIn(),
+                    exit = androidx.compose.animation.shrinkVertically(
+                        animationSpec = androidx.compose.animation.core.tween(250)
+                    ) + androidx.compose.animation.fadeOut()
+                ) {
+                    Column {
+                        if (lowStockMeds.isNotEmpty()) {
+                            LowStockBanner(
+                                lowStockCount = lowStockMeds.size,
+                                onClick = { isDashboardExpanded = false }
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                        }
+
+                        StatsSection(
+                            medsCount = inventory.size,
+                            lowStockCount = lowStockMeds.size,
+                            todayVolume = volumes.firstOrNull()?.volume ?: 0,
+                            pendingAlerts = pendingRefills,
+                            onLowStockClick = { activeTab = "procurement" }
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
                 }
             }
         }
 
-        // --- Dynamic Content Zone ---
+        // --- Dynamic Content Zone with Translucent Bottom Nav Overlay ---
         Box(
             modifier = Modifier
                 .weight(1f)
                 .fillMaxWidth()
         ) {
-            when (activeTab) {
-                "inventory" -> InventoryTabContent(
-                    inventory = inventory,
-                    isLoading = isInventoryLoading,
-                    onMedSelect = { selectedMedForEdit = it },
-                    onAddNewClick = { showAddMedDialog = true },
-                    onDeleteClick = { item, reason -> viewModel.deleteInventory(item, reason) },
-                    onIncrementClick = { item -> 
-                        viewModel.updateStockLevel(item, item.stockQuantity + 10)
-                        Toast.makeText(context, "Added 10 units to ${item.name}", Toast.LENGTH_SHORT).show()
-                    },
-                    onAddToCart = { item ->
-                        if (item.stockQuantity <= 0) {
-                            Toast.makeText(context, "Cannot add to cart: ${item.name} is out of stock!", Toast.LENGTH_LONG).show()
-                        } else if (item.price <= 0.0) {
-                            Toast.makeText(context, "Cannot add to cart: ${item.name} has no price configured!", Toast.LENGTH_LONG).show()
-                        } else {
-                            selectedMedForCart = item
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(bottom = 60.dp)
+                    .padding(horizontal = 8.dp)
+            ) {
+                when (activeTab) {
+                    "inventory" -> InventoryTabContent(
+                        inventory = inventory,
+                        isLoading = isInventoryLoading,
+                        onMedSelect = { selectedMedForEdit = it },
+                        onAddNewClick = { showAddMedDialog = true },
+                        onDeleteClick = { item, reason -> viewModel.deleteInventory(item, reason) },
+                        onIncrementClick = { item -> 
+                            viewModel.updateStockLevel(item, item.stockQuantity + 10)
+                            Toast.makeText(context, "Added 10 units to ${item.name}", Toast.LENGTH_SHORT).show()
+                        },
+                        onAddToCart = { item ->
+                            if (item.stockQuantity <= 0) {
+                                Toast.makeText(context, "Cannot add to cart: ${item.name} is out of stock!", Toast.LENGTH_LONG).show()
+                            } else if (item.price <= 0.0) {
+                                Toast.makeText(context, "Cannot add to cart: ${item.name} has no price configured!", Toast.LENGTH_LONG).show()
+                            } else {
+                                selectedMedForCart = item
+                            }
+                        },
+                        onInitializeWorkspaceClick = {
+                            viewModel.initializeBranchWorkspaceData { success, msg ->
+                                Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                            }
                         }
-                    },
-                    onInitializeWorkspaceClick = {
-                        viewModel.initializeBranchWorkspaceData { success, msg ->
-                            Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
-                        }
-                    }
-                )
-                "volumes" -> VolumesTabContent(
-                    volumes = volumes,
-                    onLogVolumeClick = { showLogVolumeDialog = true },
-                    onDeleteVolume = { viewModel.deletePrescriptionVolume(it) }
-                )
-                "customers" -> CustomersTabContent(
-                    customers = customers,
-                    customerMeds = customerMeds,
-                    inventoryMeds = inventory,
-                    clinicalInterventions = clinicalInterventions,
-                    onAddNewCustomerClick = { showAddCustomerDialog = true },
-                    onEditCustomerClick = { selectedCustForEdit = it },
-                    onDeleteCustomer = { viewModel.deleteCustomer(it) },
-                    onAddPrescriptionClick = { selectedCustForMed = it },
-                    onDeletePrescription = { viewModel.deleteCustomerMedication(it) },
-                    onAddInterventionClick = { selectedCustForIntervention = it },
-                    viewModel = viewModel,
-                    context = context
-                )
-                "procurement" -> com.example.ui.ProcurementTabContent(
-                    inventory = inventory,
-                    viewModel = viewModel
-                )
-                "ai_tasks" -> com.example.ui.CarefluxAITab(
-                    inventory = inventory,
-                    customers = customers,
-                    meds = customerMeds,
-                    volumes = volumes,
-                    operationTasks = operationTasks,
-                    viewModel = viewModel
-                )
-                "cart" -> CartTabContent(
-                    cartItems = cartItems,
-                    deliveryFeeString = deliveryFeeString,
-                    customers = customers,
-                    onDeliveryFeeChange = { viewModel.setDeliveryFee(it) },
-                    onRemoveItem = { viewModel.removeFromCart(it) },
-                    onNeedRefillChange = { id, need -> viewModel.updateCartItemNeedsRefill(id, need) },
-                    onCheckout = { customer, total, fileName, isInvoice, status, overrideReason, prescribingDoctor, prescriptionRef ->
-                        if (fileName.isNotEmpty()) {
-                            viewModel.addReceipt(customer?.name ?: "Guest", total, fileName, isInvoice, status)
-                        }
-                        if (customer != null) {
-                            // Assign everything to customer!
-                            for (item in cartItems) {
-                                if (item.needsRefill) {
+                    )
+                    "volumes" -> VolumesTabContent(
+                        volumes = volumes,
+                        onLogVolumeClick = { showLogVolumeDialog = true },
+                        onDeleteVolume = { viewModel.deletePrescriptionVolume(it) }
+                    )
+                    "customers" -> CustomersTabContent(
+                        customers = customers,
+                        customerMeds = customerMeds,
+                        inventoryMeds = inventory,
+                        clinicalInterventions = clinicalInterventions,
+                        targetCustomerQuery = targetCustomerQuery,
+                        onAddNewCustomerClick = { showAddCustomerDialog = true },
+                        onEditCustomerClick = { selectedCustForEdit = it },
+                        onDeleteCustomer = { viewModel.deleteCustomer(it) },
+                        onAddPrescriptionClick = { selectedCustForMed = it },
+                        onDeletePrescription = { viewModel.deleteCustomerMedication(it) },
+                        onAddInterventionClick = { selectedCustForIntervention = it },
+                        viewModel = viewModel,
+                        context = context
+                    )
+                    "procurement" -> com.example.ui.ProcurementTabContent(
+                        inventory = inventory,
+                        viewModel = viewModel
+                    )
+                    "ai_tasks", "branch_team" -> com.example.ui.BranchTeamTab(
+                        viewModel = viewModel,
+                        initialSubTab = activeSubTab,
+                        highlightTaskId = highlightTaskId
+                    )
+                    "cart" -> CartTabContent(
+                        cartItems = cartItems,
+                        deliveryFeeString = deliveryFeeString,
+                        customers = customers,
+                        onDeliveryFeeChange = { viewModel.setDeliveryFee(it) },
+                        onRemoveItem = { viewModel.removeFromCart(it) },
+                        onNeedRefillChange = { id, need -> viewModel.updateCartItemNeedsRefill(id, need) },
+                        onCheckout = { customer, total, fileName, isInvoice, status, overrideReason, prescribingDoctor, prescriptionRef ->
+                            if (fileName.isNotEmpty()) {
+                                viewModel.addReceipt(customer?.name ?: "Guest", total, fileName, isInvoice, status)
+                            }
+                            if (customer != null) {
+                                // Assign everything to customer treatment history on finalize
+                                val nowMs = System.currentTimeMillis()
+                                for (item in cartItems) {
+                                    val rawName = item.inventoryItem.name
+                                    val dosage = item.inventoryItem.dosage.trim()
+                                    val formattedName = if (dosage.isNotBlank() && !dosage.equals("N/A", ignoreCase = true) && !rawName.contains(dosage, ignoreCase = true)) {
+                                        "$rawName $dosage"
+                                    } else {
+                                        rawName
+                                    }
+                                    val cycleDays = if (item.needsRefill) 30 else 0
+                                    val nextRefill = if (item.needsRefill) nowMs + (30L * 24 * 60 * 60 * 1000) else nowMs
                                     viewModel.addCustomerMedication(
                                         customerId = customer.id,
                                         invItemId = item.inventoryItem.id,
-                                        medName = item.inventoryItem.name,
-                                        customDosage = item.inventoryItem.dosage + " (Qty: ${item.quantity})",
+                                        medName = formattedName,
+                                        customDosage = item.inventoryItem.dosage.ifBlank { "Standard Dosage" } + " (Qty: ${item.quantity})",
                                         cost = item.inventoryItem.price * item.quantity,
-                                        cycleDays = 0,
-                                        nextRefill = System.currentTimeMillis()
+                                        cycleDays = cycleDays,
+                                        nextRefill = nextRefill,
+                                        dateAdded = nowMs
                                     )
                                 }
-                            }
-                            Toast.makeText(context, "Saved items to ${customer.name}", Toast.LENGTH_SHORT).show()
-                            if (customer.phoneNumber.isNotEmpty()) {
-                                val itemsSummary = cartItems.joinToString(", ") { "${it.inventoryItem.name} (x${it.quantity})" }
-                                scope.launch {
-                                    val success = viewModel.sendTermiiDispenseConfirmationSms(
-                                        patientName = customer.name,
-                                        phone = customer.phoneNumber,
-                                        itemsSummary = itemsSummary,
-                                        amount = total
-                                    )
-                                    if (success) {
-                                        Toast.makeText(context, "Dispense Receipt SMS dispatched via Termii!", Toast.LENGTH_LONG).show()
-                                    } else {
-                                        android.util.Log.e("DispenseNotice", "Termii receipt SMS dispatch failed or API not configured.")
+                                Toast.makeText(context, "Saved items to ${customer.name}'s treatment history", Toast.LENGTH_SHORT).show()
+                                if (customer.phoneNumber.isNotEmpty()) {
+                                    val itemsSummary = cartItems.joinToString(", ") { "${it.inventoryItem.name} (x${it.quantity})" }
+                                    scope.launch {
+                                        val result = viewModel.sendTwilioDispenseConfirmation(
+                                            patientName = customer.name,
+                                            phone = customer.phoneNumber,
+                                            itemsSummary = itemsSummary,
+                                            amount = total
+                                        )
+                                        when (result) {
+                                            is com.example.util.TwilioMessagingManager.DispatchResult.Success -> {
+                                                Toast.makeText(context, "Dispense Receipt sent via ${result.channel}!", Toast.LENGTH_LONG).show()
+                                            }
+                                            is com.example.util.TwilioMessagingManager.DispatchResult.Blocked -> {
+                                                android.util.Log.w("DispenseNotice", "Receipt blocked: ${result.reason}")
+                                            }
+                                            is com.example.util.TwilioMessagingManager.DispatchResult.Failed -> {
+                                                android.util.Log.e("DispenseNotice", "Twilio receipt dispatch failed: ${result.error}")
+                                            }
+                                        }
                                     }
                                 }
                             }
+                            // Update stock and stats via unified recordMedicationSale
+                            for (item in cartItems) {
+                                viewModel.recordMedicationSale(item, customer, overrideReason, prescribingDoctor, prescriptionRef)
+                            }
+                            viewModel.clearCart()
+                            activeTab = "inventory"
+                        },
+                        onClearCart = { viewModel.clearCartAndRestoreStock() },
+                        context = context,
+                        viewModel = viewModel
+                    )
+                    "receipts", "volumes" -> com.example.ui.AnalyticsTab(
+                        viewModel = viewModel,
+                        isUserAdmin = isUserAdmin
+                    )
+                    "analytics" -> com.example.ui.AnalyticsTab(viewModel = viewModel, isUserAdmin = isUserAdmin)
+                    "customer_engagement" -> com.example.ui.CustomerEngagementTab(viewModel = viewModel)
+                    "ai_content_engine" -> {
+                        val aiViewModel: com.example.ui.AIContentEngineViewModel = androidx.lifecycle.viewmodel.compose.viewModel {
+                            com.example.ui.AIContentEngineViewModel(viewModel.repository)
                         }
-                        // Update stock and stats via unified recordMedicationSale
-                        for (item in cartItems) {
-                            viewModel.recordMedicationSale(item, customer, overrideReason, prescribingDoctor, prescriptionRef)
-                        }
-                        viewModel.clearCart()
-                        activeTab = "inventory"
-                    },
-                    onClearCart = { viewModel.clearCartAndRestoreStock() },
-                    context = context,
-                    viewModel = viewModel
-                )
-                "receipts" -> com.example.ui.ReceiptsTab(
-                    receipts = receipts,
-                    context = context,
-                    onDeleteReceipt = { viewModel.deleteReceipt(it) },
-                    onUpdateReceiptStatus = { receipt, newStatus -> viewModel.updateReceipt(receipt.copy(paymentStatus = newStatus)) }
-                )
-                "analytics" -> com.example.ui.AnalyticsTab(viewModel = viewModel, isUserAdmin = isUserAdmin)
-                "customer_engagement" -> com.example.ui.CustomerEngagementTab(viewModel = viewModel)
-                "ai_content_engine" -> {
-                    val aiViewModel: com.example.ui.AIContentEngineViewModel = androidx.lifecycle.viewmodel.compose.viewModel {
-                        com.example.ui.AIContentEngineViewModel(viewModel.repository)
+                        com.example.ui.AIContentEngineTab(viewModel = aiViewModel)
                     }
-                    com.example.ui.AIContentEngineTab(viewModel = aiViewModel)
+                    "pharmacy_triage" -> com.example.ui.PharmacyTriageTabContent(viewModel = viewModel)
+                    "admin_dashboard" -> com.example.ui.AdminDashboardScreen(viewModel = viewModel)
+                    "rescue_marketplace" -> com.example.ui.RescueMarketplaceScreen(viewModel = viewModel)
                 }
-                "pharmacy_triage" -> com.example.ui.PharmacyTriageTabContent(viewModel = viewModel)
-                "admin_dashboard" -> com.example.ui.AdminDashboardScreen(viewModel = viewModel)
-                "rescue_marketplace" -> com.example.ui.RescueMarketplaceScreen(viewModel = viewModel)
-                "branch_team" -> com.example.ui.BranchTeamTab(viewModel = viewModel)
+            }
+
+            // --- Bottom Navigation Bar Overlay ---
+            Box(
+                modifier = Modifier.align(Alignment.BottomCenter)
+            ) {
+                TabSelector(
+                    activeTab = activeTab,
+                    onTabSelected = { activeTab = it },
+                    cartCount = cartItems.sumOf { it.quantity },
+                    isCarefluxAiEnabled = isCarefluxAiEnabled
+                )
             }
         }
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // --- Tab Selection Pills (Satisfying single-view tabless layout) ---
-        TabSelector(
-            activeTab = activeTab,
-            onTabSelected = { activeTab = it },
-            cartCount = cartItems.sumOf { it.quantity },
-            isCarefluxAiEnabled = isCarefluxAiEnabled
-        )
-        
-        Spacer(modifier = Modifier.height(16.dp))
     }
     } // End of ModalNavigationDrawer
 
@@ -1578,16 +1689,16 @@ fun PharmacyRootScreen(
 // ==========================================
 @Composable
 fun HeaderSection(
-    cartCount: Int,
-    isAdmin: Boolean,
-    isOnline: Boolean,
-    syncState: com.example.ui.PharmacyViewModel.SyncState,
-    onMenuClick: () -> Unit,
-    onExportClick: () -> Unit,
-    onReceiptsClick: () -> Unit,
-    onCartClick: () -> Unit,
-    onSettingsClick: () -> Unit,
-    onSyncStatusClick: () -> Unit
+    cartCount: Int = 0,
+    isAdmin: Boolean = true,
+    isOnline: Boolean = true,
+    syncState: com.example.ui.PharmacyViewModel.SyncState = com.example.ui.PharmacyViewModel.SyncState.Synced,
+    onMenuClick: () -> Unit = {},
+    onExportClick: () -> Unit = {},
+    onReceiptsClick: () -> Unit = {},
+    onCartClick: () -> Unit = {},
+    onSettingsClick: () -> Unit = {},
+    onSyncStatusClick: () -> Unit = {}
 ) {
     val todayDate = remember {
         val sdf = SimpleDateFormat("EEEE, MMMM dd, yyyy", Locale.getDefault())
@@ -1599,7 +1710,7 @@ fun HeaderSection(
         horizontalArrangement = Arrangement.SpaceBetween,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 14.dp)
+            .padding(horizontal = 8.dp, vertical = 14.dp)
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -1616,12 +1727,6 @@ fun HeaderSection(
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onBackground,
                     letterSpacing = (-0.5).sp
-                )
-                Text(
-                    text = "Central Pharmacy Unit",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = SlateTextMedium,
-                    fontWeight = FontWeight.SemiBold
                 )
 
                 // Tiny elegant sync status indicator
@@ -1711,22 +1816,6 @@ fun HeaderSection(
                         )
                     }
                 }
-            }
-
-            Box(
-                modifier = Modifier
-                    .size(38.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                    .clickable { onReceiptsClick() },
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Receipt,
-                    contentDescription = "Receipts",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(20.dp)
-                )
             }
 
             Box(
@@ -1987,62 +2076,53 @@ fun TabSelector(
     cartCount: Int = 0,
     isCarefluxAiEnabled: Boolean = true
 ) {
-    Card(
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = TealSurface
-        ),
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(54.dp)
-            .border(
-                width = 1.dp,
-                color = SlateBorderLight,
-                shape = RoundedCornerShape(16.dp)
-            )
+    val isDark = com.example.ui.theme.AppThemeManager.isDark
+    Surface(
+        color = if (isDark) Color(0xFF0F172A).copy(alpha = 0.92f) else Color.White.copy(alpha = 0.95f),
+        shadowElevation = 0.dp,
+        modifier = Modifier.fillMaxWidth()
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(4.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        Column(
+            modifier = Modifier.fillMaxWidth()
         ) {
-            TabButton(
-                title = "Stock",
-                icon = Icons.Filled.Inventory,
-                isActive = activeTab == "inventory",
-                onClick = { onTabSelected("inventory") },
-                modifier = Modifier
-                    .weight(1f)
-                    .testTag("tab_inventory")
+            HorizontalDivider(
+                color = if (isDark) SlateBorderLight.copy(alpha = 0.3f) else Color(0xFFE2E8F0),
+                thickness = 0.5.dp
             )
-            TabButton(
-                title = "Rx",
-                icon = Icons.Filled.BarChart,
-                isActive = activeTab == "volumes",
-                onClick = { onTabSelected("volumes") },
+            Row(
                 modifier = Modifier
-                    .weight(1f)
-                    .testTag("tab_volumes")
-            )
-            TabButton(
-                title = "Customers",
-                icon = Icons.Filled.PeopleAlt,
-                isActive = activeTab == "customers",
-                onClick = { onTabSelected("customers") },
-                modifier = Modifier
-                    .weight(1f)
-                    .testTag("tab_customers")
-            )
-            if (isCarefluxAiEnabled) {
+                    .fillMaxWidth()
+                    .height(52.dp)
+                    .padding(horizontal = 0.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.SpaceAround,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
                 TabButton(
-                    title = "AI Tasks",
-                    icon = Icons.Filled.Assistant,
-                    isActive = activeTab == "ai_tasks",
-                    onClick = { onTabSelected("ai_tasks") },
+                    title = "Inventory",
+                    icon = Icons.Filled.Inventory,
+                    isActive = activeTab == "inventory",
+                    onClick = { onTabSelected("inventory") },
                     modifier = Modifier
                         .weight(1f)
-                        .testTag("tab_ai")
+                        .testTag("tab_inventory")
+                )
+                TabButton(
+                    title = "Branch & Team",
+                    icon = Icons.Filled.Group,
+                    isActive = activeTab == "branch_team",
+                    onClick = { onTabSelected("branch_team") },
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("tab_branch_team")
+                )
+                TabButton(
+                    title = "Customers",
+                    icon = Icons.Filled.PeopleAlt,
+                    isActive = activeTab == "customers",
+                    onClick = { onTabSelected("customers") },
+                    modifier = Modifier
+                        .weight(1f)
+                        .testTag("tab_customers")
                 )
             }
         }
@@ -2058,42 +2138,33 @@ fun TabButton(
     modifier: Modifier = Modifier,
     badgeCount: Int = 0
 ) {
-    val containerColor = if (isActive) TealSecondary else Color.Transparent
-    val contentColor = if (isActive) TealTertiary else SlateTextMedium
+    val isDark = com.example.ui.theme.AppThemeManager.isDark
+    val activeContentColor = if (isActive) MaterialTheme.colorScheme.primary else if (isDark) SlateTextMedium.copy(alpha = 0.75f) else Color(0xFF64748B)
 
-    Box(
+    Column(
         modifier = modifier
             .fillMaxHeight()
-            .clip(RoundedCornerShape(12.dp))
-            .background(containerColor)
-            .clickable { onClick() },
-        contentAlignment = Alignment.Center
+            .clip(RoundedCornerShape(6.dp))
+            .clickable { onClick() }
+            .padding(vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center,
-            modifier = Modifier.padding(horizontal = 4.dp)
+        Box(
+            contentAlignment = Alignment.Center
         ) {
             Icon(
                 imageVector = icon,
-                contentDescription = null,
-                tint = contentColor,
-                modifier = Modifier.size(16.dp)
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-                text = title,
-                style = MaterialTheme.typography.labelLarge,
-                fontWeight = if (isActive) FontWeight.Bold else FontWeight.Medium,
-                color = contentColor,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                contentDescription = title,
+                tint = activeContentColor,
+                modifier = Modifier.size(22.dp)
             )
             if (badgeCount > 0) {
-                Spacer(modifier = Modifier.width(4.dp))
                 Box(
                     modifier = Modifier
-                        .size(18.dp)
+                        .align(Alignment.TopEnd)
+                        .offset(x = 6.dp, y = (-4).dp)
+                        .size(16.dp)
                         .clip(androidx.compose.foundation.shape.CircleShape)
                         .background(com.example.ui.theme.WarningRed),
                     contentAlignment = Alignment.Center
@@ -2102,11 +2173,22 @@ fun TabButton(
                         text = badgeCount.toString(),
                         color = Color.White,
                         style = MaterialTheme.typography.labelSmall,
+                        fontSize = 9.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
             }
         }
+        Spacer(modifier = Modifier.height(4.dp))
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelSmall,
+            fontSize = 11.sp,
+            fontWeight = if (isActive) FontWeight.Bold else FontWeight.Medium,
+            color = activeContentColor,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
@@ -2137,7 +2219,9 @@ fun InventoryTabContent(
     val filteredList = remember(inventory, searchQuery, filterCategory, showOnlyLowStock) {
         inventory.filter { item ->
             val matchesSearch = item.name.contains(searchQuery, ignoreCase = true) ||
-                    item.dosage.contains(searchQuery, ignoreCase = true)
+                    item.brand.contains(searchQuery, ignoreCase = true) ||
+                    item.dosage.contains(searchQuery, ignoreCase = true) ||
+                    item.category.contains(searchQuery, ignoreCase = true)
             val matchesCategory = filterCategory == "All" || item.category == filterCategory
             val matchesLowStock = !showOnlyLowStock || item.isLowStock
             matchesSearch && matchesCategory && matchesLowStock
@@ -2472,7 +2556,7 @@ fun InventoryCard(
     val textAmtColor = if (item.isLowStock) WarningRed else OKGreen
 
     Card(
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
             containerColor = containerBgColor
         ),
@@ -2481,28 +2565,31 @@ fun InventoryCard(
             .border(
                 width = 1.dp,
                 color = cardBorderColor,
-                shape = RoundedCornerShape(16.dp)
+                shape = RoundedCornerShape(12.dp)
             )
             .clickable { onClick() }
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
-                // Image Box
+        Column(modifier = Modifier.padding(10.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Compact Image Box
                 if (item.imageUri != null) {
                     coil.compose.AsyncImage(
                         model = item.imageUri,
                         contentDescription = "Medicine Image",
                         modifier = Modifier
-                            .size(72.dp)
-                            .clip(RoundedCornerShape(12.dp))
+                            .size(52.dp)
+                            .clip(RoundedCornerShape(8.dp))
                             .background(Color.White),
                         contentScale = androidx.compose.ui.layout.ContentScale.Crop
                     )
                 } else {
                     Box(
                         modifier = Modifier
-                            .size(72.dp)
-                            .clip(RoundedCornerShape(12.dp))
+                            .size(52.dp)
+                            .clip(RoundedCornerShape(8.dp))
                             .background(MaterialTheme.colorScheme.surfaceVariant),
                         contentAlignment = Alignment.Center
                     ) {
@@ -2510,89 +2597,133 @@ fun InventoryCard(
                             imageVector = Icons.Filled.LocalPharmacy,
                             contentDescription = "Medicine",
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.size(32.dp)
+                            modifier = Modifier.size(24.dp)
                         )
                     }
                 }
 
-                Spacer(modifier = Modifier.width(12.dp))
+                Spacer(modifier = Modifier.width(10.dp))
 
-                // Info Column
+                // Info Section
                 Column(modifier = Modifier.weight(1f)) {
+                    // Title & Action Icons
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.Top
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
                             text = item.name,
-                            style = MaterialTheme.typography.titleMedium,
+                            style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                             modifier = Modifier.weight(1f, fill = false)
                         )
-                        Row {
-                            IconButton(onClick = onAddToCart, modifier = Modifier.size(32.dp)) {
-                                Icon(Icons.Filled.AddShoppingCart, "Cart", tint = TealPrimary, modifier = Modifier.size(18.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = onAddToCart, modifier = Modifier.size(28.dp)) {
+                                Icon(Icons.Filled.AddShoppingCart, "Cart", tint = TealPrimary, modifier = Modifier.size(16.dp))
                             }
-                            IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
-                                Icon(Icons.Filled.Delete, "Delete", tint = SlateTextMedium, modifier = Modifier.size(18.dp))
+                            IconButton(onClick = onDelete, modifier = Modifier.size(28.dp)) {
+                                Icon(Icons.Filled.Delete, "Delete", tint = SlateTextMedium, modifier = Modifier.size(16.dp))
                             }
                         }
                     }
 
-                    if (item.brand.isNotBlank()) {
+                    // Brand & Category Subtitle
+                    val brandCatText = buildString {
+                        if (item.brand.isNotBlank()) append(item.brand)
+                        if (item.brand.isNotBlank() && item.category.isNotBlank()) append(" • ")
+                        if (item.category.isNotBlank()) append(item.category)
+                    }
+                    if (brandCatText.isNotBlank()) {
                         Text(
-                            text = item.brand,
-                            style = MaterialTheme.typography.bodySmall,
+                            text = brandCatText,
+                            style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(bottom = 4.dp)
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                            fontSize = 11.sp
                         )
                     }
 
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.horizontalScroll(rememberScrollState())) {
-                        SuggestionChip(
-                            onClick = { },
-                            label = { Text(item.dosage, fontSize = 10.sp, fontWeight = FontWeight.SemiBold) },
-                            modifier = Modifier.height(22.dp)
-                        )
-                        if (item.unitForm.isNotBlank()) {
-                            Spacer(modifier = Modifier.width(6.dp))
-                            SuggestionChip(
-                                onClick = { },
-                                label = { Text(item.unitForm, fontSize = 10.sp, fontWeight = FontWeight.SemiBold) },
-                                modifier = Modifier.height(22.dp)
-                            )
+                    Spacer(modifier = Modifier.height(2.dp))
+
+                    // Tags & Price Row
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        // Dosage & UnitForm Compact Pills
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier.weight(1f, fill = false)
+                        ) {
+                            if (item.dosage.isNotBlank()) {
+                                Surface(
+                                    color = MaterialTheme.colorScheme.surfaceVariant,
+                                    shape = RoundedCornerShape(4.dp),
+                                    modifier = Modifier.weight(1f, fill = false)
+                                ) {
+                                    Text(
+                                        text = item.dosage,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
+                            if (item.unitForm.isNotBlank()) {
+                                Surface(
+                                    color = MaterialTheme.colorScheme.surfaceVariant,
+                                    shape = RoundedCornerShape(4.dp),
+                                    modifier = Modifier.weight(1f, fill = false)
+                                ) {
+                                    Text(
+                                        text = item.unitForm,
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
                         }
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(text = item.category, style = MaterialTheme.typography.labelMedium, color = SlateTextMedium)
-                    }
-                    
-                    Spacer(modifier = Modifier.height(4.dp))
 
-                    Text(
-                        text = "₦${"%,.2f".format(item.price)}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
+                        Spacer(modifier = Modifier.width(6.dp))
+
+                        Text(
+                            text = "₦${"%,.2f".format(item.price)}",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontSize = 13.sp,
+                            maxLines = 1
+                        )
+                    }
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(6.dp))
+            HorizontalDivider(thickness = 0.5.dp, color = SlateBorderLight.copy(alpha = 0.5f))
+            Spacer(modifier = Modifier.height(4.dp))
 
-            // Footer for stock logic
+            // Footer for stock logic (Single Line)
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Column {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Stock: ", style = MaterialTheme.typography.bodyMedium, color = SlateTextMedium)
-                        Text("${item.stockQuantity} units", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.ExtraBold, color = textAmtColor)
-                    }
-                    Text("Min threshold: ${item.minRequiredStock}", style = MaterialTheme.typography.labelSmall, color = SlateTextMedium.copy(alpha = 0.8f))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Stock: ", style = MaterialTheme.typography.labelMedium, color = SlateTextMedium)
+                    Text("${item.stockQuantity} units", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = textAmtColor)
+                    Text(" (Min: ${item.minRequiredStock})", style = MaterialTheme.typography.labelSmall, color = SlateTextMedium.copy(alpha = 0.7f))
                 }
 
                 Row(
@@ -2600,25 +2731,30 @@ fun InventoryCard(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     if (item.isLowStock) {
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(WarningRedContainer)
-                                .padding(horizontal = 8.dp, vertical = 4.dp),
-                            contentAlignment = Alignment.Center
+                        Surface(
+                            color = WarningRedContainer,
+                            shape = RoundedCornerShape(6.dp)
                         ) {
-                            Text("LOW STOCK", style = MaterialTheme.typography.labelSmall, color = WarningRed, fontWeight = FontWeight.Bold)
+                            Text(
+                                text = "LOW STOCK",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = WarningRed,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 9.sp,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
                         }
                     }
                     TextButton(
                         onClick = onIncrementTen,
                         colors = ButtonDefaults.textButtonColors(containerColor = TealSecondary.copy(alpha = 0.6f), contentColor = TealPrimary),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.height(32.dp)
+                        shape = RoundedCornerShape(8.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                        modifier = Modifier.height(26.dp)
                     ) {
-                        Icon(Icons.Filled.Add, null, modifier = Modifier.size(12.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Add 10", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                        Icon(Icons.Filled.Add, null, modifier = Modifier.size(10.dp))
+                        Spacer(modifier = Modifier.width(2.dp))
+                        Text("Add 10", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, fontSize = 10.sp)
                     }
                 }
             }
@@ -3876,14 +4012,65 @@ fun EditStockQuantityDialog(
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.onErrorContainer
                             )
-                            OutlinedTextField(
-                                value = adjustmentReason,
-                                onValueChange = { adjustmentReason = it },
-                                label = { Text("Justification (e.g. Received shipment, Count error)") },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth(),
-                                isError = adjustmentReason.trim().isEmpty()
+                            val predefinedReasons = listOf(
+                                "Physical stock count",
+                                "Damaged product",
+                                "Expired product removed",
+                                "Supplier shortage",
+                                "Theft/Loss",
+                                "Stock transfer",
+                                "Initial inventory correction",
+                                "Other"
                             )
+                            var selectedPredefinedReason by remember { mutableStateOf<String?>(null) }
+                            var customReasonText by remember { mutableStateOf("") }
+
+                            LaunchedEffect(selectedPredefinedReason, customReasonText) {
+                                adjustmentReason = if (selectedPredefinedReason == "Other") {
+                                    customReasonText
+                                } else {
+                                    selectedPredefinedReason ?: ""
+                                }
+                            }
+
+                            Text(
+                                text = "Select Standardized Audit Reason:",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            
+                            // Horizontal Chip Flow Row for Predefined Audit Reasons
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                predefinedReasons.forEach { reason ->
+                                    val isSelected = selectedPredefinedReason == reason
+                                    FilterChip(
+                                        selected = isSelected,
+                                        onClick = { selectedPredefinedReason = reason },
+                                        label = { Text(reason, fontSize = 10.5.sp) },
+                                        colors = FilterChipDefaults.filterChipColors(
+                                            selectedContainerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f),
+                                            selectedLabelColor = MaterialTheme.colorScheme.primary
+                                        )
+                                    )
+                                }
+                            }
+
+                            if (selectedPredefinedReason == "Other") {
+                                OutlinedTextField(
+                                    value = customReasonText,
+                                    onValueChange = { customReasonText = it },
+                                    label = { Text("Specify Custom Audit Justification") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    isError = customReasonText.trim().isEmpty()
+                                )
+                            }
                         }
                     }
                 }
@@ -4151,7 +4338,7 @@ fun EditStockQuantityDialog(
                     if (name.isBlank()) {
                         isError = true
                     } else if (stockChanged && adjustmentReason.trim().isBlank()) {
-                        android.widget.Toast.makeText(appContext, "Compliance error: Please supply a reason/justification for adjusting stock levels.", android.widget.Toast.LENGTH_LONG).show()
+                        android.widget.Toast.makeText(appContext, "Compliance error: Please select an audit justification reason or specify one before saving stock changes.", android.widget.Toast.LENGTH_LONG).show()
                         coroutineScope.launch {
                             scrollState.animateScrollTo(scrollState.maxValue)
                         }
@@ -4748,7 +4935,7 @@ fun generatePrescriptionsCsv(customerMeds: List<com.example.data.CustomerMedicat
 fun importProductsFromCsv(context: android.content.Context, uri: android.net.Uri, viewModel: PharmacyViewModel) {
     kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
         try {
-            var importedCount = 0
+            val parsedItems = mutableListOf<com.example.ui.CsvProductImportItem>()
             context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { reader ->
                 val sequence = reader.lineSequence().iterator()
                 if (!sequence.hasNext()) return@use
@@ -4796,26 +4983,32 @@ fun importProductsFromCsv(context: android.content.Context, uri: android.net.Uri
                             0L
                         }
 
-                        viewModel.addOrUpdateInventory(
-                            id = idVal,
-                            name = nameStr,
-                            dosage = dosageStr,
-                            currentStock = stock,
-                            minStock = minStock,
-                            category = categoryStr,
-                            price = price,
-                            expiryDate = expiryL,
-                            batchNumber = batchNumberStr,
-                            supplier = supplierStr,
-                            unitForm = unitFormStr,
-                            brand = brandStr
+                        parsedItems.add(
+                            com.example.ui.CsvProductImportItem(
+                                csvId = idVal,
+                                name = nameStr,
+                                brand = brandStr,
+                                dosage = dosageStr,
+                                category = categoryStr,
+                                stockQuantity = stock,
+                                threshold = minStock,
+                                price = price,
+                                expiryDate = expiryL,
+                                batchNumber = batchNumberStr,
+                                supplier = supplierStr,
+                                unitForm = unitFormStr
+                            )
                         )
-                        importedCount++
                     }
                 }
             }
+            
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                android.widget.Toast.makeText(context, "Successfully imported $importedCount products", android.widget.Toast.LENGTH_SHORT).show()
+                if (parsedItems.isEmpty()) {
+                    android.widget.Toast.makeText(context, "No valid product records found in CSV", android.widget.Toast.LENGTH_SHORT).show()
+                } else {
+                    viewModel.prepareCsvProductImport(parsedItems)
+                }
             }
         } catch (e: Exception) {
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
@@ -5109,6 +5302,21 @@ fun CartTabContent(
 ) {
     var selectedCustomer by remember { mutableStateOf<Customer?>(null) }
     var expanded by remember { mutableStateOf(false) }
+    var customerSearchQuery by remember { mutableStateOf("") }
+
+    val filteredCustomers = remember(customers, customerSearchQuery) {
+        if (customerSearchQuery.isBlank()) {
+            customers
+        } else {
+            val q = customerSearchQuery.trim()
+            customers.filter { cust ->
+                cust.name.contains(q, ignoreCase = true) ||
+                cust.phoneNumber.contains(q, ignoreCase = true) ||
+                cust.email.contains(q, ignoreCase = true) ||
+                cust.city.contains(q, ignoreCase = true)
+            }
+        }
+    }
 
     val hasExpiredItem = remember(cartItems) { 
         cartItems.any { it.inventoryItem.expiryDate > 0L && it.inventoryItem.expiryDate <= System.currentTimeMillis() } 
@@ -5618,14 +5826,35 @@ fun CartTabContent(
 
                         HorizontalDivider(color = AppThemeManager.slateBorderLight.copy(alpha = 0.5f))
 
-                        // Customer Selection Dropdown
+                        // Customer Selection Dropdown with Instant Search
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(
-                                text = "Client Account Association",
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.outline
-                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "Client Account Association",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.outline
+                                )
+                                if (selectedCustomer != null) {
+                                    Text(
+                                        text = "Tagged Account",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = TealPrimary
+                                    )
+                                } else {
+                                    Text(
+                                        text = "${customers.size} Registered Contacts",
+                                        fontSize = 10.sp,
+                                        color = AppThemeManager.slateTextMedium
+                                    )
+                                }
+                            }
+
                             @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
                             androidx.compose.material3.ExposedDropdownMenuBox(
                                 expanded = expanded,
@@ -5633,31 +5862,267 @@ fun CartTabContent(
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 OutlinedTextField(
-                                    value = selectedCustomer?.name ?: "No Account Tagged (Walk-in)",
+                                    value = if (selectedCustomer != null) {
+                                        if (selectedCustomer!!.phoneNumber.isNotBlank()) {
+                                            "${selectedCustomer!!.name} (${selectedCustomer!!.phoneNumber})"
+                                        } else {
+                                            selectedCustomer!!.name
+                                        }
+                                    } else {
+                                        "Walk-in Customer / Cash Sale"
+                                    },
                                     onValueChange = {},
                                     readOnly = true,
-                                    leadingIcon = { Icon(Icons.Filled.Person, contentDescription = null, tint = TealPrimary) },
+                                    leadingIcon = { 
+                                        Icon(
+                                            imageVector = if (selectedCustomer != null) Icons.Filled.AccountCircle else Icons.Filled.Person, 
+                                            contentDescription = null, 
+                                            tint = if (selectedCustomer != null) TealPrimary else AppThemeManager.slateTextMedium
+                                        ) 
+                                    },
+                                    trailingIcon = { 
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            if (selectedCustomer != null) {
+                                                IconButton(
+                                                    onClick = { 
+                                                        selectedCustomer = null 
+                                                        customerSearchQuery = ""
+                                                    },
+                                                    modifier = Modifier.size(28.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Filled.Close, 
+                                                        contentDescription = "Clear Tagged Customer",
+                                                        tint = AppThemeManager.slateTextMedium,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
+                                            }
+                                            androidx.compose.material3.ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) 
+                                        }
+                                    },
                                     modifier = Modifier
                                         .fillMaxWidth()
                                         .menuAnchor(androidx.compose.material3.MenuAnchorType.PrimaryNotEditable, true),
-                                    trailingIcon = { androidx.compose.material3.ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
                                     shape = RoundedCornerShape(12.dp),
-                                    colors = androidx.compose.material3.ExposedDropdownMenuDefaults.outlinedTextFieldColors()
-                                )
-                                ExposedDropdownMenu(
-                                    expanded = expanded,
-                                    onDismissRequest = { expanded = false }
-                                ) {
-                                    DropdownMenuItem(
-                                        text = { Text("Walk-in Customer / Cash Sale") },
-                                        onClick = { selectedCustomer = null; expanded = false }
+                                    colors = androidx.compose.material3.ExposedDropdownMenuDefaults.outlinedTextFieldColors(
+                                        focusedBorderColor = TealPrimary,
+                                        unfocusedBorderColor = if (selectedCustomer != null) TealPrimary.copy(alpha = 0.5f) else AppThemeManager.slateBorderLight
                                     )
-                                    customers.forEach { cust ->
-                                        DropdownMenuItem(
-                                            text = { Text(cust.name) },
-                                            leadingIcon = { Icon(Icons.Filled.Person, contentDescription = null, tint = TealPrimary) },
-                                            onClick = { selectedCustomer = cust; expanded = false }
+                                )
+
+                                DropdownMenu(
+                                    expanded = expanded,
+                                    onDismissRequest = { 
+                                        expanded = false 
+                                        customerSearchQuery = ""
+                                    },
+                                    properties = androidx.compose.ui.window.PopupProperties(focusable = true),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .heightIn(max = 380.dp)
+                                ) {
+                                    // Interactive Search Bar at top of dropdown menu
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 8.dp, vertical = 6.dp)
+                                    ) {
+                                        OutlinedTextField(
+                                            value = customerSearchQuery,
+                                            onValueChange = { customerSearchQuery = it },
+                                            placeholder = { Text("Search 500+ contacts by name, phone...", fontSize = 12.sp) },
+                                            leadingIcon = { 
+                                                Icon(
+                                                    imageVector = Icons.Filled.Search, 
+                                                    contentDescription = "Search", 
+                                                    tint = TealPrimary, 
+                                                    modifier = Modifier.size(18.dp)
+                                                ) 
+                                            },
+                                            trailingIcon = {
+                                                if (customerSearchQuery.isNotEmpty()) {
+                                                    IconButton(
+                                                        onClick = { customerSearchQuery = "" },
+                                                        modifier = Modifier.size(24.dp)
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Filled.Close, 
+                                                            contentDescription = "Clear Search", 
+                                                            tint = AppThemeManager.slateTextMedium,
+                                                            modifier = Modifier.size(14.dp)
+                                                        )
+                                                    }
+                                                }
+                                            },
+                                            singleLine = true,
+                                            shape = RoundedCornerShape(8.dp),
+                                            colors = OutlinedTextFieldDefaults.colors(
+                                                focusedBorderColor = TealPrimary,
+                                                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
+                                            ),
+                                            modifier = Modifier.fillMaxWidth()
                                         )
+                                    }
+
+                                    HorizontalDivider(color = AppThemeManager.slateBorderLight.copy(alpha = 0.5f))
+
+                                    // Walk-in Option
+                                    DropdownMenuItem(
+                                        text = { 
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Filled.PersonOff, 
+                                                    contentDescription = null, 
+                                                    tint = AppThemeManager.slateTextMedium,
+                                                    modifier = Modifier.size(18.dp)
+                                                )
+                                                Column {
+                                                    Text(
+                                                        text = "Walk-in Customer / Cash Sale",
+                                                        fontWeight = if (selectedCustomer == null) FontWeight.Bold else FontWeight.Normal,
+                                                        color = if (selectedCustomer == null) TealPrimary else MaterialTheme.colorScheme.onSurface,
+                                                        fontSize = 13.sp
+                                                    )
+                                                    Text(
+                                                        text = "No registered client account linked to invoice",
+                                                        fontSize = 10.sp,
+                                                        color = AppThemeManager.slateTextMedium
+                                                    )
+                                                }
+                                            }
+                                        },
+                                        onClick = { 
+                                            selectedCustomer = null
+                                            expanded = false 
+                                            customerSearchQuery = ""
+                                        }
+                                    )
+
+                                    HorizontalDivider(color = AppThemeManager.slateBorderLight.copy(alpha = 0.5f))
+
+                                    if (filteredCustomers.isEmpty()) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(vertical = 16.dp, horizontal = 12.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                Icon(
+                                                    imageVector = Icons.Filled.SearchOff,
+                                                    contentDescription = null,
+                                                    tint = AppThemeManager.slateTextMedium,
+                                                    modifier = Modifier.size(24.dp)
+                                                )
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                Text(
+                                                    text = "No contact found matching \"$customerSearchQuery\"",
+                                                    fontSize = 12.sp,
+                                                    color = AppThemeManager.slateTextMedium,
+                                                    textAlign = TextAlign.Center
+                                                )
+                                            }
+                                        }
+                                    } else {
+                                        if (customerSearchQuery.isNotBlank()) {
+                                            Text(
+                                                text = "MATCHING CONTACTS (${filteredCustomers.size})",
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = TealPrimary,
+                                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                                            )
+                                        }
+
+                                        filteredCustomers.take(20).forEach { cust ->
+                                            val isSelected = selectedCustomer?.id == cust.id
+                                            DropdownMenuItem(
+                                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                                text = {
+                                                    Row(
+                                                        modifier = Modifier.fillMaxWidth(),
+                                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        Column(modifier = Modifier.weight(1f).padding(end = 8.dp)) {
+                                                            Text(
+                                                                text = cust.name,
+                                                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                                                color = if (isSelected) TealPrimary else MaterialTheme.colorScheme.onSurface,
+                                                                fontSize = 13.sp,
+                                                                maxLines = 1,
+                                                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                                            )
+                                                            Row(
+                                                                verticalAlignment = Alignment.CenterVertically,
+                                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                            ) {
+                                                                if (cust.phoneNumber.isNotBlank()) {
+                                                                    Text(
+                                                                        text = "📞 ${cust.phoneNumber}",
+                                                                        fontSize = 11.sp,
+                                                                        color = AppThemeManager.slateTextMedium
+                                                                    )
+                                                                }
+                                                                if (cust.city.isNotBlank()) {
+                                                                    Text(
+                                                                        text = "• ${cust.city}",
+                                                                        fontSize = 11.sp,
+                                                                        color = AppThemeManager.slateTextMedium
+                                                                    )
+                                                                }
+                                                            }
+                                                        }
+                                                        if (cust.loyaltyPoints > 0) {
+                                                            Surface(
+                                                                color = TealPrimary.copy(alpha = 0.1f),
+                                                                shape = RoundedCornerShape(10.dp)
+                                                            ) {
+                                                                Text(
+                                                                    text = "${cust.loyaltyPoints} pts",
+                                                                    fontSize = 9.5.sp,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    color = TealPrimary,
+                                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                                )
+                                                            }
+                                                        }
+                                                    }
+                                                },
+                                                leadingIcon = {
+                                                    Icon(
+                                                        imageVector = if (isSelected) Icons.Filled.CheckCircle else Icons.Filled.Person,
+                                                        contentDescription = null,
+                                                        tint = if (isSelected) TealPrimary else AppThemeManager.slateTextMedium,
+                                                        modifier = Modifier.size(18.dp)
+                                                     )
+                                                 },
+                                                 onClick = {
+                                                     selectedCustomer = cust
+                                                     expanded = false
+                                                     customerSearchQuery = ""
+                                                 }
+                                            )
+                                        }
+                                        if (filteredCustomers.size > 20) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .padding(vertical = 6.dp, horizontal = 12.dp),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Text(
+                                                    text = "Showing top 20 of ${filteredCustomers.size} contacts. Type to filter...",
+                                                    fontSize = 10.5.sp,
+                                                    color = AppThemeManager.slateTextMedium,
+                                                    fontWeight = FontWeight.Medium
+                                                )
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -6496,7 +6961,9 @@ fun WorkspaceInitializationCard(
 fun PriorityFollowUpInbox(
     pendingAlerts: List<com.example.data.CustomerAlert>,
     onCompleteAlert: (com.example.data.CustomerAlert) -> Unit,
-    onDeleteAlert: (com.example.data.CustomerAlert) -> Unit
+    onDeleteAlert: (com.example.data.CustomerAlert) -> Unit,
+    onScanRadar: () -> Unit,
+    onNavigateToCustomer: ((String) -> Unit)? = null
 ) {
     if (pendingAlerts.isEmpty()) return
 
@@ -6669,11 +7136,38 @@ fun PriorityFollowUpInbox(
                     }
                     
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Take action on critical patient care follow-ups, calls, and handshake validations.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = SlateTextMedium
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Take action on critical patient care follow-ups, calls, and handshake validations.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = SlateTextMedium,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        androidx.compose.material3.TextButton(
+                            onClick = onScanRadar,
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                            modifier = Modifier.defaultMinSize(minHeight = 24.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.AutoAwesome,
+                                contentDescription = "Scan Radar",
+                                tint = TealPrimary,
+                                modifier = Modifier.size(12.dp)
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "Scan Radar",
+                                fontSize = 11.sp,
+                                color = TealPrimary,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
                     Spacer(modifier = Modifier.height(12.dp))
                     androidx.compose.material3.HorizontalDivider(color = SlateBorderLight.copy(alpha = 0.4f))
                     Spacer(modifier = Modifier.height(10.dp))
@@ -6702,35 +7196,41 @@ fun PriorityFollowUpInbox(
                                 ) {
                                     Column(modifier = Modifier.weight(1f)) {
                                         Row(
+                                            modifier = Modifier.fillMaxWidth(),
                                             verticalAlignment = Alignment.CenterVertically,
                                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                                         ) {
                                             Text(
                                                 text = alert.customerName,
                                                 style = MaterialTheme.typography.bodyMedium,
-                                                fontWeight = FontWeight.Bold
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.weight(1f, fill = false),
+                                                maxLines = 2,
+                                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                                             )
                                             Box(
                                                 modifier = Modifier
                                                     .background(TealSurface, RoundedCornerShape(4.dp))
-                                                    .padding(horizontal = 4.dp, vertical = 1.dp)
+                                                    .padding(horizontal = 6.dp, vertical = 2.dp)
                                             ) {
                                                 Text(
                                                     text = alert.alertType,
                                                     color = TealPrimary,
                                                     fontSize = 8.sp,
-                                                    fontWeight = FontWeight.Bold
+                                                    fontWeight = FontWeight.Bold,
+                                                    maxLines = 1
                                                 )
                                             }
                                         }
-                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Spacer(modifier = Modifier.height(4.dp))
                                         Text(
                                             text = alert.medicationName,
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1,
+                                            maxLines = 2,
                                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                                         )
+                                        Spacer(modifier = Modifier.height(2.dp))
                                         Text(
                                             text = "Target Date: ${alert.scheduledTime}",
                                             style = MaterialTheme.typography.labelSmall,
@@ -6743,6 +7243,26 @@ fun PriorityFollowUpInbox(
                                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
+                                        // View Patient button
+                                        if (onNavigateToCustomer != null) {
+                                            IconButton(
+                                                onClick = { 
+                                                    showOverlayDialog = false
+                                                    onNavigateToCustomer(alert.customerName)
+                                                },
+                                                modifier = Modifier
+                                                    .background(TealSurface, CircleShape)
+                                                    .size(32.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Filled.PersonSearch,
+                                                    contentDescription = "View Patient Ledger",
+                                                    tint = TealPrimary,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
+                                        }
+
                                         // Complete action button
                                         IconButton(
                                             onClick = { 
@@ -6997,9 +7517,12 @@ fun RenderPostDispatchConfirmMedData(
                         
                         // 2. Append notes if provided
                         if (notesText.isNotBlank()) {
-                            val currentNotes = customer.notes
-                            val newNotes = if (currentNotes.isBlank()) notesText.trim() else "${currentNotes}\n• ${notesText.trim()}"
-                            viewModel.updateCustomer(customer.copy(notes = newNotes))
+                            val updatedCustomer = com.example.ui.PatientIntelligenceParser.appendTextNote(
+                                customer = customer,
+                                medications = emptyList(),
+                                noteText = notesText.trim()
+                            )
+                            viewModel.updateCustomer(updatedCustomer)
                         }
                         
                         // 3. Log compliance event
@@ -7032,6 +7555,269 @@ fun RenderPostDispatchConfirmMedData(
         dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text("Dismiss")
+            }
+        }
+    )
+}
+
+@Composable
+fun CsvImportDiscrepancyDialog(
+    sessionState: com.example.ui.CsvImportSessionState,
+    onResolveAction: (com.example.ui.CsvDiscrepancyAction) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val discrepancies = sessionState.discrepancies
+    val idx = sessionState.currentIndex
+    if (idx !in discrepancies.indices) return
+
+    val currentDiscrepancy = discrepancies[idx]
+    val csv = currentDiscrepancy.csvItem
+    val existing = currentDiscrepancy.existingItem
+
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.errorContainer),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                Icons.Filled.Warning,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error,
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Stock Discrepancy Warning",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "Item ${idx + 1} of ${discrepancies.size} matching items found",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+            ) {
+                Text(
+                    text = "The product \"${csv.name}\" in your new CSV matches an item currently in your account stock. Choose how to handle this discrepancy:",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Comparison Cards
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    // Existing In Stock Card
+                    Card(
+                        modifier = Modifier.weight(1f),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        ),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Text(
+                                "CURRENT IN STOCK",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Black,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(existing.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                            if (existing.dosage.isNotBlank() && existing.dosage != "N/A") {
+                                Text("Dosage: ${existing.dosage}", style = MaterialTheme.typography.bodySmall)
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                "Quantity: ${existing.stockQuantity} units",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                "Price: ₦${String.format("%.2f", existing.price)}",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            if (existing.category.isNotBlank()) {
+                                Text("Category: ${existing.category}", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
+
+                    // New CSV Item Card
+                    Card(
+                        modifier = Modifier.weight(1f),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                        ),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Text(
+                                "NEW CSV RECORD",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Black,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(csv.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                            if (csv.dosage.isNotBlank() && csv.dosage != "N/A") {
+                                Text("Dosage: ${csv.dosage}", style = MaterialTheme.typography.bodySmall)
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                "Quantity: ${csv.stockQuantity} units",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                "Price: ₦${String.format("%.2f", if (csv.price > 0) csv.price else existing.price)}",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            if (csv.category.isNotBlank()) {
+                                Text("Category: ${csv.category}", style = MaterialTheme.typography.labelSmall)
+                            }
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Text(
+                    "Select Resolution Action:",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Option 1: Replace
+                OutlinedButton(
+                    onClick = { onResolveAction(com.example.ui.CsvDiscrepancyAction.REPLACE) },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = MaterialTheme.colorScheme.error
+                    ),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.5f))
+                ) {
+                    Icon(Icons.Filled.Sync, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Replace Existing Item", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
+                        Text("Overwrites stock with ${csv.stockQuantity} units & CSV details", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Option 2: Update / Add Quantity
+                Button(
+                    onClick = { onResolveAction(com.example.ui.CsvDiscrepancyAction.UPDATE_ADD_QTY) },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary
+                    )
+                ) {
+                    Icon(Icons.Filled.AddCircle, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Update / Add Quantity (+${csv.stockQuantity})", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
+                        Text("Combined total will be ${existing.stockQuantity + csv.stockQuantity} units", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f))
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Option 3: Skip Line
+                OutlinedButton(
+                    onClick = { onResolveAction(com.example.ui.CsvDiscrepancyAction.SKIP) },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Filled.Block, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Skip This CSV Line", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodySmall)
+                        Text("Keep current stock (${existing.stockQuantity} units) unchanged", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+
+                if (discrepancies.size > 1) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    HorizontalDivider()
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text(
+                        "Apply to All Remaining (${discrepancies.size - idx} items):",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { onResolveAction(com.example.ui.CsvDiscrepancyAction.REPLACE_ALL) },
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+                        ) {
+                            Text("Replace All", style = MaterialTheme.typography.labelSmall, fontSize = 10.sp)
+                        }
+
+                        Button(
+                            onClick = { onResolveAction(com.example.ui.CsvDiscrepancyAction.UPDATE_ADD_QTY_ALL) },
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+                        ) {
+                            Text("Add Qty to All", style = MaterialTheme.typography.labelSmall, fontSize = 10.sp)
+                        }
+
+                        OutlinedButton(
+                            onClick = { onResolveAction(com.example.ui.CsvDiscrepancyAction.SKIP_ALL) },
+                            modifier = Modifier.weight(1f),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+                        ) {
+                            Text("Skip All", style = MaterialTheme.typography.labelSmall, fontSize = 10.sp)
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel Import")
             }
         }
     )

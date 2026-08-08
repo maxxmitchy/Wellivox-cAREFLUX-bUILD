@@ -21,7 +21,8 @@ data class InventoryItem(
     val imageUri: String? = null,
     val brand: String = "",
     val salesStrategy: String = "",
-    val lastUpdated: Long = System.currentTimeMillis()
+    val lastUpdated: Long = System.currentTimeMillis(),
+    val lastReconciledAt: Long = 0L
 ) {
     val isLowStock: Boolean
         get() = stockQuantity <= minRequiredStock

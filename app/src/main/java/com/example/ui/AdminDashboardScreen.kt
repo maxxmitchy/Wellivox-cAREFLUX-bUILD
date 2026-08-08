@@ -3371,8 +3371,6 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
             
             // Approval form states
             var formGeminiKey by remember { mutableStateOf("") }
-            var formTermiiKey by remember { mutableStateOf("") }
-            var formSenderId by remember { mutableStateOf("N-Alert") }
 
             if (requestToApprove != null) {
                 val req = requestToApprove!!
@@ -3384,7 +3382,7 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                     title = { Text("Approve & Provision API Suite", fontWeight = FontWeight.Bold) },
                     text = {
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text("Assign dedicated keys for $phName:", style = MaterialTheme.typography.bodyMedium)
+                            Text("Assign dedicated Gemini key for $phName:", style = MaterialTheme.typography.bodyMedium)
                             
                             OutlinedTextField(
                                 value = formGeminiKey,
@@ -3395,32 +3393,12 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(10.dp)
                             )
-                            
-                            OutlinedTextField(
-                                value = formTermiiKey,
-                                onValueChange = { formTermiiKey = it },
-                                label = { Text("Termii SMS API Key") },
-                                placeholder = { Text("At_...") },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(10.dp)
-                            )
-                            
-                            OutlinedTextField(
-                                value = formSenderId,
-                                onValueChange = { formSenderId = it },
-                                label = { Text("Termii Sender ID") },
-                                placeholder = { Text("e.g. N-Alert") },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(10.dp)
-                            )
                         }
                     },
                     confirmButton = {
                         Button(
                             onClick = {
-                                viewModel.approveKeyRequest(devId, formGeminiKey, formTermiiKey, formSenderId)
+                                viewModel.approveKeyRequest(devId, formGeminiKey)
                                 requestToApprove = null
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = TealPrimary),
@@ -3559,8 +3537,7 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                                         Button(
                                             onClick = {
                                                 formGeminiKey = ""
-                                                formTermiiKey = ""
-                                                formSenderId = "N-Alert"
+
                                                 requestToApprove = req
                                             },
                                             colors = ButtonDefaults.buttonColors(containerColor = TealPrimary),
@@ -3585,8 +3562,7 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                                     }
                                 } else if (status == "APPROVED") {
                                     val preGemini = req["geminiKey"] as? String ?: ""
-                                    val preTermii = req["termiiApiKey"] as? String ?: ""
-                                    val preSender = req["termiiSenderId"] as? String ?: "N-Alert"
+
                                     
                                     Column(
                                         modifier = Modifier
@@ -3598,7 +3574,7 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                                     ) {
                                         Text("Provisioned Keys Profile:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TealPrimary)
                                         Text("Gemini: ${if (preGemini.length > 10) "${preGemini.take(6)}...${preGemini.takeLast(4)}" else "Custom Active"}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        Text("Termii SMS Key: ${if (preTermii.length > 10) "${preTermii.take(6)}...${preTermii.takeLast(4)}" else "Custom Active"} (Sender: $preSender)", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text("Twilio Multi-Channel: Active System Gateway", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                 }
                             }

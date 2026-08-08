@@ -7,6 +7,7 @@ import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -28,6 +29,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -38,13 +40,16 @@ import com.example.ui.theme.AppThemeManager
 import androidx.compose.foundation.BorderStroke
 import com.example.data.OperationTask
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun BranchTeamTab(
     viewModel: com.example.ui.PharmacyViewModel,
+    initialSubTab: String? = null,
+    highlightTaskId: Long? = null,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    val isProfileLoading by viewModel.isProfileLoading.collectAsStateWithLifecycle()
     val branchId by viewModel.currentPharmacistBranchId.collectAsStateWithLifecycle()
     val branchName by viewModel.currentPharmacistBranchName.collectAsStateWithLifecycle()
     val currentRole by viewModel.currentPharmacistRole.collectAsStateWithLifecycle()
@@ -52,19 +57,102 @@ fun BranchTeamTab(
     val currentPhone by viewModel.currentPharmacistPhone.collectAsStateWithLifecycle()
     val staffList by viewModel.branchStaffList.collectAsStateWithLifecycle()
     val operationTasks by viewModel.operationTasks.collectAsStateWithLifecycle()
+    val activeHighlightTaskId by viewModel.activeHighlightTaskId.collectAsStateWithLifecycle()
+    val reconciledRatio by viewModel.reconciled14DaysRatio.collectAsStateWithLifecycle()
+    val unreconciledCount by viewModel.unreconciled14DaysCount.collectAsStateWithLifecycle()
+    val totalInventory by viewModel.inventoryItems.collectAsStateWithLifecycle()
+
+    val effectiveHighlightTaskId = activeHighlightTaskId ?: highlightTaskId
 
     var showRoleDialogForStaff by remember { mutableStateOf<Map<String, Any>?>(null) }
     var showEditProfileDialog by remember { mutableStateOf(false) }
     var taskForComplianceVerification by remember { mutableStateOf<OperationTask?>(null) }
     var taskForManagerApproval by remember { mutableStateOf<OperationTask?>(null) }
-    var selectedTab by remember { mutableStateOf(0) } // 0 = Staff Roster, 1 = Ops Delegation Center
+    var selectedTab by remember { mutableStateOf(if (initialSubTab == "ops_task_board" || (effectiveHighlightTaskId != null && effectiveHighlightTaskId > 0L)) 1 else 0) } // 0 = Staff Roster, 1 = Ops Delegation Center
+    var opsTaskFilter by remember { mutableStateOf(0) } // 0 = All, 1 = My Tasks, 2 = Unassigned Pool, 3 = Resolved
+    val activeStaffName = currentName?.ifBlank { "Staff Pharmacist" } ?: "Staff Pharmacist"
 
     val clipboardManager = remember {
         context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     }
 
-    // Checking if user has an assigned branch
-    if (branchId.isNullOrBlank()) {
+    LaunchedEffect(initialSubTab, effectiveHighlightTaskId) {
+        if (initialSubTab == "ops_task_board" || (effectiveHighlightTaskId != null && effectiveHighlightTaskId > 0L)) {
+            selectedTab = 1
+            opsTaskFilter = 0
+        }
+    }
+
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+
+    // Precision Deep Linking & Zero-Lag Scroll to target task
+    LaunchedEffect(effectiveHighlightTaskId, selectedTab, operationTasks) {
+        if (effectiveHighlightTaskId != null && effectiveHighlightTaskId > 0L) {
+            selectedTab = 1 // Switch to Ops Task Board
+            opsTaskFilter = 0 // Ensure "All Tasks" filter is active so target task is visible
+            
+            val filteredTasks = operationTasks.filter { task ->
+                val taskAssignee = task.assignedToName?.trim()
+                val isUnassigned = taskAssignee.isNullOrBlank() || taskAssignee.equals("All Staff", ignoreCase = true)
+                when (opsTaskFilter) {
+                    1 -> !task.isCompleted && taskAssignee?.equals(activeStaffName, ignoreCase = true) == true
+                    2 -> !task.isCompleted && isUnassigned
+                    3 -> task.isCompleted
+                    else -> true
+                }
+            }.sortedByDescending { it.createdAt }
+
+            val targetIndex = filteredTasks.indexOfFirst { it.id.toLong() == effectiveHighlightTaskId || it.id == effectiveHighlightTaskId.toInt() }
+            if (targetIndex != -1) {
+                val isManagerRole = currentRole == "Branch Manager" || currentRole == "Admin" || viewModel.isCurrentUserAdmin()
+                val headerOffset = if (isManagerRole) 5 else 4
+                val targetItemIndex = (headerOffset + targetIndex).coerceAtLeast(0)
+                
+                // Zero-lag immediate positioning followed by fluid animation
+                try {
+                    listState.scrollToItem(targetItemIndex)
+                } catch (e: Exception) {}
+                
+                kotlinx.coroutines.delay(100)
+                try {
+                    listState.animateScrollToItem(targetItemIndex)
+                } catch (e: Exception) {}
+            }
+        }
+    }
+
+    // Smooth loading state to avoid flickering before profile/branch sync completes
+    if (isProfileLoading) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                CircularProgressIndicator(
+                    color = TealPrimary,
+                    modifier = Modifier.size(42.dp),
+                    strokeWidth = 3.dp
+                )
+                Text(
+                    text = "Verifying Terminal Node Credentials...",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    text = "Synchronizing branch profile state with Careflux network",
+                    fontSize = 11.sp,
+                    color = AppThemeManager.slateTextMedium,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+    } else if (branchId.isNullOrBlank()) {
         // --- Branch Enrollment & INITIALIZATION Wizard ---
         var enrollmentTab by remember { mutableStateOf(0) } // 0 = Join Exist, 1 = Register New
 
@@ -103,39 +191,7 @@ fun BranchTeamTab(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Header Banner Logo
-                Box(
-                    modifier = Modifier
-                        .size(80.dp)
-                        .clip(CircleShape)
-                        .background(TealPrimary.copy(alpha = 0.1f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Storefront,
-                        contentDescription = null,
-                        tint = TealPrimary,
-                        modifier = Modifier.size(42.dp)
-                    )
-                }
 
-                Text(
-                    text = "Welcome to Careflux Workspace",
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 20.sp,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    textAlign = TextAlign.Center
-                )
-
-                Text(
-                    text = "Your account is not linked to any active branch node. To access pharmacy operations, real-time inventory, sales, and task systems, choose one of the options below to proceed.",
-                    fontSize = 12.sp,
-                    color = AppThemeManager.slateTextMedium,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(horizontal = 12.dp)
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
 
                 // Modern Choice segment selector
                 TabRow(
@@ -403,6 +459,7 @@ fun BranchTeamTab(
             containerColor = AppThemeManager.background
         ) { innerPadding ->
             LazyColumn(
+                state = listState,
                 modifier = modifier
                     .fillMaxSize()
                     .padding(innerPadding),
@@ -421,96 +478,77 @@ fun BranchTeamTab(
                         modifier = Modifier.fillMaxWidth(),
                         border = BorderStroke(1.dp, AppThemeManager.slateBorderLight)
                     ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
+                        Column(
+                            modifier = Modifier.padding(10.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            // Row 1: Branch details + Authorization Code Pill
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier.fillMaxWidth()
                             ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(44.dp)
-                                        .clip(CircleShape)
-                                        .background(TealPrimary.copy(alpha = 0.15f)),
-                                    contentAlignment = Alignment.Center
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.weight(1f)
                                 ) {
-                                    Icon(
-                                        Icons.Default.Storefront,
-                                        contentDescription = "Branch",
-                                        tint = TealPrimary,
-                                        modifier = Modifier.size(22.dp)
-                                    )
-                                }
-                                Column(modifier = Modifier.weight(1f)) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(28.dp)
+                                            .clip(CircleShape)
+                                            .background(TealPrimary.copy(alpha = 0.15f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Icon(
+                                            Icons.Default.Storefront,
+                                            contentDescription = "Branch",
+                                            tint = TealPrimary,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    }
                                     Text(
                                         text = branchName ?: "Standard Pharmacy Branch",
                                         fontWeight = FontWeight.Bold,
-                                        fontSize = 16.sp,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Text(
-                                        text = "Active Pharmacy Node Workspace",
-                                        fontSize = 11.sp,
-                                        color = AppThemeManager.slateTextMedium
+                                        fontSize = 14.sp,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
                                     )
                                 }
-                            }
 
-                            Spacer(modifier = Modifier.height(14.dp))
-
-                            // Authorization Code Field
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(AppThemeManager.secondary.copy(alpha = 0.6f))
-                                    .border(1.dp, TealPrimary.copy(alpha = 0.2f), RoundedCornerShape(10.dp))
-                                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Column {
+                                // Compact Tap-to-Copy Code Pill
+                                Row(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(AppThemeManager.secondary)
+                                        .border(1.dp, TealPrimary.copy(alpha = 0.25f), RoundedCornerShape(8.dp))
+                                        .clickable {
+                                            val clip = ClipData.newPlainText("Careflux Branch Code", branchId ?: "")
+                                            clipboardManager.setPrimaryClip(clip)
+                                            Toast.makeText(context, "Branch Code copied!", Toast.LENGTH_SHORT).show()
+                                        }
+                                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
                                     Text(
-                                        text = "BRANCH AUTHORIZATION CODE (TAP TO COPY)",
-                                        fontSize = 8.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = TealPrimary
-                                    )
-                                    Text(
-                                        text = branchId ?: "",
-                                        fontSize = 14.sp,
+                                        text = branchId ?: "N/A",
+                                        fontSize = 11.sp,
                                         fontWeight = FontWeight.ExtraBold,
                                         color = MaterialTheme.colorScheme.onSurface,
-                                        letterSpacing = 1.sp
+                                        letterSpacing = 0.5.sp
                                     )
-                                }
-                                IconButton(
-                                    onClick = {
-                                        val clip = ClipData.newPlainText("Careflux Branch Code", branchId ?: "")
-                                        clipboardManager.setPrimaryClip(clip)
-                                        Toast.makeText(context, "Branch Code copied!", Toast.LENGTH_SHORT).show()
-                                    }
-                                ) {
                                     Icon(
                                         Icons.Default.ContentCopy,
                                         contentDescription = "Copy code",
                                         tint = TealPrimary,
-                                        modifier = Modifier.size(18.dp)
+                                        modifier = Modifier.size(13.dp)
                                     )
                                 }
                             }
 
-                            Spacer(modifier = Modifier.height(12.dp))
-
-                            // Elegant Divider Separating Node Code from Personal Operator Details
-                            Divider(
-                                color = AppThemeManager.slateBorderLight.copy(alpha = 0.5f),
-                                thickness = 1.dp,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-
-                            Spacer(modifier = Modifier.height(12.dp))
-
-                            // Logged-in Operator Info
+                            // Row 2: Logged-in Operator Info + Edit Profile Button
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -518,86 +556,66 @@ fun BranchTeamTab(
                             ) {
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                    modifier = Modifier.weight(1f, fill = false)
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier.weight(1f)
                                 ) {
-                                    // Elegant avatar placeholder container
                                     Box(
                                         modifier = Modifier
-                                            .size(36.dp)
+                                            .size(24.dp)
                                             .clip(CircleShape)
-                                            .background(TealPrimary.copy(alpha = 0.1f)),
+                                            .background(TealPrimary.copy(alpha = 0.12f)),
                                         contentAlignment = Alignment.Center
                                     ) {
                                         Icon(
                                             imageVector = Icons.Default.AccountCircle,
                                             contentDescription = null,
                                             tint = TealPrimary,
-                                            modifier = Modifier.size(20.dp)
+                                            modifier = Modifier.size(15.dp)
                                         )
                                     }
-
-                                    Column(
-                                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                                    Text(
+                                        text = currentName ?: "Active Staff",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .background(TealPrimary.copy(alpha = 0.15f))
+                                            .padding(horizontal = 5.dp, vertical = 1.dp)
                                     ) {
                                         Text(
-                                            text = currentName ?: "Active Staff",
-                                            fontSize = 13.sp,
+                                            text = currentRole ?: "Pharmacist",
+                                            fontSize = 9.sp,
                                             fontWeight = FontWeight.Bold,
-                                            color = MaterialTheme.colorScheme.onSurface,
+                                            color = TealPrimary,
                                             maxLines = 1
                                         )
-
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                        ) {
-                                            // Professional high-visibility role badge
-                                            Box(
-                                                modifier = Modifier
-                                                    .clip(RoundedCornerShape(4.dp))
-                                                    .background(TealPrimary.copy(alpha = 0.15f))
-                                                    .padding(horizontal = 6.dp, vertical = 2.dp)
-                                            ) {
-                                                Text(
-                                                    text = currentRole ?: "Pharmacist",
-                                                    fontSize = 9.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = TealPrimary,
-                                                    maxLines = 1
-                                                )
-                                            }
-
-                                            Text(
-                                                text = "• Active Session",
-                                                fontSize = 10.sp,
-                                                color = AppThemeManager.slateTextMedium,
-                                                maxLines = 1
-                                            )
-                                        }
                                     }
                                 }
 
-                                // Premium action chip for editing profile
                                 OutlinedButton(
                                     onClick = { showEditProfileDialog = true },
-                                    shape = RoundedCornerShape(8.dp),
+                                    shape = RoundedCornerShape(6.dp),
                                     border = BorderStroke(1.dp, TealPrimary.copy(alpha = 0.4f)),
                                     colors = ButtonDefaults.outlinedButtonColors(
                                         contentColor = TealPrimary
                                     ),
-                                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
-                                    modifier = Modifier.height(30.dp)
+                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                    modifier = Modifier.height(26.dp)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Edit,
                                         contentDescription = "Edit Profile",
-                                        modifier = Modifier.size(12.dp)
+                                        modifier = Modifier.size(11.dp)
                                     )
-                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Spacer(modifier = Modifier.width(3.dp))
                                     Text(
                                         text = "Edit Profile",
-                                        fontSize = 11.sp,
+                                        fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
@@ -683,12 +701,27 @@ fun BranchTeamTab(
                                 fontSize = 14.sp,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
-                            Icon(
-                                Icons.Default.Sync,
-                                contentDescription = "Synced live",
-                                tint = TealPrimary,
-                                modifier = Modifier.size(14.dp)
-                              )
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(TealPrimary.copy(alpha = 0.12f))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(TealPrimary)
+                                )
+                                Text(
+                                    text = "Live",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TealPrimary
+                                )
+                            }
                         }
                     }
 
@@ -785,9 +818,10 @@ fun BranchTeamTab(
                     val isManager = currentRole == "Branch Manager" || viewModel.isCurrentUserAdmin()
 
                     item {
-                        // Task Summary Metrics Row
-                        val completedCount = operationTasks.count { it.isCompleted && it.isApproved }
-                        val pendingCount = operationTasks.size - completedCount
+                        // Task Summary Metrics Row & Dispatch Control
+                        val completedCount = operationTasks.count { it.isCompleted }
+                        val myTasksCount = operationTasks.count { !it.isCompleted && (it.assignedToName?.trim() == activeStaffName) }
+                        val unassignedCount = operationTasks.count { !it.isCompleted && (it.assignedToName.isNullOrBlank() || it.assignedToName == "All Staff") }
 
                         Card(
                             colors = CardDefaults.cardColors(containerColor = AppThemeManager.surface),
@@ -795,24 +829,102 @@ fun BranchTeamTab(
                             modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                             border = BorderStroke(1.dp, AppThemeManager.slateBorderLight)
                         ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(12.dp),
-                                horizontalArrangement = Arrangement.SpaceAround,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text("TOTAL OPERATIONS", fontSize = 9.sp, color = AppThemeManager.slateTextMedium, fontWeight = FontWeight.Bold)
-                                    Text("${operationTasks.size}", fontSize = 16.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onSurface)
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(
+                                        modifier = Modifier.weight(1f, fill = false),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Icon(Icons.Default.Verified, contentDescription = null, tint = TealPrimary, modifier = Modifier.size(14.dp))
+                                        Text("OPS VERIFICATION BOARD", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
+                                    }
+                                    
+                                    Spacer(modifier = Modifier.width(8.dp))
+
+                                    Button(
+                                        onClick = {
+                                            viewModel.dispatchAutomatedVerificationTasks { count ->
+                                                val msg = if (count > 0) "Dispatched $count automated shelf verification checks!" else "All inventory & expiry verification checks up-to-date."
+                                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                            }
+                                        },
+                                        colors = ButtonDefaults.buttonColors(containerColor = TealPrimary, contentColor = Color.Black),
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                        shape = RoundedCornerShape(6.dp),
+                                        modifier = Modifier.height(28.dp)
+                                    ) {
+                                        Icon(Icons.Default.Autorenew, contentDescription = null, modifier = Modifier.size(12.dp), tint = Color.Black)
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("⚡ Dispatch Checks", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Black, maxLines = 1)
+                                    }
                                 }
-                                Box(modifier = Modifier.width(1.dp).height(24.dp).background(AppThemeManager.slateBorderLight))
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text("RESOLVED", fontSize = 9.sp, color = AppThemeManager.okGreen, fontWeight = FontWeight.Bold)
-                                    Text("$completedCount", fontSize = 16.sp, fontWeight = FontWeight.ExtraBold, color = AppThemeManager.okGreen)
+
+                                Spacer(modifier = Modifier.height(8.dp))
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceAround,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("TOTAL", fontSize = 8.sp, color = AppThemeManager.slateTextMedium, fontWeight = FontWeight.Bold)
+                                        Text("${operationTasks.size}", fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, color = MaterialTheme.colorScheme.onSurface)
+                                    }
+                                    Box(modifier = Modifier.width(1.dp).height(20.dp).background(AppThemeManager.slateBorderLight))
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("MY TASKS", fontSize = 8.sp, color = TealPrimary, fontWeight = FontWeight.Bold)
+                                        Text("$myTasksCount", fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, color = TealPrimary)
+                                    }
+                                    Box(modifier = Modifier.width(1.dp).height(20.dp).background(AppThemeManager.slateBorderLight))
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("UNASSIGNED POOL", fontSize = 8.sp, color = AppThemeManager.pendingOrange, fontWeight = FontWeight.Bold)
+                                        Text("$unassignedCount", fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, color = AppThemeManager.pendingOrange)
+                                    }
+                                    Box(modifier = Modifier.width(1.dp).height(20.dp).background(AppThemeManager.slateBorderLight))
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text("RESOLVED", fontSize = 8.sp, color = AppThemeManager.okGreen, fontWeight = FontWeight.Bold)
+                                        Text("$completedCount", fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, color = AppThemeManager.okGreen)
+                                    }
                                 }
-                                Box(modifier = Modifier.width(1.dp).height(24.dp).background(AppThemeManager.slateBorderLight))
-                                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                    Text("PENDING TASK", fontSize = 9.sp, color = AppThemeManager.pendingOrange, fontWeight = FontWeight.Bold)
-                                    Text("$pendingCount", fontSize = 16.sp, fontWeight = FontWeight.ExtraBold, color = AppThemeManager.pendingOrange)
+
+                                Spacer(modifier = Modifier.height(10.dp))
+
+                                // Compact Segmented Filter Row
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .horizontalScroll(rememberScrollState()),
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    val filterTabs = listOf(
+                                        "All Tasks (${operationTasks.size})",
+                                        "My Tasks ($myTasksCount)",
+                                        "Unassigned Pool ($unassignedCount)",
+                                        "Resolved ($completedCount)"
+                                    )
+                                    filterTabs.forEachIndexed { index, label ->
+                                        val selected = opsTaskFilter == index
+                                        FilterChip(
+                                            selected = selected,
+                                            onClick = { opsTaskFilter = index },
+                                            label = { Text(label, fontSize = 10.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal) },
+                                            colors = FilterChipDefaults.filterChipColors(
+                                                selectedContainerColor = TealPrimary,
+                                                selectedLabelColor = Color.Black
+                                            ),
+                                            border = FilterChipDefaults.filterChipBorder(
+                                                enabled = true,
+                                                selected = selected,
+                                                borderColor = AppThemeManager.slateBorderLight
+                                            ),
+                                            modifier = Modifier.height(28.dp)
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -1116,8 +1228,127 @@ fun BranchTeamTab(
                         }
                     }
 
+                    // Rolling 14-Day Cycle Count Health Card
+                    item {
+                        val ratioPct = (reconciledRatio * 100).toInt()
+                        val isTargetMet = reconciledRatio >= 0.80f
+                        val progressColor = if (isTargetMet) AppThemeManager.okGreen else Color(0xFFF59E0B)
+
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (AppThemeManager.isDark) Color(0xFF1E293B) else Color(0xFFF1F5F9)
+                            ),
+                            shape = RoundedCornerShape(14.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 8.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(14.dp)) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(32.dp)
+                                                .clip(CircleShape)
+                                                .background(progressColor.copy(alpha = 0.15f)),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                imageVector = if (isTargetMet) Icons.Default.CheckCircle else Icons.Default.Assessment,
+                                                contentDescription = null,
+                                                tint = progressColor,
+                                                modifier = Modifier.size(18.dp)
+                                            )
+                                        }
+                                        Column {
+                                            Text(
+                                                text = "Rolling 14-Day Cycle Count",
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onSurface
+                                            )
+                                            Text(
+                                                text = if (isTargetMet) "Target Met (≥80% Reconciled)" else "Action Needed (<80% Target)",
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = progressColor
+                                            )
+                                        }
+                                    }
+                                    Surface(
+                                        color = progressColor.copy(alpha = 0.2f),
+                                        shape = RoundedCornerShape(12.dp)
+                                    ) {
+                                        Text(
+                                            text = "$ratioPct% / 80%",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = progressColor,
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(10.dp))
+                                LinearProgressIndicator(
+                                    progress = { reconciledRatio.coerceIn(0f, 1f) },
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(6.dp)
+                                        .clip(RoundedCornerShape(3.dp)),
+                                    color = progressColor,
+                                    trackColor = progressColor.copy(alpha = 0.2f)
+                                )
+
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        text = "${totalInventory.size - unreconciledCount} of ${totalInventory.size} items count-verified in last 14 days",
+                                        fontSize = 10.sp,
+                                        color = AppThemeManager.slateTextMedium
+                                    )
+                                    if (unreconciledCount > 0) {
+                                        TextButton(
+                                            onClick = { viewModel.dispatchAutomatedVerificationTasks { } },
+                                            contentPadding = PaddingValues(0.dp)
+                                        ) {
+                                            Text(
+                                                text = "Generate Audit Tasks",
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = TealPrimary
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     // Task List Displaying
-                    if (operationTasks.isEmpty()) {
+                    val filteredTasks = operationTasks.filter { task ->
+                        val taskAssignee = task.assignedToName?.trim()
+                        val isUnassigned = taskAssignee.isNullOrBlank() || taskAssignee.equals("All Staff", ignoreCase = true)
+                        when (opsTaskFilter) {
+                            1 -> !task.isCompleted && taskAssignee?.equals(activeStaffName, ignoreCase = true) == true
+                            2 -> !task.isCompleted && isUnassigned
+                            3 -> task.isCompleted
+                            else -> true
+                        }
+                    }.sortedByDescending { it.createdAt }
+
+                    if (filteredTasks.isEmpty()) {
                         item {
                             Card(
                                 colors = CardDefaults.cardColors(containerColor = AppThemeManager.secondary.copy(alpha = 0.3f)),
@@ -1129,19 +1360,25 @@ fun BranchTeamTab(
                                 ) {
                                     Icon(Icons.Default.PlaylistAddCheck, contentDescription = null, tint = AppThemeManager.slateTextMedium, modifier = Modifier.size(36.dp))
                                     Spacer(modifier = Modifier.height(10.dp))
-                                    Text("No operational tasks active for this node.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface)
-                                    Text("Use the delegation panel to dispatch follow-ups, engagement targets, or retention assignments.", fontSize = 10.sp, color = AppThemeManager.slateTextMedium, textAlign = TextAlign.Center)
+                                    Text("No operational tasks active for this view filter.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface)
+                                    Text("Switch filters or use the delegation panel to dispatch follow-ups and verification assignments.", fontSize = 10.sp, color = AppThemeManager.slateTextMedium, textAlign = TextAlign.Center)
                                 }
                             }
                         }
                     } else {
-                        items(operationTasks.sortedByDescending { it.createdAt }) { task ->
+                        items(filteredTasks) { task ->
                             // Custom Parsing of internal retro-compatible payload string
                             val descriptionText = task.description
                             val hasAssignee = descriptionText.startsWith("Assignee:")
                             val parts = if (hasAssignee) descriptionText.split(" | instructions: ", limit = 2) else null
-                            val assigneeName = if (parts != null && parts.isNotEmpty()) parts[0].substringAfter("Assignee:") else "All Staff"
-                            val actualInstructions = if (parts != null && parts.size > 1) parts[1] else descriptionText
+                            val legacyAssignee = if (parts != null && parts.isNotEmpty()) parts[0].substringAfter("Assignee:") else "All Staff"
+                            val rawInstructions = if (parts != null && parts.size > 1) parts[1] else descriptionText
+                            val actualInstructions = if (rawInstructions.contains("expiring within 30 days", ignoreCase = true)) {
+                                rawInstructions.replace("expiring within 30 days", "expiring batch - perform physical count & FEFO audit", ignoreCase = true)
+                            } else rawInstructions
+
+                            val displayAssignee = task.assignedToName?.ifBlank { legacyAssignee } ?: legacyAssignee
+                            val isUnassigned = displayAssignee.isBlank() || displayAssignee == "All Staff"
 
                             val isDark = AppThemeManager.isDark
                             // Category themed color mapping to modern primary/secondary/tertiary colors
@@ -1153,9 +1390,13 @@ fun BranchTeamTab(
                                 else -> TealPrimary
                             }
 
+                            val isHighlightedTask = effectiveHighlightTaskId != null && effectiveHighlightTaskId > 0L && (task.id.toLong() == effectiveHighlightTaskId || task.id == effectiveHighlightTaskId.toInt())
+
                             Card(
                                 colors = CardDefaults.cardColors(
-                                    containerColor = if (task.isCompleted) {
+                                    containerColor = if (isHighlightedTask) {
+                                        TealPrimary.copy(alpha = 0.12f)
+                                    } else if (task.isCompleted) {
                                         AppThemeManager.secondary.copy(alpha = 0.5f)
                                     } else {
                                         AppThemeManager.surface
@@ -1164,11 +1405,50 @@ fun BranchTeamTab(
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.fillMaxWidth(),
                                 border = BorderStroke(
-                                    width = 1.dp,
-                                    color = if (task.isCompleted) AppThemeManager.slateBorderLight else categoryColor.copy(alpha = 0.4f)
+                                    width = if (isHighlightedTask) 2.5.dp else 1.dp,
+                                    color = if (isHighlightedTask) TealPrimary else if (task.isCompleted) AppThemeManager.slateBorderLight else categoryColor.copy(alpha = 0.4f)
                                 )
                             ) {
-                                Column(modifier = Modifier.padding(14.dp)) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    if (isHighlightedTask) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(bottom = 8.dp)
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(TealPrimary)
+                                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                                        ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(4.dp)
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.NotificationsActive,
+                                                    contentDescription = null,
+                                                    tint = Color.Black,
+                                                    modifier = Modifier.size(12.dp)
+                                                )
+                                                Text(
+                                                    text = "NOTIFICATION TARGET TASK",
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.ExtraBold,
+                                                    color = Color.Black,
+                                                    letterSpacing = 0.5.sp
+                                                )
+                                            }
+                                            Icon(
+                                                imageVector = Icons.Default.Close,
+                                                contentDescription = "Clear Highlight",
+                                                tint = Color.Black,
+                                                modifier = Modifier
+                                                    .size(16.dp)
+                                                    .clickable { viewModel.clearHighlightTaskId() }
+                                            )
+                                        }
+                                    }
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -1188,15 +1468,19 @@ fun BranchTeamTab(
                                                 Text(
                                                     text = task.title,
                                                     fontWeight = FontWeight.Bold,
-                                                    fontSize = 14.sp,
+                                                    fontSize = 12.5.sp,
                                                     color = if (task.isCompleted) AppThemeManager.slateTextMedium else MaterialTheme.colorScheme.onSurface
                                                 )
                                             }
 
                                             Spacer(modifier = Modifier.height(4.dp))
 
-                                            // Category Tag
-                                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            // Category Tag & Assignee Badge
+                                            FlowRow(
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                                                modifier = Modifier.padding(top = 2.dp)
+                                            ) {
                                                 Box(
                                                     modifier = Modifier
                                                         .clip(RoundedCornerShape(4.dp))
@@ -1207,7 +1491,9 @@ fun BranchTeamTab(
                                                         text = task.category.uppercase(),
                                                         fontSize = 8.sp,
                                                         fontWeight = FontWeight.ExtraBold,
-                                                        color = categoryColor
+                                                        color = categoryColor,
+                                                        maxLines = 1,
+                                                        softWrap = false
                                                     )
                                                 }
 
@@ -1226,45 +1512,100 @@ fun BranchTeamTab(
                                                         text = task.urgency.uppercase(),
                                                         fontSize = 8.sp,
                                                         fontWeight = FontWeight.ExtraBold,
-                                                        color = urgencyColor
+                                                        color = urgencyColor,
+                                                        maxLines = 1,
+                                                        softWrap = false
                                                     )
+                                                }
+
+                                                Box(
+                                                    modifier = Modifier
+                                                        .clip(RoundedCornerShape(4.dp))
+                                                        .background(if (isUnassigned) AppThemeManager.pendingOrange.copy(alpha = 0.15f) else TealPrimary.copy(alpha = 0.15f))
+                                                        .border(0.5.dp, if (isUnassigned) AppThemeManager.pendingOrange.copy(alpha = 0.4f) else TealPrimary.copy(alpha = 0.4f), RoundedCornerShape(4.dp))
+                                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                                ) {
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.spacedBy(3.dp)
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = if (isUnassigned) Icons.Default.SupervisedUserCircle else Icons.Default.Person,
+                                                            contentDescription = null,
+                                                            tint = if (isUnassigned) AppThemeManager.pendingOrange else TealPrimary,
+                                                            modifier = Modifier.size(10.dp)
+                                                        )
+                                                        Text(
+                                                            text = if (isUnassigned) "UNASSIGNED POOL" else "ASSIGNED: $displayAssignee",
+                                                            fontSize = 8.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            color = if (isUnassigned) AppThemeManager.pendingOrange else TealPrimary,
+                                                            maxLines = 1,
+                                                            softWrap = false
+                                                        )
+                                                    }
                                                 }
                                             }
                                         }
 
-                                         // Status Toggle with Compliance Guard
-                                         Row(verticalAlignment = Alignment.CenterVertically) {
-                                             Checkbox(
-                                                 checked = task.isCompleted,
-                                                 onCheckedChange = { isChecked ->
-                                                     if (isChecked) {
-                                                         taskForComplianceVerification = task
-                                                     } else {
-                                                         viewModel.toggleOperationTask(task)
-                                                     }
-                                                 },
-                                                 enabled = !task.isCompleted,
-                                                 colors = CheckboxDefaults.colors(
-                                                     checkedColor = AppThemeManager.okGreen,
-                                                     checkmarkColor = if (isDark) Color.Black else Color.White
-                                                 )
-                                             )
+                                         // Status Toggle & One-Tap Actions
+                                         Row(
+                                             verticalAlignment = Alignment.CenterVertically,
+                                             horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                             modifier = Modifier.horizontalScroll(rememberScrollState())
+                                         ) {
+                                             if (isUnassigned && !task.isCompleted) {
+                                                 Button(
+                                                     onClick = { viewModel.claimOperationTask(task, activeStaffName) },
+                                                     colors = ButtonDefaults.buttonColors(
+                                                         containerColor = TealPrimary,
+                                                         contentColor = Color.Black
+                                                     ),
+                                                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                                                     shape = RoundedCornerShape(16.dp),
+                                                     modifier = Modifier.height(28.dp)
+                                                 ) {
+                                                     Icon(Icons.Default.Handshake, contentDescription = null, tint = Color.Black, modifier = Modifier.size(12.dp))
+                                                     Spacer(modifier = Modifier.width(4.dp))
+                                                     Text("Claim Task", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Black, maxLines = 1, softWrap = false)
+                                                 }
+                                             }
+
+                                             if (!task.isCompleted) {
+                                                 Button(
+                                                     onClick = { taskForComplianceVerification = task },
+                                                     colors = ButtonDefaults.buttonColors(
+                                                         containerColor = AppThemeManager.okGreen,
+                                                         contentColor = Color.Black
+                                                     ),
+                                                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                                                     shape = RoundedCornerShape(16.dp),
+                                                     modifier = Modifier.height(28.dp)
+                                                 ) {
+                                                     Icon(Icons.Default.CheckCircle, contentDescription = null, tint = Color.Black, modifier = Modifier.size(12.dp))
+                                                     Spacer(modifier = Modifier.width(4.dp))
+                                                     Text("Complete Task", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Black, maxLines = 1, softWrap = false)
+                                                 }
+                                             }
 
                                              // Managers can permanently revoke tasks
                                              if (isManager) {
-                                                 IconButton(onClick = { viewModel.deleteOperationTask(task) }) {
-                                                     Icon(Icons.Default.Delete, contentDescription = "Revoke task", tint = AppThemeManager.slateTextMedium.copy(alpha = 0.6f), modifier = Modifier.size(16.dp))
+                                                 IconButton(
+                                                     onClick = { viewModel.deleteOperationTask(task) },
+                                                     modifier = Modifier.size(28.dp)
+                                                 ) {
+                                                     Icon(Icons.Default.Delete, contentDescription = "Revoke task", tint = AppThemeManager.slateTextMedium.copy(alpha = 0.6f), modifier = Modifier.size(14.dp))
                                                  }
                                              }
                                          }
                                      }
 
-                                     Spacer(modifier = Modifier.height(8.dp))
+                                     Spacer(modifier = Modifier.height(6.dp))
 
                                      // Display actual instructions
                                      Text(
                                          text = actualInstructions,
-                                         fontSize = 12.sp,
+                                         fontSize = 11.sp,
                                          color = if (task.isCompleted) AppThemeManager.slateTextMedium else MaterialTheme.colorScheme.onSurface
                                      )
 
@@ -1497,7 +1838,7 @@ fun BranchTeamTab(
                                                 color = AppThemeManager.slateTextMedium
                                             )
                                             Text(
-                                                text = assigneeName,
+                                                text = displayAssignee,
                                                 fontSize = 10.sp,
                                                 fontWeight = FontWeight.Bold,
                                                 color = if (task.isCompleted) AppThemeManager.slateTextMedium else categoryColor
@@ -1755,9 +2096,18 @@ fun BranchTeamTab(
         var linkedCustomerName by remember { mutableStateOf("") }
         var isSavingCompliance by remember { mutableStateOf(false) }
 
-        val channels = listOf("Phone Call", "WhatsApp", "In-Person", "System/Other")
+        val channels = listOf("Phone Call", "WhatsApp", "In-Person", "SMS")
 
         val isStockTransfer = task.category == "Stock Transfer"
+        val isExpiryTask = task.title.contains("Expiry", ignoreCase = true) || task.category.contains("Expiry", ignoreCase = true)
+        val isInventoryTask = !isExpiryTask && (task.title.contains("Inventory", ignoreCase = true) || task.title.contains("Reconcile", ignoreCase = true) || task.title.contains("Stock", ignoreCase = true) || task.category.contains("Inventory", ignoreCase = true))
+        val isPatientTask = !isStockTransfer && !isExpiryTask && !isInventoryTask && (task.title.contains("Refill", ignoreCase = true) || task.title.contains("Patient", ignoreCase = true) || task.category.contains("Patient", ignoreCase = true))
+
+        val expiryActions = listOf("Count Verified", "FEFO Discount Applied", "Quarantined", "Written Off")
+        val inventoryActions = listOf("Count Verified", "Stock Updated", "Purchase Order", "Discrepancy Logged")
+        val defaultAuditAction = if (isExpiryTask) expiryActions.first() else inventoryActions.first()
+        var selectedAuditAction by remember { mutableStateOf(defaultAuditAction) }
+
         val descriptionText = task.description
         val itemName = if (isStockTransfer && descriptionText.contains("ITEM: ")) {
             descriptionText.substringAfter("ITEM: ").substringBefore(" | DOSAGE: ").trim()
@@ -1775,6 +2125,14 @@ fun BranchTeamTab(
             descriptionText.substringAfter("REASON: ").trim()
         } else ""
 
+        val dialogTitleText = when {
+            isStockTransfer -> "Stock Transfer Receipt"
+            isExpiryTask -> "Expiry Shelf Audit Verification"
+            isInventoryTask -> "Inventory & Stock Audit Verification"
+            isPatientTask -> "Patient Follow-up & Clinical Log"
+            else -> "Operations Task Verification"
+        }
+
         AlertDialog(
             onDismissRequest = { if (!isSavingCompliance) taskForComplianceVerification = null },
             title = {
@@ -1783,13 +2141,18 @@ fun BranchTeamTab(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Icon(
-                        imageVector = if (isStockTransfer) Icons.Default.Transform else Icons.Default.FactCheck,
+                        imageVector = when {
+                            isStockTransfer -> Icons.Default.Transform
+                            isExpiryTask -> Icons.Default.Warning
+                            isInventoryTask -> Icons.Default.Inventory
+                            else -> Icons.Default.FactCheck
+                        },
                         contentDescription = null,
                         tint = TealPrimary,
                         modifier = Modifier.size(24.dp)
                     )
                     Text(
-                        text = if (isStockTransfer) "Stock Transfer Receipt" else "Clinical Task Verification",
+                        text = dialogTitleText,
                         fontWeight = FontWeight.Bold,
                         fontSize = 18.sp,
                         color = MaterialTheme.colorScheme.onSurface
@@ -1848,9 +2211,10 @@ fun BranchTeamTab(
                             fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
                         )
                     }
-                } else {
+                } else if (isExpiryTask || isInventoryTask) {
+                    // --- Inventory / Expiry Shelf Audit Dialog ---
                     Column(
-                        verticalArrangement = Arrangement.spacedBy(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
                         modifier = Modifier.padding(top = 8.dp)
                     ) {
                         Card(
@@ -1859,9 +2223,105 @@ fun BranchTeamTab(
                             modifier = Modifier.fillMaxWidth()
                         ) {
                             Column(modifier = Modifier.padding(10.dp)) {
-                                Text(text = "TASK TO RESOLVE", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = TealPrimary)
+                                Text(
+                                    text = if (isExpiryTask) "EXPIRY AUDIT NODE" else "INVENTORY RECONCILIATION NODE",
+                                    fontSize = 8.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TealPrimary
+                                )
                                 Spacer(modifier = Modifier.height(2.dp))
-                                Text(text = task.title, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                                Text(text = task.title, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                                Spacer(modifier = Modifier.height(4.dp))
+                                val instructionsText = if (task.description.startsWith("Assignee:")) {
+                                    task.description.substringAfter(" | instructions: ")
+                                } else {
+                                    task.description
+                                }
+                                Text(text = instructionsText, fontSize = 11.sp, color = AppThemeManager.slateTextMedium)
+                            }
+                        }
+
+                        Text(
+                            text = "Conduct a physical shelf audit. Select the action taken and record resolution notes to update inventory audit logs.",
+                            fontSize = 11.sp,
+                            color = AppThemeManager.slateTextMedium
+                        )
+
+                        // Action Choice Chips
+                        Column {
+                            Text(text = "Select Audit Action", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = AppThemeManager.slateTextMedium)
+                            Spacer(modifier = Modifier.height(6.dp))
+                            val currentActions = if (isExpiryTask) expiryActions else inventoryActions
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                currentActions.forEach { act ->
+                                    val isSelected = selectedAuditAction == act
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(RoundedCornerShape(6.dp))
+                                            .background(if (isSelected) TealPrimary.copy(alpha = 0.15f) else Color.Transparent)
+                                            .border(
+                                                width = 1.dp,
+                                                color = if (isSelected) TealPrimary else AppThemeManager.unfocusedTextFieldBorder.copy(alpha = 0.4f),
+                                                shape = RoundedCornerShape(6.dp)
+                                            )
+                                            .clickable { selectedAuditAction = act }
+                                            .padding(vertical = 8.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = act,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isSelected) TealPrimary else AppThemeManager.slateTextMedium,
+                                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        // Audit Notes Field
+                        OutlinedTextField(
+                            value = complianceNotes,
+                            onValueChange = { complianceNotes = it },
+                            label = { Text("Audit Resolution & Verification Notes", fontSize = 12.sp) },
+                            placeholder = { Text("e.g. Physical count confirmed 45 units. Applied 15% markdown sticker for fast FEFO depletion.") },
+                            minLines = 3,
+                            maxLines = 5,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = TealPrimary,
+                                focusedLabelColor = TealPrimary,
+                                unfocusedBorderColor = AppThemeManager.unfocusedTextFieldBorder
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        
+                        Text(
+                            text = "Note: A minimum of 5 characters resolution note is required.",
+                            fontSize = 10.sp,
+                            color = if (complianceNotes.trim().length >= 5) AppThemeManager.okGreen else AppThemeManager.warningRed,
+                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                        )
+                    }
+                } else if (isPatientTask) {
+                    // --- Patient Care & Refill Task Dialog ---
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                        modifier = Modifier.padding(top = 8.dp)
+                    ) {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = AppThemeManager.secondary.copy(alpha = 0.2f)),
+                            border = BorderStroke(1.dp, TealPrimary.copy(alpha = 0.2f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Text(text = "PATIENT CARE FOLLOW-UP", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = TealPrimary)
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(text = task.title, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                                 Spacer(modifier = Modifier.height(2.dp))
                                 val instructionsText = if (task.description.startsWith("Assignee:")) {
                                     task.description.substringAfter(" | instructions: ")
@@ -1873,7 +2333,7 @@ fun BranchTeamTab(
                         }
 
                         Text(
-                            text = "To maintain strict clinical safety and operational tracing, you must document interaction evidence before closing this node assignment.",
+                            text = "Document patient outreach evidence and outcome before archiving this clinical care task.",
                             fontSize = 11.sp,
                             color = AppThemeManager.slateTextMedium
                         )
@@ -1928,12 +2388,12 @@ fun BranchTeamTab(
                             }
                         }
 
-                        // Clinical resolution interaction transcript
+                        // Clinical interaction transcript
                         OutlinedTextField(
                             value = complianceNotes,
                             onValueChange = { complianceNotes = it },
-                            label = { Text("Clinical Interaction Transcript / Proof Notes", fontSize = 12.sp) },
-                            placeholder = { Text("Provide details of the follow-up, patient feedback, clinical adjustments, or resolution outcomes...") },
+                            label = { Text("Clinical Outreach Notes", fontSize = 12.sp) },
+                            placeholder = { Text("e.g. Contacted patient via WhatsApp, confirmed prescription refill pick-up for tomorrow at 2 PM.") },
                             minLines = 3,
                             maxLines = 5,
                             colors = OutlinedTextFieldDefaults.colors(
@@ -1945,9 +2405,62 @@ fun BranchTeamTab(
                         )
                         
                         Text(
-                            text = "Note: A minimum of 10 characters descriptive proof is required to satisfy clinical audit policies.",
+                            text = "Note: Patient Name & minimum 8 characters notes required.",
                             fontSize = 10.sp,
-                            color = if (complianceNotes.trim().length >= 10) AppThemeManager.okGreen else AppThemeManager.warningRed,
+                            color = if (linkedCustomerName.trim().isNotEmpty() && complianceNotes.trim().length >= 8) AppThemeManager.okGreen else AppThemeManager.warningRed,
+                            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                        )
+                    }
+                } else {
+                    // --- General Operations Task Dialog ---
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(14.dp),
+                        modifier = Modifier.padding(top = 8.dp)
+                    ) {
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = AppThemeManager.secondary.copy(alpha = 0.2f)),
+                            border = BorderStroke(1.dp, TealPrimary.copy(alpha = 0.2f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Text(text = "BRANCH OPERATIONS TASK", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = TealPrimary)
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(text = task.title, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                                Spacer(modifier = Modifier.height(2.dp))
+                                val instructionsText = if (task.description.startsWith("Assignee:")) {
+                                    task.description.substringAfter(" | instructions: ")
+                                } else {
+                                    task.description
+                                }
+                                Text(text = instructionsText, fontSize = 11.sp, color = AppThemeManager.slateTextMedium)
+                            }
+                        }
+
+                        Text(
+                            text = "Document completion notes to verify execution of this branch operational task.",
+                            fontSize = 11.sp,
+                            color = AppThemeManager.slateTextMedium
+                        )
+
+                        OutlinedTextField(
+                            value = complianceNotes,
+                            onValueChange = { complianceNotes = it },
+                            label = { Text("Completion & Resolution Notes", fontSize = 12.sp) },
+                            placeholder = { Text("Provide details on how this task was completed...") },
+                            minLines = 3,
+                            maxLines = 5,
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = TealPrimary,
+                                focusedLabelColor = TealPrimary,
+                                unfocusedBorderColor = AppThemeManager.unfocusedTextFieldBorder
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        
+                        Text(
+                            text = "Note: A minimum of 5 characters resolution note is required.",
+                            fontSize = 10.sp,
+                            color = if (complianceNotes.trim().length >= 5) AppThemeManager.okGreen else AppThemeManager.warningRed,
                             fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
                         )
                     }
@@ -1970,14 +2483,32 @@ fun BranchTeamTab(
                                     taskForComplianceVerification = null
                                 }
                             }
-                        } else {
+                        } else if (isExpiryTask || isInventoryTask) {
+                            if (cleanNotes.length < 5) {
+                                Toast.makeText(context, "Resolution notes must be at least 5 characters long", Toast.LENGTH_SHORT).show()
+                                return@Button
+                            }
+                            isSavingCompliance = true
+                            viewModel.verifiablyCompleteOperationTask(
+                                task = task,
+                                notes = cleanNotes,
+                                channel = selectedAuditAction,
+                                patientName = "Internal Stock Audit"
+                            ) { success, msg ->
+                                isSavingCompliance = false
+                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                if (success) {
+                                    taskForComplianceVerification = null
+                                }
+                            }
+                        } else if (isPatientTask) {
                             val cleanPatient = linkedCustomerName.trim()
                             if (cleanPatient.isEmpty()) {
                                 Toast.makeText(context, "Patient Name is required for follow-up audit", Toast.LENGTH_SHORT).show()
                                 return@Button
                             }
-                            if (cleanNotes.length < 10) {
-                                Toast.makeText(context, "Interaction notes must be at least 10 characters long to satisfy policy", Toast.LENGTH_SHORT).show()
+                            if (cleanNotes.length < 8) {
+                                Toast.makeText(context, "Outreach notes must be at least 8 characters long to satisfy policy", Toast.LENGTH_SHORT).show()
                                 return@Button
                             }
                             isSavingCompliance = true
@@ -1993,11 +2524,31 @@ fun BranchTeamTab(
                                     taskForComplianceVerification = null
                                 }
                             }
+                        } else {
+                            if (cleanNotes.length < 5) {
+                                Toast.makeText(context, "Completion notes must be at least 5 characters long", Toast.LENGTH_SHORT).show()
+                                return@Button
+                            }
+                            isSavingCompliance = true
+                            viewModel.verifiablyCompleteOperationTask(
+                                task = task,
+                                notes = cleanNotes,
+                                channel = "System/Other",
+                                patientName = "N/A - General Ops"
+                            ) { success, msg ->
+                                isSavingCompliance = false
+                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                if (success) {
+                                    taskForComplianceVerification = null
+                                }
+                            }
                         }
                     },
                     enabled = !isSavingCompliance && (
                         (isStockTransfer && complianceNotes.trim().length >= 5) ||
-                        (!isStockTransfer && linkedCustomerName.trim().isNotEmpty() && complianceNotes.trim().length >= 10)
+                        ((isExpiryTask || isInventoryTask) && complianceNotes.trim().length >= 5) ||
+                        (isPatientTask && linkedCustomerName.trim().isNotEmpty() && complianceNotes.trim().length >= 8) ||
+                        (!isStockTransfer && !isExpiryTask && !isInventoryTask && !isPatientTask && complianceNotes.trim().length >= 5)
                     ),
                     colors = ButtonDefaults.buttonColors(containerColor = TealPrimary)
                 ) {
@@ -2008,7 +2559,13 @@ fun BranchTeamTab(
                             strokeWidth = 2.dp
                         )
                     } else {
-                        Text(if (isStockTransfer) "Verify & Receive" else "Archive Proof", color = Color.Black, fontWeight = FontWeight.Bold)
+                        val confirmText = when {
+                            isStockTransfer -> "Verify & Receive"
+                            isExpiryTask || isInventoryTask -> "Confirm & Resolve Audit"
+                            isPatientTask -> "Archive Clinical Log"
+                            else -> "Complete Operational Task"
+                        }
+                        Text(confirmText, color = Color.Black, fontWeight = FontWeight.Bold)
                     }
                 }
             },

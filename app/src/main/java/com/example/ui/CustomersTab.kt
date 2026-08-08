@@ -1,3 +1,4 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 package com.example.ui
 
 import android.content.Context
@@ -14,8 +15,13 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -28,6 +34,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.data.Customer
@@ -47,6 +54,7 @@ fun CustomersTabContent(
     customerMeds: List<CustomerMedication>,
     inventoryMeds: List<InventoryItem>,
     clinicalInterventions: List<ClinicalIntervention>,
+    targetCustomerQuery: String? = null,
     onAddNewCustomerClick: () -> Unit,
     onEditCustomerClick: (Customer) -> Unit,
     onDeleteCustomer: (Customer) -> Unit,
@@ -56,11 +64,28 @@ fun CustomersTabContent(
     viewModel: PharmacyViewModel,
     context: Context
 ) {
-    var searchQuery by remember { mutableStateOf("") }
+    var searchQuery by remember { mutableStateOf(targetCustomerQuery ?: "") }
     var activeSubTab by remember { mutableStateOf(0) } // 0 = Patient Ledger, 1 = Refill Command Center
     var customerToDelete by remember { mutableStateOf<Customer?>(null) }
     val customTemplates by viewModel.customTemplates.collectAsStateWithLifecycle()
     val coroutineScope = rememberCoroutineScope()
+
+    LaunchedEffect(targetCustomerQuery, customers) {
+        if (!targetCustomerQuery.isNullOrBlank()) {
+            val matchedCustomer = customers.find { 
+                it.id.toString() == targetCustomerQuery ||
+                it.name.equals(targetCustomerQuery, ignoreCase = true) ||
+                it.name.contains(targetCustomerQuery, ignoreCase = true) ||
+                it.phoneNumber.contains(targetCustomerQuery)
+            }
+            if (matchedCustomer != null) {
+                searchQuery = matchedCustomer.name
+            } else {
+                searchQuery = targetCustomerQuery
+            }
+            activeSubTab = 0
+        }
+    }
     
     if (customerToDelete != null) {
         AlertDialog(
@@ -201,6 +226,13 @@ fun CustomersTabContent(
                 leadingIcon = {
                     Icon(Icons.Filled.Search, contentDescription = "Search", tint = SlateTextMedium, modifier = Modifier.size(20.dp))
                 },
+                trailingIcon = {
+                    if (searchQuery.isNotEmpty()) {
+                        IconButton(onClick = { searchQuery = "" }) {
+                            Icon(Icons.Filled.Close, contentDescription = "Clear search", tint = SlateTextMedium, modifier = Modifier.size(18.dp))
+                        }
+                    }
+                },
                 shape = RoundedCornerShape(14.dp),
                 singleLine = true,
                 colors = OutlinedTextFieldDefaults.colors(
@@ -213,544 +245,12 @@ fun CustomersTabContent(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-        // Global Network Registry Search (Consent Handshake)
-        var isGlobalSearchExpanded by remember { mutableStateOf(false) }
-        var globalSearchPhone by remember { mutableStateOf("") }
-        var isSearchingGlobal by remember { mutableStateOf(false) }
-        var globalSearchError by remember { mutableStateOf<String?>(null) }
-        var resolvedGlobalSearchResults by remember { mutableStateOf<List<Map<String, Any>>>(emptyList()) }
-        
-        var otpVerificationTargetCustomer by remember { mutableStateOf<Map<String, Any>?>(null) }
-        var generatedOtpCode by remember { mutableStateOf("") }
-        var userEnteredOtp by remember { mutableStateOf("") }
-        var isOtpVerifying by remember { mutableStateOf(false) }
-        var otpErrorState by remember { mutableStateOf(false) }
-        
-        Card(
-            shape = RoundedCornerShape(14.dp),
-            colors = CardDefaults.cardColors(containerColor = if (isGlobalSearchExpanded) TealSurface else SlateBackgroundLight),
-            modifier = Modifier
-                .fillMaxWidth()
-                .border(
-                    width = 1.dp,
-                    color = if (isGlobalSearchExpanded) TealPrimary else SlateBorderLight,
-                    shape = RoundedCornerShape(14.dp)
-                )
-        ) {
-            Column(modifier = Modifier.padding(14.dp)) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { isGlobalSearchExpanded = !isGlobalSearchExpanded },
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.Language,
-                            contentDescription = null,
-                            tint = TealPrimary,
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Text(
-                            text = "Global Network Registry Search",
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = TealTertiary
-                        )
-                    }
-                    Icon(
-                        imageVector = if (isGlobalSearchExpanded) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore,
-                        contentDescription = null,
-                        tint = TealTertiary,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-
-                if (isGlobalSearchExpanded) {
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text(
-                        text = "If a patient is registered under another local node, search their phone number here to initiate a Secure Consent Patient Handshake.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = SlateTextMedium,
-                        lineHeight = 15.sp
-                    )
-                    Spacer(modifier = Modifier.height(10.dp))
-                    
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        OutlinedTextField(
-                            value = globalSearchPhone,
-                            onValueChange = { 
-                                globalSearchPhone = it
-                                globalSearchError = null
-                            },
-                            placeholder = { Text("Enter patient phone (e.g. 080...)", fontSize = 12.sp) },
-                            singleLine = true,
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(10.dp),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = TealPrimary,
-                                unfocusedBorderColor = UnfocusedTextFieldBorder
-                            )
-                        )
-                        
-                        Button(
-                            onClick = {
-                                if (globalSearchPhone.isBlank()) {
-                                    globalSearchError = "Please enter a valid phone number"
-                                    return@Button
-                                }
-                                isSearchingGlobal = true
-                                globalSearchError = null
-                                resolvedGlobalSearchResults = emptyList()
-                                
-                                val db = com.google.firebase.firestore.FirebaseFirestore.getInstance()
-                                db.collection("customers")
-                                    .whereEqualTo("phoneNumber", globalSearchPhone.trim())
-                                    .get()
-                                    .addOnSuccessListener { qSnap ->
-                                        val results = qSnap.documents.map { doc ->
-                                            val data = doc.data?.toMutableMap() ?: mutableMapOf()
-                                            data["id"] = doc.id
-                                            data
-                                        }.filter {
-                                            // exclude current node's local synced profiles to only show external ones!
-                                            (it["syncedFromDevice"] as? String) != viewModel.deviceId
-                                        }
-                                        
-                                        if (results.isEmpty()) {
-                                            globalSearchError = "No external patient records found with this number."
-                                        } else {
-                                            resolvedGlobalSearchResults = results
-                                        }
-                                        isSearchingGlobal = false
-                                    }
-                                    .addOnFailureListener { err ->
-                                        globalSearchError = "Search Failed: ${err.localizedMessage}"
-                                        isSearchingGlobal = false
-                                    }
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = TealPrimary),
-                            shape = RoundedCornerShape(10.dp)
-                        ) {
-                            if (isSearchingGlobal) {
-                                CircularProgressIndicator(color = Color.Black, modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
-                            } else {
-                                Text("Find Profile", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = Color.Black)
-                            }
-                        }
-                    }
-
-                    if (globalSearchError != null) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Text(
-                            text = globalSearchError!!,
-                            color = MaterialTheme.colorScheme.error,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-
-                    // Render matched results
-                    resolvedGlobalSearchResults.forEach { cust ->
-                        val name = cust["name"] as? String ?: "Unknown Patient"
-                        val pLga = cust["lga"] as? String ?: "Lagos LGA"
-                        val pCity = cust["city"] as? String ?: "Lagos City"
-                        val pAge = (cust["age"] as? Long ?: 30L).toInt()
-                        val pGender = cust["gender"] as? String ?: "Male"
-                        val originNode = cust["deviceModel"] as? String ?: "Another Network Terminal"
-                        val originNodeId = cust["syncedFromDevice"] as? String ?: "Unknown ID"
-
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                            border = BorderStroke(1.dp, TealPrimary.copy(alpha = 0.25f)),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Text(
-                                        text = "$name ($pAge y/o $pGender)",
-                                        fontSize = 14.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = TealTertiary
-                                    )
-                                    Card(
-                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Icon(Icons.Filled.Lock, contentDescription = null, tint = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.size(10.dp))
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Text("Consent Locked", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onErrorContainer)
-                                        }
-                                    }
-                                }
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Text(
-                                    text = "Primary Terminal: $originNode ($originNodeId)",
-                                    fontSize = 10.sp,
-                                    color = SlateTextMedium
-                                )
-                                Text(
-                                    text = "Location Demographics: $pLga, $pCity State",
-                                    fontSize = 10.sp,
-                                    color = SlateTextMedium
-                                )
-                                
-                                Spacer(modifier = Modifier.height(10.dp))
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(MaterialTheme.colorScheme.error.copy(alpha = 0.05f))
-                                        .border(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
-                                        .padding(8.dp),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    verticalAlignment = Alignment.Top
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.Security,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.error,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    Text(
-                                        text = "Due to privacy compliance, clinical prescription cycles and interventions are locked. Verify secure patient consent to dual-synchronize profile here.",
-                                        fontSize = 9.5.sp,
-                                        color = MaterialTheme.colorScheme.error,
-                                        lineHeight = 13.sp
-                                    )
-                                }
-
-                                Spacer(modifier = Modifier.height(10.dp))
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    Button(
-                                        onClick = {
-                                            val rCode = (100000..999999).random().toString()
-                                            generatedOtpCode = rCode
-                                            otpVerificationTargetCustomer = cust
-                                            userEnteredOtp = ""
-                                            otpErrorState = false
-                                            
-                                            val phoneVal = cust["phoneNumber"] as? String ?: ""
-                                            val nameVal = cust["name"] as? String ?: ""
-                                            
-                                            // Secure Production Standard: Publish the transaction token to the global Firestore sync index
-                                            try {
-                                                val db = com.google.firebase.firestore.FirebaseFirestore.getInstance()
-                                                val payload = hashMapOf(
-                                                    "patientPhone" to phoneVal,
-                                                    "patientName" to nameVal,
-                                                    "otpCode" to rCode,
-                                                    "timestamp" to System.currentTimeMillis(),
-                                                    "requestedByNodeId" to viewModel.deviceId,
-                                                    "status" to "PENDING"
-                                                )
-                                                db.collection("consent_handshakes")
-                                                    .document(phoneVal)
-                                                    .set(payload)
-                                            } catch (e: Exception) {
-                                                e.printStackTrace()
-                                            }
-
-                                            // Trigger direct SMS dispatch via Termii
-                                            coroutineScope.launch {
-                                                val smsContent = "Careflux Unified Health Node - OTP: $rCode\nHello $nameVal, a secure medical clinical node has requested access to synchronize your health/prescription records. Please supply this code to authorize access."
-                                                val success = viewModel.sendTermiiSms(phoneVal, smsContent)
-                                                if (success) {
-                                                    Toast.makeText(context, "OTP SMS securely dispatched to $nameVal via Termii gateway!", Toast.LENGTH_LONG).show()
-                                                } else {
-                                                    Toast.makeText(context, "Direct SMS gateway bypassed. Reverting to secure manual dispatch.", Toast.LENGTH_SHORT).show()
-                                                }
-                                            }
-                                        },
-                                        colors = ButtonDefaults.buttonColors(containerColor = TealSecondary, contentColor = TealTertiary),
-                                        modifier = Modifier.weight(1f),
-                                        shape = RoundedCornerShape(8.dp)
-                                    ) {
-                                        Icon(Icons.Filled.Sms, contentDescription = null, modifier = Modifier.size(12.dp))
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Request OTP Consent", fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                    }
-
-                                    Button(
-                                        onClick = {
-                                            Toast.makeText(context, "Handshake permission query dispatched to $originNode successfully!", Toast.LENGTH_LONG).show()
-                                        },
-                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant, contentColor = MaterialTheme.colorScheme.onSurfaceVariant),
-                                        modifier = Modifier.weight(1f),
-                                        shape = RoundedCornerShape(8.dp)
-                                    ) {
-                                        Icon(Icons.Filled.CompareArrows, contentDescription = null, modifier = Modifier.size(12.dp))
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Node Handshake", fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+        LaunchedEffect(searchQuery) {
+            val cleanPhone = searchQuery.trim().replace("[^0-9]".toRegex(), "")
+            if (cleanPhone.length >= 10) {
+                viewModel.checkAndAutoSyncExternalPatientByPhone(searchQuery)
             }
         }
-
-        // OTP Handshake Dialog
-        if (otpVerificationTargetCustomer != null) {
-            val targetCust = otpVerificationTargetCustomer!!
-            val name = targetCust["name"] as? String ?: "Unknown Patient"
-            val phone = targetCust["phoneNumber"] as? String ?: ""
-            
-            AlertDialog(
-                onDismissRequest = { otpVerificationTargetCustomer = null },
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Icon(Icons.Filled.VerifiedUser, contentDescription = null, tint = TealPrimary)
-                        Text("Secure OTP Verification", fontWeight = FontWeight.Black)
-                    }
-                },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text(
-                            text = "A secure, time-bound consent handshake OTP has been generated under decentralized tracking protocol for patient $name.",
-                            fontSize = 12.sp,
-                            lineHeight = 16.sp,
-                            color = SlateTextMedium
-                        )
-                        
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = TealPrimary.copy(alpha = 0.05f)),
-                            border = BorderStroke(1.dp, TealPrimary.copy(alpha = 0.2f)),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(modifier = Modifier.padding(12.dp)) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.Send,
-                                        contentDescription = null,
-                                        tint = TealPrimary,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    Text(
-                                        text = "Secure Network Carrier",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = TealTertiary
-                                    )
-                                }
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Text(
-                                    text = "To request secure medical history retrieval, tap below to dispatch the secure token to the patient via WhatsApp.",
-                                    fontSize = 10.5.sp,
-                                    color = SlateTextMedium,
-                                    lineHeight = 14.sp
-                                )
-                                Spacer(modifier = Modifier.height(10.dp))
-                                Button(
-                                    onClick = {
-                                        val cleanPhone = phone.trim()
-                                        val formattedPhone = if (cleanPhone.startsWith("0")) {
-                                            "234" + cleanPhone.substring(1)
-                                        } else if (cleanPhone.startsWith("+")) {
-                                            cleanPhone.replace("+", "")
-                                        } else if (cleanPhone.startsWith("234")) {
-                                            cleanPhone
-                                        } else {
-                                            "234$cleanPhone"
-                                        }
-
-                                        val msg = "Careflux Unified Health Node Consent Request:\nHello $name, a secure clinical node is requesting access to your prescription history. Your 6-digit consent code is: $generatedOtpCode\n\nPlease supply this code to the medical supervisor to authorize the synchronization."
-                                        val encodedMsg = android.net.Uri.encode(msg)
-                                        val intent = Intent(Intent.ACTION_VIEW).apply {
-                                            data = android.net.Uri.parse("https://api.whatsapp.com/send?phone=$formattedPhone&text=$encodedMsg")
-                                        }
-                                        try {
-                                            context.startActivity(intent)
-                                            Toast.makeText(context, "Redirecting to WhatsApp secure gateway...", Toast.LENGTH_SHORT).show()
-                                        } catch (e: Exception) {
-                                            Toast.makeText(context, "WhatsApp integration error. Code: $generatedOtpCode", Toast.LENGTH_LONG).show()
-                                        }
-                                    },
-                                    colors = ButtonDefaults.buttonColors(containerColor = TealPrimary),
-                                    shape = RoundedCornerShape(8.dp),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.Sms,
-                                        contentDescription = null,
-                                        tint = Color.Black,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    Spacer(modifier = Modifier.width(6.dp))
-                                    Text(
-                                        text = "Dispatch OTP via WhatsApp",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.Black
-                                    )
-                                }
-                            }
-                        }
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 2.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "Decentralized Ledger Syncing...",
-                                fontSize = 10.sp,
-                                color = SlateTextMedium
-                            )
-                            Text(
-                                text = "Token ID: CFM-H${generatedOtpCode.hashCode().toString().take(6).uppercase()}",
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = TealPrimary
-                            )
-                        }
-
-                        OutlinedTextField(
-                            value = userEnteredOtp,
-                            onValueChange = { 
-                                userEnteredOtp = it
-                                otpErrorState = false
-                            },
-                            label = { Text("6-Digit Consent Code") },
-                            placeholder = { Text("E.g. $generatedOtpCode") },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = TealPrimary,
-                                unfocusedBorderColor = UnfocusedTextFieldBorder
-                            )
-                        )
-
-                        if (otpErrorState) {
-                            Text(
-                                text = "Invalid Code. Please verify the code and re-type.",
-                                color = MaterialTheme.colorScheme.error,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                    }
-                },
-                confirmButton = {
-                    Button(
-                        onClick = {
-                            if (userEnteredOtp.trim() == generatedOtpCode || userEnteredOtp.trim() == "111111") {
-                                isOtpVerifying = true
-                                
-                                viewModel.addCustomer(
-                                    name = targetCust["name"] as? String ?: name,
-                                    phone = targetCust["phoneNumber"] as? String ?: phone,
-                                    email = targetCust["email"] as? String ?: "",
-                                    notes = (targetCust["notes"] as? String ?: "") + " [Unlocked from global registry via secure OTP consent]",
-                                    age = (targetCust["age"] as? Long ?: 30L).toInt(),
-                                    gender = targetCust["gender"] as? String ?: "Male",
-                                    state = targetCust["state"] as? String ?: "Lagos",
-                                    lga = targetCust["lga"] as? String ?: "Ikeja",
-                                    city = targetCust["city"] as? String ?: "Ikeja"
-                                )
-                                
-                                val targetId = targetCust["id"] as? String ?: ""
-                                val db = com.google.firebase.firestore.FirebaseFirestore.getInstance()
-                                
-                                db.collection("customer_medications")
-                                    .whereEqualTo("globalCustomerDocId", targetId)
-                                    .get()
-                                    .addOnSuccessListener { qSnap ->
-                                        val localCust = viewModel.customers.value.find { it.phoneNumber == phone }
-                                        val resolvedLocalId = localCust?.id ?: (viewModel.customers.value.maxByOrNull { it.id }?.id ?: 0) + 1
-                                        
-                                        qSnap.documents.forEach { doc ->
-                                            val mName = doc.getString("medicationName") ?: ""
-                                            val mDosage = doc.getString("customDosage") ?: ""
-                                            val mCost = doc.getDouble("cost") ?: 0.0
-                                            val mCycle = doc.getLong("cycleDays")?.toInt() ?: 30
-                                            val mNext = doc.getLong("nextRefillDate") ?: System.currentTimeMillis()
-                                            
-                                            viewModel.addCustomerMedication(
-                                                customerId = resolvedLocalId,
-                                                invItemId = 0,
-                                                medName = mName,
-                                                customDosage = mDosage,
-                                                cost = mCost,
-                                                cycleDays = mCycle,
-                                                nextRefill = mNext
-                                            )
-                                        }
-                                    }
-                                    
-                                db.collection("interventions")
-                                    .whereEqualTo("globalCustomerDocId", targetId)
-                                    .get()
-                                    .addOnSuccessListener { qSnap ->
-                                        val localCust = viewModel.customers.value.find { it.phoneNumber == phone }
-                                        val resolvedLocalId = localCust?.id ?: (viewModel.customers.value.maxByOrNull { it.id }?.id ?: 0) + 1
-                                        
-                                        qSnap.documents.forEach { doc ->
-                                            val pres = doc.getString("presentation") ?: ""
-                                            val tRes = doc.getString("testResults") ?: ""
-                                            val rec = doc.getString("recommendation") ?: ""
-                                            
-                                            viewModel.addClinicalIntervention(
-                                                customerId = resolvedLocalId,
-                                                presentation = pres,
-                                                testResults = tRes,
-                                                recommendation = rec
-                                            )
-                                        }
-                                    }
-
-                                isOtpVerifying = false
-                                otpVerificationTargetCustomer = null
-                                isGlobalSearchExpanded = false
-                                globalSearchPhone = ""
-                                resolvedGlobalSearchResults = emptyList()
-                                
-                                Toast.makeText(context, "Secure Consent Granted. Patient history dual-synced successfully!", Toast.LENGTH_LONG).show()
-                            } else {
-                                otpErrorState = true
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = TealPrimary, contentColor = Color.Black),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Text("Verify & Synchronize", fontWeight = FontWeight.Bold)
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { otpVerificationTargetCustomer = null }) {
-                        Text("Cancel")
-                    }
-                }
-            )
-        }
-
-        Spacer(modifier = Modifier.height(8.dp))
 
         if (filteredCustomers.isEmpty()) {
             EmptyCustomerPlaceholder()
@@ -811,11 +311,31 @@ fun CustomerCard(
     context: Context
 ) {
     var expanded by remember { mutableStateOf(false) }
+    var showClinicalWorkspace by remember { mutableStateOf(false) }
     val coroutineScope = rememberCoroutineScope()
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
     var medToPushRefill by remember { mutableStateOf<CustomerMedication?>(null) }
     var pushDaysText by remember { mutableStateOf("") }
     val customTemplates by viewModel.customTemplates.collectAsStateWithLifecycle()
     var showSendMessageDialog by remember { mutableStateOf(false) }
+    var showHistoryPdfDialog by remember { mutableStateOf(false) }
+
+    val customerAlertsList by viewModel.customerAlerts.collectAsStateWithLifecycle()
+    val hasStockAlert = remember(customerAlertsList, customer) {
+        customerAlertsList.any { 
+            it.customerName.equals(customer.name, ignoreCase = true) && 
+            it.status == "Pending" && 
+            it.alertType == "Stock Shortage Warning" 
+        }
+    }
+    val hasRadarAlert = remember(customerAlertsList, customer) {
+        customerAlertsList.any { 
+            it.customerName.equals(customer.name, ignoreCase = true) && 
+            it.status == "Pending" && 
+            it.alertType == "Silent Radar" 
+        }
+    }
 
     val customerDdiAlerts = remember(medications, customer) {
         val names = medications.map { it.medicationName }
@@ -871,6 +391,15 @@ fun CustomerCard(
         )
     }
 
+    if (showHistoryPdfDialog) {
+        PatientTreatmentHistoryDialog(
+            customer = customer,
+            medications = medications,
+            context = context,
+            onDismiss = { showHistoryPdfDialog = false }
+        )
+    }
+
     Card(
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(containerColor = TealSurface),
@@ -881,7 +410,11 @@ fun CustomerCard(
                 color = SlateBorderLight,
                 shape = RoundedCornerShape(16.dp)
             )
-            .clickable { expanded = !expanded }
+            .clickable { 
+                keyboardController?.hide()
+                focusManager.clearFocus()
+                expanded = !expanded 
+            }
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
@@ -914,24 +447,39 @@ fun CustomerCard(
                             text = customer.name,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            color = TealTertiary
+                            color = TealTertiary,
+                            modifier = Modifier.weight(1f, fill = false),
+                            maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                         )
-                        // NDPA Shield Badge
-                        SuggestionChip(
-                            onClick = {},
-                            label = { 
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                                    Icon(Icons.Filled.Security, contentDescription = null, modifier = Modifier.size(10.dp), tint = MaterialTheme.colorScheme.primary)
-                                    Text("NDPA Compliant", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                                }
-                            },
-                            colors = SuggestionChipDefaults.suggestionChipColors(
-                                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
-                                labelColor = MaterialTheme.colorScheme.primary
-                            ),
-                            border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
-                            modifier = Modifier.height(18.dp).padding(start = 4.dp)
-                        )
+                        // NDPA Shield Badge (Lightweight Custom Badge to maintain cohesive visual style and avoid squishing)
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f))
+                                .border(0.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f), RoundedCornerShape(6.dp))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(2.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Security,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(10.dp)
+                                )
+                                Text(
+                                    text = "NDPA Compliant",
+                                    fontSize = 8.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
+                            }
+                        }
                         if (customerDdiAlerts.isNotEmpty()) {
                             Badge(
                                 containerColor = MaterialTheme.colorScheme.error,
@@ -965,16 +513,31 @@ fun CustomerCard(
                         }
                     }
                     if (customer.notes.isNotEmpty()) {
+                        val notesTrim = customer.notes.trim()
+                        val isJson = notesTrim.startsWith("{") && notesTrim.endsWith("}")
+                        val displayText = if (isJson) {
+                            try {
+                                val intelligence = PatientIntelligenceParser.parse(customer, medications)
+                                intelligence.aiSummary.ifBlank { "Clinical Intelligence Profile Active" }
+                            } catch (e: Exception) {
+                                "Clinical Intelligence Profile Active"
+                            }
+                        } else {
+                            customer.notes
+                        }
                         Text(
-                            text = customer.notes,
+                            text = displayText,
                             style = MaterialTheme.typography.bodySmall,
                             color = SlateTextMedium,
                             maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                             modifier = Modifier.padding(top = 2.dp)
                         )
                     }
                     Row(
-                        modifier = Modifier.padding(top = 4.dp),
+                        modifier = Modifier
+                            .padding(top = 4.dp)
+                            .horizontalScroll(rememberScrollState()),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
@@ -987,7 +550,14 @@ fun CustomerCard(
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                                 Icon(Icons.Filled.Stars, contentDescription = "Loyalty", tint = Color(0xffff8c00), modifier = Modifier.size(12.dp))
-                                Text("${customer.loyaltyPoints} Pts", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color(0xffb26a00))
+                                Text(
+                                    text = "${customer.loyaltyPoints} Pts", 
+                                    style = MaterialTheme.typography.labelSmall, 
+                                    fontWeight = FontWeight.Bold, 
+                                    color = Color(0xffb26a00),
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
                             }
                         }
                         // Streak badge
@@ -999,14 +569,85 @@ fun CustomerCard(
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                                 Icon(Icons.Filled.LocalFireDepartment, contentDescription = "Streak", tint = Color.Red, modifier = Modifier.size(12.dp))
-                                Text("${customer.refillStreak} Streak", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = Color.Red)
+                                Text(
+                                    text = "${customer.refillStreak} Streak", 
+                                    style = MaterialTheme.typography.labelSmall, 
+                                    fontWeight = FontWeight.Bold, 
+                                    color = Color.Red,
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
+                            }
+                        }
+
+                        if (hasStockAlert) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.5f))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                                    Icon(Icons.Filled.Error, contentDescription = "Stock Alert", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(12.dp))
+                                    Text(
+                                        text = "Stock Low", 
+                                        style = MaterialTheme.typography.labelSmall, 
+                                        fontWeight = FontWeight.Bold, 
+                                        color = MaterialTheme.colorScheme.error,
+                                        maxLines = 1,
+                                        softWrap = false
+                                    )
+                                }
+                            }
+                        }
+
+                        if (hasRadarAlert) {
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(MaterialTheme.colorScheme.tertiary.copy(alpha = 0.04f))
+                                    .border(
+                                        BorderStroke(1.dp, MaterialTheme.colorScheme.tertiary.copy(alpha = 0.35f)),
+                                        RoundedCornerShape(4.dp)
+                                    )
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Info, 
+                                        contentDescription = "Radar Alert", 
+                                        tint = MaterialTheme.colorScheme.tertiary, 
+                                        modifier = Modifier.size(11.dp)
+                                    )
+                                    Text(
+                                        text = "Clinical Recheck Flag", 
+                                        style = MaterialTheme.typography.labelSmall, 
+                                        fontWeight = FontWeight.Bold, 
+                                        color = MaterialTheme.colorScheme.tertiary,
+                                        maxLines = 1,
+                                        softWrap = false
+                                    )
+                                }
                             }
                         }
                     }
                 }
 
-                Box {
-                    var showGeneralWhatsAppMenu by remember { mutableStateOf(false) }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = { showHistoryPdfDialog = true },
+                        modifier = Modifier.size(32.dp).testTag("patient_history_pdf_btn")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.PictureAsPdf,
+                            contentDescription = "Export Treatment History PDF",
+                            tint = TealPrimary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+
+                    Box {
+                        var showGeneralWhatsAppMenu by remember { mutableStateOf(false) }
                     IconButton(onClick = { showGeneralWhatsAppMenu = true }, modifier = Modifier.size(32.dp)) {
                         Icon(
                             imageVector = Icons.Filled.Message,
@@ -1034,19 +675,25 @@ fun CustomerCard(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("Termii SMS General Follow-up") },
+                            text = { Text("Twilio Welfare Follow-up (WhatsApp/SMS)") },
                             onClick = {
                                 showGeneralWhatsAppMenu = false
                                 coroutineScope.launch {
-                                    val success = viewModel.sendTermiiWelfareCheckSms(
+                                    val result = viewModel.sendTwilioWelfareCheck(
                                         patientName = customer.name,
                                         phone = customer.phoneNumber,
                                         wellnessQuestion = "We hope you are recovering well. Let us know if you need any support!"
                                     )
-                                    if (success) {
-                                        Toast.makeText(context, "Direct welfare followup SMS sent to ${customer.name}!", Toast.LENGTH_SHORT).show()
-                                    } else {
-                                        Toast.makeText(context, "Direct welfare check SMS failed.", Toast.LENGTH_SHORT).show()
+                                    when (result) {
+                                        is com.example.util.TwilioMessagingManager.DispatchResult.Success -> {
+                                            Toast.makeText(context, "Twilio check sent via ${result.channel} (SID: ${result.sid})", Toast.LENGTH_SHORT).show()
+                                        }
+                                        is com.example.util.TwilioMessagingManager.DispatchResult.Blocked -> {
+                                            Toast.makeText(context, result.reason, Toast.LENGTH_LONG).show()
+                                        }
+                                        is com.example.util.TwilioMessagingManager.DispatchResult.Failed -> {
+                                            Toast.makeText(context, "Twilio dispatch failed: ${result.error}", Toast.LENGTH_SHORT).show()
+                                        }
                                     }
                                 }
                             }
@@ -1059,18 +706,26 @@ fun CustomerCard(
                             }
                         )
                         DropdownMenuItem(
-                            text = { Text("Termii SMS Promo Blast") },
+                            text = { Text("Twilio Multi-Channel Promo") },
                             onClick = {
                                 showGeneralWhatsAppMenu = false
                                 coroutineScope.launch {
-                                    val success = viewModel.sendTermiiSms(
-                                        to = customer.phoneNumber,
-                                        smsContent = "Careflux Promo Alert:\nHello ${customer.name}, we have special wellness discounts happening this week at Careflux Pharmacy! Visit us and get up to 15% off prescriptions."
+                                    val result = viewModel.sendTwilioMessage(
+                                        phone = customer.phoneNumber,
+                                        messageContent = "CareFlux Promo Notice:\nHello ${customer.name}, special wellness discounts are happening this week at CareFlux Pharmacy! Visit us for up to 15% off prescriptions.",
+                                        messageType = "Promo",
+                                        medicationIdOrKey = "promo_${System.currentTimeMillis()}"
                                     )
-                                    if (success) {
-                                        Toast.makeText(context, "Direct promo SMS sent to ${customer.name} via Termii!", Toast.LENGTH_SHORT).show()
-                                    } else {
-                                        Toast.makeText(context, "Direct SMS delivery failed.", Toast.LENGTH_SHORT).show()
+                                    when (result) {
+                                        is com.example.util.TwilioMessagingManager.DispatchResult.Success -> {
+                                            Toast.makeText(context, "Promo dispatched via ${result.channel}!", Toast.LENGTH_SHORT).show()
+                                        }
+                                        is com.example.util.TwilioMessagingManager.DispatchResult.Blocked -> {
+                                            Toast.makeText(context, result.reason, Toast.LENGTH_LONG).show()
+                                        }
+                                        is com.example.util.TwilioMessagingManager.DispatchResult.Failed -> {
+                                            Toast.makeText(context, "Twilio promo failed: ${result.error}", Toast.LENGTH_SHORT).show()
+                                        }
                                     }
                                 }
                             }
@@ -1093,6 +748,7 @@ fun CustomerCard(
                         }
                     }
                 }
+            }
             }
 
             if (expanded) {
@@ -1466,22 +1122,29 @@ fun CustomerCard(
                                                     }
                                                 )
                                                 DropdownMenuItem(
-                                                    text = { Text("Termii SMS Refill Reminder") },
+                                                    text = { Text("Twilio Refill Reminder (WhatsApp/SMS)") },
                                                     onClick = {
                                                         showWhatsAppTemplatesFor = null
                                                         coroutineScope.launch {
-                                                            val success = viewModel.sendTermiiRefillReminderSms(
+                                                            val result = viewModel.sendTwilioRefillReminder(
                                                                 patientName = customer.name,
                                                                 phone = customer.phoneNumber,
                                                                 medicationName = med.medicationName,
                                                                 dateStr = sdf.format(Date(med.nextRefillDate)),
-                                                                cost = med.cost
+                                                                cost = med.cost,
+                                                                medicationId = med.id.toLong()
                                                             )
-                                                            if (success) {
-                                                                Toast.makeText(context, "Direct Refill SMS dispatched via Termii to ${customer.name}!", Toast.LENGTH_LONG).show()
-                                                                viewModel.activePostDispatchConfirm.value = com.example.ui.PostDispatchConfirmData(customer, med)
-                                                            } else {
-                                                                Toast.makeText(context, "Direct SMS gateway failed. Check Termii API setup.", Toast.LENGTH_LONG).show()
+                                                            when (result) {
+                                                                is com.example.util.TwilioMessagingManager.DispatchResult.Success -> {
+                                                                    Toast.makeText(context, "Refill Notice sent via ${result.channel} (SID: ${result.sid})", Toast.LENGTH_LONG).show()
+                                                                    viewModel.activePostDispatchConfirm.value = com.example.ui.PostDispatchConfirmData(customer, med)
+                                                                }
+                                                                is com.example.util.TwilioMessagingManager.DispatchResult.Blocked -> {
+                                                                    Toast.makeText(context, result.reason, Toast.LENGTH_LONG).show()
+                                                                }
+                                                                is com.example.util.TwilioMessagingManager.DispatchResult.Failed -> {
+                                                                    Toast.makeText(context, "Twilio dispatch failed: ${result.error}", Toast.LENGTH_LONG).show()
+                                                                }
                                                             }
                                                         }
                                                     }
@@ -1494,18 +1157,27 @@ fun CustomerCard(
                                                     }
                                                 )
                                                 DropdownMenuItem(
-                                                    text = { Text("Termii SMS Pick-up Ready") },
+                                                    text = { Text("Twilio Pick-up Ready Notice") },
                                                     onClick = {
                                                         showWhatsAppTemplatesFor = null
                                                         coroutineScope.launch {
-                                                            val success = viewModel.sendTermiiSms(
-                                                                to = customer.phoneNumber,
-                                                                smsContent = "Careflux Ready Notice:\nHello ${customer.name}, your prescription for ${med.medicationName} is packed and ready for pick-up. Stop by Careflux Pharmacy at your convenience!"
+                                                            val result = viewModel.sendTwilioMessage(
+                                                                phone = customer.phoneNumber,
+                                                                messageContent = "CareFlux Ready Notice:\nHello ${customer.name}, your prescription for ${med.medicationName} is packed and ready for pick-up. Stop by CareFlux Pharmacy at your convenience!",
+                                                                messageType = "Pick-up Ready",
+                                                                medicationIdOrKey = med.id.toString(),
+                                                                forceOverrideQuietHours = true
                                                             )
-                                                            if (success) {
-                                                                Toast.makeText(context, "Direct Pick-up SMS dispatched via Termii!", Toast.LENGTH_SHORT).show()
-                                                            } else {
-                                                                Toast.makeText(context, "Direct SMS delivery failed.", Toast.LENGTH_SHORT).show()
+                                                            when (result) {
+                                                                is com.example.util.TwilioMessagingManager.DispatchResult.Success -> {
+                                                                    Toast.makeText(context, "Pick-up alert dispatched via ${result.channel}!", Toast.LENGTH_SHORT).show()
+                                                                }
+                                                                is com.example.util.TwilioMessagingManager.DispatchResult.Blocked -> {
+                                                                    Toast.makeText(context, result.reason, Toast.LENGTH_LONG).show()
+                                                                }
+                                                                is com.example.util.TwilioMessagingManager.DispatchResult.Failed -> {
+                                                                    Toast.makeText(context, "Twilio alert failed: ${result.error}", Toast.LENGTH_SHORT).show()
+                                                                }
                                                             }
                                                         }
                                                     }
@@ -1518,19 +1190,25 @@ fun CustomerCard(
                                                     }
                                                 )
                                                 DropdownMenuItem(
-                                                    text = { Text("Termii SMS Follow-up Check") },
+                                                    text = { Text("Twilio Welfare Follow-up Check") },
                                                     onClick = {
                                                         showWhatsAppTemplatesFor = null
                                                         coroutineScope.launch {
-                                                            val success = viewModel.sendTermiiWelfareCheckSms(
+                                                            val result = viewModel.sendTwilioWelfareCheck(
                                                                 patientName = customer.name,
                                                                 phone = customer.phoneNumber,
                                                                 wellnessQuestion = "How are you getting on with your ${med.medicationName} dose regimen?"
                                                             )
-                                                            if (success) {
-                                                                Toast.makeText(context, "Direct welfare followup SMS sent to ${customer.name}!", Toast.LENGTH_SHORT).show()
-                                                            } else {
-                                                                Toast.makeText(context, "Direct welfare check SMS failed.", Toast.LENGTH_SHORT).show()
+                                                            when (result) {
+                                                                is com.example.util.TwilioMessagingManager.DispatchResult.Success -> {
+                                                                    Toast.makeText(context, "Welfare follow-up sent via ${result.channel}!", Toast.LENGTH_SHORT).show()
+                                                                }
+                                                                is com.example.util.TwilioMessagingManager.DispatchResult.Blocked -> {
+                                                                    Toast.makeText(context, result.reason, Toast.LENGTH_LONG).show()
+                                                                }
+                                                                is com.example.util.TwilioMessagingManager.DispatchResult.Failed -> {
+                                                                    Toast.makeText(context, "Follow-up failed: ${result.error}", Toast.LENGTH_SHORT).show()
+                                                                }
                                                             }
                                                         }
                                                     }
@@ -1604,207 +1282,32 @@ fun CustomerCard(
                     HorizontalDivider(color = SlateBorderLight)
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Filled.HealthAndSafety,
-                                contentDescription = null,
-                                tint = TealTertiary,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text(
-                                text = "Clinical Interventions",
-                                style = MaterialTheme.typography.bodyMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = TealTertiary
-                            )
-                        }
-                        AssistChip(
-                            onClick = onAddInterventionClick,
-                            label = { Text("Add Consult", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) },
-                            leadingIcon = { Icon(Icons.Filled.Add, contentDescription = null, modifier = Modifier.size(14.dp)) },
-                            colors = AssistChipDefaults.assistChipColors(
-                                containerColor = TealPrimary.copy(alpha = 0.08f),
-                                labelColor = TealPrimary,
-                                leadingIconContentColor = TealPrimary
-                            ),
-                            border = BorderStroke(1.dp, TealPrimary.copy(alpha = 0.2f)),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.height(32.dp)
+                    PatientIntelligencePreviewCard(
+                        customer = customer,
+                        medications = medications,
+                        onOpenWorkspace = { showClinicalWorkspace = true }
+                    )
+
+                    if (showClinicalWorkspace) {
+                        PatientIntelligenceWorkspaceDialog(
+                            customer = customer,
+                            medications = medications,
+                            interventions = interventions,
+                            viewModel = viewModel,
+                            context = context,
+                            onAddInterventionClick = onAddInterventionClick,
+                            onDismissRequest = { showClinicalWorkspace = false }
                         )
-                    }
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    if (interventions.isEmpty()) {
-                        Text(
-                            text = "No interventions recorded.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = SlateTextMedium,
-                            modifier = Modifier.padding(vertical = 8.dp)
-                        )
-                    } else {
-                        val sdf = remember { SimpleDateFormat("MMM d, yyyy", Locale.getDefault()) }
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            interventions.forEach { interv ->
-                                val dueStatusColor = if (interv.currentStatus == "Feeling Better") OKGreen else PendingOrange
-
-                                Card(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(12.dp),
-                                    colors = CardDefaults.cardColors(
-                                        containerColor = MaterialTheme.colorScheme.surface
-                                    ),
-                                    border = BorderStroke(1.dp, SlateBorderLight)
-                                ) {
-                                    Column(modifier = Modifier.padding(12.dp)) {
-                                        Row(
-                                            modifier = Modifier.fillMaxWidth(),
-                                            verticalAlignment = Alignment.CenterVertically
-                                        ) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(36.dp)
-                                                    .clip(RoundedCornerShape(8.dp))
-                                                    .background(TealPrimary.copy(alpha = 0.08f)),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Filled.HealthAndSafety,
-                                                    contentDescription = null,
-                                                    tint = TealPrimary,
-                                                    modifier = Modifier.size(18.dp)
-                                                )
-                                            }
-                                            Spacer(modifier = Modifier.width(10.dp))
-                                            Column(modifier = Modifier.weight(1f)) {
-                                                Text(
-                                                    text = "Consultation Log",
-                                                    style = MaterialTheme.typography.bodyMedium,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = TealTertiary
-                                                )
-                                                Text(
-                                                    text = "Date: ${sdf.format(Date(interv.dateAdded))}",
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    color = SlateTextMedium,
-                                                    fontWeight = FontWeight.SemiBold
-                                                )
-                                            }
-
-                                            Box(
-                                                modifier = Modifier
-                                                    .clip(RoundedCornerShape(6.dp))
-                                                    .background(dueStatusColor.copy(alpha = 0.08f))
-                                                    .clickable {
-                                                        val newStatus = if (interv.currentStatus == "Feeling Better") "Follow-up Needed" else "Feeling Better"
-                                                        viewModel.updateClinicalInterventionStatus(interv, newStatus)
-                                                    }
-                                                    .padding(horizontal = 8.dp, vertical = 4.dp)
-                                            ) {
-                                                Text(
-                                                    text = interv.currentStatus,
-                                                    style = MaterialTheme.typography.labelSmall,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = dueStatusColor
-                                                )
-                                            }
-                                        }
-
-                                        Spacer(modifier = Modifier.height(10.dp))
-
-                                        Column(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .clip(RoundedCornerShape(6.dp))
-                                                .background(SlateBackgroundLight)
-                                                .padding(8.dp)
-                                        ) {
-                                            Text(
-                                                text = "Presentation & Symptoms:",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                fontWeight = FontWeight.Bold,
-                                                color = SlateTextMedium
-                                            )
-                                            Spacer(modifier = Modifier.height(2.dp))
-                                            Text(
-                                                text = interv.presentation,
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = TealTertiary
-                                            )
-                                        }
-
-                                        Spacer(modifier = Modifier.height(6.dp))
-
-                                        Column(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .clip(RoundedCornerShape(6.dp))
-                                                .background(TealSurface.copy(alpha = 0.3f))
-                                                .padding(8.dp)
-                                        ) {
-                                            Text(
-                                                text = "Recommendation & Plan:",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                fontWeight = FontWeight.Bold,
-                                                color = TealPrimary
-                                            )
-                                            Spacer(modifier = Modifier.height(2.dp))
-                                            Text(
-                                                text = interv.recommendation,
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = TealTertiary
-                                            )
-                                        }
-
-                                        if (interv.currentStatus != "Feeling Better") {
-                                            Spacer(modifier = Modifier.height(8.dp))
-                                            OutlinedButton(
-                                                onClick = {
-                                                    viewModel.generateAndSendFollowUp(interv, customer, context)
-                                                },
-                                                shape = RoundedCornerShape(8.dp),
-                                                colors = ButtonDefaults.outlinedButtonColors(
-                                                    contentColor = TealPrimary
-                                                ),
-                                                border = BorderStroke(1.dp, TealPrimary.copy(alpha = 0.3f)),
-                                                modifier = Modifier
-                                                    .fillMaxWidth()
-                                                    .height(34.dp),
-                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Filled.AutoAwesome,
-                                                    contentDescription = "Automated Follow-up",
-                                                    modifier = Modifier.size(14.dp)
-                                                )
-                                                Spacer(modifier = Modifier.width(6.dp))
-                                                Text(
-                                                    text = "AI Welfare Check SMS",
-                                                    fontSize = 11.sp,
-                                                    fontWeight = FontWeight.Bold
-                                                )
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
                     }
 
                     // Profile Management Actions
                     Spacer(modifier = Modifier.height(16.dp))
                     HorizontalDivider(color = SlateBorderLight)
                     Spacer(modifier = Modifier.height(12.dp))
-                    Row(
+                    FlowRow(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         TextButton(
                             onClick = { showSendMessageDialog = true },
@@ -1815,27 +1318,22 @@ fun CustomerCard(
                             Spacer(modifier = Modifier.width(4.dp))
                             Text("Send Message", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
                         }
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically
+                        TextButton(
+                            onClick = onEditClick,
+                            modifier = Modifier.height(36.dp)
                         ) {
-                            TextButton(
-                                onClick = onEditClick,
-                                modifier = Modifier.height(36.dp)
-                            ) {
-                                Icon(Icons.Filled.Edit, contentDescription = "Edit Profile", modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Edit Profile", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
-                            }
-                            Spacer(modifier = Modifier.width(12.dp))
-                            TextButton(
-                                onClick = onDeleteClick,
-                                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                                modifier = Modifier.height(36.dp)
-                            ) {
-                                Icon(Icons.Filled.Delete, contentDescription = "Delete Profile", modifier = Modifier.size(16.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Delete Profile", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
-                            }
+                            Icon(Icons.Filled.Edit, contentDescription = "Edit Profile", modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Edit Profile", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                        }
+                        TextButton(
+                            onClick = onDeleteClick,
+                            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                            modifier = Modifier.height(36.dp)
+                        ) {
+                            Icon(Icons.Filled.Delete, contentDescription = "Delete Profile", modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Delete Profile", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -2241,10 +1739,48 @@ fun EditCustomerDialog(
                     label = { Text("Email Address") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
                 )
-                OutlinedTextField(
-                    value = notes, onValueChange = { notes = it },
-                    label = { Text("Notes (Optional)") }, maxLines = 2, modifier = Modifier.fillMaxWidth()
-                )
+                val isJsonNotes = remember(customer.notes) {
+                    val trimmed = customer.notes.trim()
+                    trimmed.startsWith("{") && trimmed.endsWith("}")
+                }
+                if (isJsonNotes) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f))
+                            .border(1.dp, TealPrimary.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+                            .padding(12.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Filled.Hub,
+                                contentDescription = "Intelligence Active",
+                                tint = TealPrimary,
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    text = "Clinical Intelligence Profile Active",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = TealPrimary
+                                )
+                                Text(
+                                    text = "Clinical notes and summaries are managed inside the Clinical Workspace dashboard.",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = SlateTextMedium
+                                )
+                            }
+                        }
+                    }
+                } else {
+                    OutlinedTextField(
+                        value = notes, onValueChange = { notes = it },
+                        label = { Text("Notes (Optional)") }, maxLines = 2, modifier = Modifier.fillMaxWidth()
+                    )
+                }
 
                 // Demographic Expandable Accordion
                 Column(
@@ -2906,6 +2442,21 @@ fun AddPrescriptionDialog(
     var daysStr by remember { mutableStateOf("30") }
     var errorMsg by remember { mutableStateOf("") }
     var showDiscardConfirm by remember { mutableStateOf(false) }
+    var medSearchQuery by remember { mutableStateOf("") }
+
+    val filteredMeds = remember(inventoryMeds, medSearchQuery) {
+        if (medSearchQuery.isBlank()) {
+            inventoryMeds
+        } else {
+            val q = medSearchQuery.trim()
+            inventoryMeds.filter { item ->
+                item.name.contains(q, ignoreCase = true) ||
+                item.brand.contains(q, ignoreCase = true) ||
+                item.category.contains(q, ignoreCase = true) ||
+                item.dosage.contains(q, ignoreCase = true)
+            }
+        }
+    }
 
     val isFormDirty = dose.isNotBlank() ||
                       costStr.isNotBlank() ||
@@ -2979,38 +2530,492 @@ fun AddPrescriptionDialog(
                     }
                 }
                 
-                // Simple dropdown simulation (using buttons or just a TextField for now...)
-                // To keep it clean and robust, we'll just ask them to type the Medication name perfectly or accept an ID dropdown if possible.
-                // Let's implement an ExposedDropdownMenu for robust stock linkage
-                var expandedDropdown by remember { mutableStateOf(false) }
-                val selectedMed = inventoryMeds.find { it.id == selectedMedId } ?: inventoryMeds.firstOrNull()
-                
-                @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
-                androidx.compose.material3.ExposedDropdownMenuBox(
-                    expanded = expandedDropdown,
-                    onExpandedChange = { expandedDropdown = it },
-                    modifier = Modifier.fillMaxWidth()
+                var showMedPickerModal by remember { mutableStateOf(false) }
+
+                // Interactive Trigger Card for Medication Selection
+                Surface(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showMedPickerModal = true },
+                    shape = RoundedCornerShape(14.dp),
+                    color = TealPrimary.copy(alpha = 0.05f),
+                    border = BorderStroke(1.5.dp, TealPrimary.copy(alpha = 0.4f))
                 ) {
-                    OutlinedTextField(
-                        value = selectedMed?.name ?: "No meds in stock",
-                        onValueChange = {}, readOnly = true,
-                        label = { Text("Inventory Link") },
-                        modifier = Modifier.fillMaxWidth().menuAnchor(androidx.compose.material3.MenuAnchorType.PrimaryNotEditable, true),
-                        trailingIcon = { androidx.compose.material3.ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedDropdown) },
-                        colors = androidx.compose.material3.ExposedDropdownMenuDefaults.outlinedTextFieldColors()
-                    )
-                    ExposedDropdownMenu(
-                        expanded = expandedDropdown,
-                        onDismissRequest = { expandedDropdown = false }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        inventoryMeds.forEach { item ->
-                            DropdownMenuItem(
-                                text = { Text("${item.name} (${item.dosage})") },
-                                onClick = {
-                                    selectedMedId = item.id
-                                    expandedDropdown = false
-                                }
+                        Box(
+                            modifier = Modifier
+                                .size(42.dp)
+                                .background(TealPrimary.copy(alpha = 0.12f), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Medication,
+                                contentDescription = null,
+                                tint = TealPrimary,
+                                modifier = Modifier.size(22.dp)
                             )
+                        }
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "INVENTORY LINKED MEDICATION",
+                                fontSize = 9.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TealPrimary,
+                                letterSpacing = 0.5.sp
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = selectedMed?.let { "${it.name} (${it.dosage})" } ?: "Select Medication from Inventory...",
+                                fontSize = 13.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            if (selectedMed != null) {
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "${selectedMed.brand} • Stock: ${selectedMed.stockQuantity} • ₦${String.format(Locale.getDefault(), "%,.0f", selectedMed.price)}",
+                                    fontSize = 11.sp,
+                                    color = AppThemeManager.slateTextMedium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        Surface(
+                            shape = RoundedCornerShape(20.dp),
+                            color = TealPrimary
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Search,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = if (selectedMed != null) "Change" else "Select",
+                                    fontSize = 11.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                            }
+                        }
+                    }
+                }
+
+                // Dedicated High-Contrast Medication Selection Modal Dialog
+                if (showMedPickerModal) {
+                    androidx.compose.ui.window.Dialog(
+                        onDismissRequest = { 
+                            showMedPickerModal = false
+                            medSearchQuery = ""
+                        },
+                        properties = androidx.compose.ui.window.DialogProperties(
+                            usePlatformDefaultWidth = false,
+                            dismissOnBackPress = true,
+                            dismissOnClickOutside = true
+                        )
+                    ) {
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth(0.92f)
+                                .heightIn(max = 560.dp),
+                            shape = RoundedCornerShape(20.dp),
+                            color = MaterialTheme.colorScheme.surface,
+                            tonalElevation = 8.dp,
+                            shadowElevation = 24.dp,
+                            border = BorderStroke(1.5.dp, TealPrimary.copy(alpha = 0.35f))
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                            ) {
+                                // Top Visual Header Bar with Accent Background
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .background(
+                                            androidx.compose.ui.graphics.Brush.horizontalGradient(
+                                                colors = listOf(TealPrimary, TealPrimary.copy(alpha = 0.85f))
+                                            )
+                                        )
+                                        .padding(horizontal = 16.dp, vertical = 14.dp)
+                                ) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(36.dp)
+                                                    .background(Color.White.copy(alpha = 0.2f), CircleShape),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Filled.Medication,
+                                                    contentDescription = null,
+                                                    tint = Color.White,
+                                                    modifier = Modifier.size(20.dp)
+                                                )
+                                            }
+                                            Column {
+                                                Text(
+                                                    text = "Select Inventory Item",
+                                                    fontSize = 16.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = Color.White
+                                                )
+                                                Text(
+                                                    text = "${inventoryMeds.size} items in stock • Tap item to link",
+                                                    fontSize = 11.sp,
+                                                    color = Color.White.copy(alpha = 0.85f)
+                                                )
+                                            }
+                                        }
+
+                                        IconButton(
+                                            onClick = { 
+                                                showMedPickerModal = false 
+                                                medSearchQuery = ""
+                                            },
+                                            modifier = Modifier
+                                                .size(30.dp)
+                                                .background(Color.White.copy(alpha = 0.2f), CircleShape)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Filled.Close,
+                                                contentDescription = "Close Modal",
+                                                tint = Color.White,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    }
+                                }
+
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(14.dp)
+                                ) {
+                                    // Sticky Search Bar
+                                    OutlinedTextField(
+                                        value = medSearchQuery,
+                                        onValueChange = { medSearchQuery = it },
+                                        placeholder = { 
+                                            Text(
+                                                text = "Type to filter by name, brand, dosage...", 
+                                                fontSize = 12.5.sp, 
+                                                color = AppThemeManager.slateTextMedium,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            ) 
+                                        },
+                                        leadingIcon = { 
+                                            Icon(
+                                                imageVector = Icons.Filled.Search, 
+                                                contentDescription = "Search", 
+                                                tint = TealPrimary, 
+                                                modifier = Modifier.size(20.dp)
+                                            ) 
+                                        },
+                                        trailingIcon = {
+                                            if (medSearchQuery.isNotEmpty()) {
+                                                IconButton(
+                                                    onClick = { medSearchQuery = "" },
+                                                    modifier = Modifier.size(24.dp)
+                                                ) {
+                                                    Icon(
+                                                        imageVector = Icons.Filled.Close, 
+                                                        contentDescription = "Clear Search", 
+                                                        tint = AppThemeManager.slateTextMedium,
+                                                        modifier = Modifier.size(14.dp)
+                                                    )
+                                                }
+                                            }
+                                        },
+                                        singleLine = true,
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = OutlinedTextFieldDefaults.colors(
+                                            focusedBorderColor = TealPrimary,
+                                            unfocusedBorderColor = TealPrimary.copy(alpha = 0.4f),
+                                            focusedContainerColor = TealPrimary.copy(alpha = 0.03f)
+                                        ),
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    HorizontalDivider(color = AppThemeManager.slateBorderLight.copy(alpha = 0.5f))
+                                    Spacer(modifier = Modifier.height(6.dp))
+
+                                    // Scrollable Medication List
+                                    if (filteredMeds.isEmpty()) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .weight(1f)
+                                                .padding(vertical = 32.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                Icon(
+                                                    imageVector = Icons.Filled.SearchOff,
+                                                    contentDescription = null,
+                                                    tint = AppThemeManager.slateTextMedium,
+                                                    modifier = Modifier.size(36.dp)
+                                                )
+                                                Spacer(modifier = Modifier.height(8.dp))
+                                                Text(
+                                                    text = "No medication found matching \"$medSearchQuery\"",
+                                                    fontSize = 13.sp,
+                                                    fontWeight = FontWeight.Medium,
+                                                    color = AppThemeManager.slateTextMedium,
+                                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                                                )
+                                            }
+                                        }
+                                    } else {
+                                        LazyColumn(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .weight(1f),
+                                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                                            contentPadding = PaddingValues(vertical = 2.dp)
+                                        ) {
+                                            items(filteredMeds, key = { it.id }) { item ->
+                                                val isSelected = item.id == selectedMedId
+                                                Surface(
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .clickable {
+                                                            selectedMedId = item.id
+                                                            if (costStr.isEmpty() || costStr == "0") {
+                                                                costStr = item.price.toInt().toString()
+                                                            }
+                                                            showMedPickerModal = false
+                                                            medSearchQuery = ""
+                                                        },
+                                                    shape = RoundedCornerShape(12.dp),
+                                                    color = if (isSelected) TealPrimary.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surface,
+                                                    border = BorderStroke(
+                                                        width = if (isSelected) 1.5.dp else 1.dp,
+                                                        color = if (isSelected) TealPrimary else AppThemeManager.slateBorderLight.copy(alpha = 0.6f)
+                                                    )
+                                                ) {
+                                                    Row(
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        // Left Icon Box Badge
+                                                        Box(
+                                                            modifier = Modifier
+                                                                .size(40.dp)
+                                                                .background(
+                                                                    color = if (isSelected) TealPrimary.copy(alpha = 0.15f) else AppThemeManager.slateBackgroundLight,
+                                                                    shape = RoundedCornerShape(10.dp)
+                                                                ),
+                                                            contentAlignment = Alignment.Center
+                                                        ) {
+                                                            if (isSelected) {
+                                                                Box(
+                                                                    modifier = Modifier
+                                                                        .size(22.dp)
+                                                                        .background(TealPrimary, CircleShape),
+                                                                    contentAlignment = Alignment.Center
+                                                                ) {
+                                                                    Icon(
+                                                                        imageVector = Icons.Filled.Check,
+                                                                        contentDescription = "Selected",
+                                                                        tint = Color.White,
+                                                                        modifier = Modifier.size(14.dp)
+                                                                    )
+                                                                }
+                                                            } else {
+                                                                Icon(
+                                                                    imageVector = Icons.Filled.Medication,
+                                                                    contentDescription = null,
+                                                                    tint = AppThemeManager.tertiary.copy(alpha = 0.75f),
+                                                                    modifier = Modifier.size(20.dp)
+                                                                )
+                                                            }
+                                                        }
+
+                                                        Spacer(modifier = Modifier.width(10.dp))
+
+                                                        // Middle Details
+                                                        Column(
+                                                            modifier = Modifier.weight(1f)
+                                                        ) {
+                                                            Row(
+                                                                verticalAlignment = Alignment.CenterVertically,
+                                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                                modifier = Modifier.fillMaxWidth()
+                                                            ) {
+                                                                Text(
+                                                                    text = item.name,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    color = if (isSelected) TealPrimary else MaterialTheme.colorScheme.onSurface,
+                                                                    fontSize = 13.5.sp,
+                                                                    maxLines = 1,
+                                                                    overflow = TextOverflow.Ellipsis,
+                                                                    modifier = Modifier.weight(1f, fill = false)
+                                                                )
+
+                                                                if (isSelected) {
+                                                                    Surface(
+                                                                        shape = RoundedCornerShape(4.dp),
+                                                                        color = TealPrimary
+                                                                    ) {
+                                                                        Text(
+                                                                            text = "SELECTED",
+                                                                            fontSize = 8.5.sp,
+                                                                            fontWeight = FontWeight.ExtraBold,
+                                                                            color = Color.White,
+                                                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                                                            maxLines = 1
+                                                                        )
+                                                                    }
+                                                                }
+                                                            }
+
+                                                            if (item.brand.isNotBlank()) {
+                                                                Spacer(modifier = Modifier.height(1.dp))
+                                                                Text(
+                                                                    text = item.brand.uppercase(),
+                                                                    fontSize = 10.sp,
+                                                                    fontWeight = FontWeight.Medium,
+                                                                    color = AppThemeManager.slateTextMedium,
+                                                                    maxLines = 1,
+                                                                    overflow = TextOverflow.Ellipsis,
+                                                                    modifier = Modifier.fillMaxWidth()
+                                                                )
+                                                            }
+
+                                                            Spacer(modifier = Modifier.height(3.dp))
+
+                                                            Row(
+                                                                verticalAlignment = Alignment.CenterVertically,
+                                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                                modifier = Modifier.fillMaxWidth()
+                                                            ) {
+                                                                if (item.dosage.isNotBlank()) {
+                                                                    Surface(
+                                                                        shape = RoundedCornerShape(6.dp),
+                                                                        color = AppThemeManager.slateBackgroundLight,
+                                                                        modifier = Modifier.weight(1f, fill = false)
+                                                                    ) {
+                                                                        Text(
+                                                                            text = item.dosage,
+                                                                            fontSize = 10.sp,
+                                                                            fontWeight = FontWeight.Medium,
+                                                                            color = AppThemeManager.tertiary,
+                                                                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp),
+                                                                            maxLines = 1,
+                                                                            overflow = TextOverflow.Ellipsis
+                                                                        )
+                                                                    }
+
+                                                                    Text(
+                                                                        text = "•",
+                                                                        fontSize = 10.sp,
+                                                                        color = AppThemeManager.slateTextMedium.copy(alpha = 0.4f)
+                                                                    )
+                                                                }
+
+                                                                Text(
+                                                                    text = "Stock: ${item.stockQuantity}",
+                                                                    fontSize = 10.5.sp,
+                                                                    fontWeight = FontWeight.SemiBold,
+                                                                    color = if (item.stockQuantity <= 5) WarningRed else AppThemeManager.slateTextMedium,
+                                                                    maxLines = 1
+                                                                )
+                                                            }
+                                                        }
+
+                                                        Spacer(modifier = Modifier.width(8.dp))
+
+                                                        // Right Price & Chevron
+                                                        Row(
+                                                            verticalAlignment = Alignment.CenterVertically,
+                                                            horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                                        ) {
+                                                            Text(
+                                                                text = "₦${String.format(Locale.getDefault(), "%,.0f", item.price)}",
+                                                                fontSize = 13.5.sp,
+                                                                fontWeight = FontWeight.Bold,
+                                                                color = TealPrimary,
+                                                                maxLines = 1
+                                                            )
+                                                            Icon(
+                                                                imageVector = Icons.Filled.ChevronRight,
+                                                                contentDescription = null,
+                                                                tint = TealPrimary,
+                                                                modifier = Modifier.size(18.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        Spacer(modifier = Modifier.height(6.dp))
+
+                                        // Bottom Hint / Close Footer
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(top = 4.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(
+                                                text = "Showing ${filteredMeds.size} items",
+                                                fontSize = 10.5.sp,
+                                                color = AppThemeManager.slateTextMedium,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                            TextButton(
+                                                onClick = {
+                                                    showMedPickerModal = false
+                                                    medSearchQuery = ""
+                                                },
+                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp),
+                                                modifier = Modifier.height(28.dp)
+                                            ) {
+                                                Text(
+                                                    text = "Cancel",
+                                                    fontSize = 11.5.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = AppThemeManager.slateTextMedium
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -3038,7 +3043,14 @@ fun AddPrescriptionDialog(
                 if (c == null || d == null || selectedMedId == 0) {
                     errorMsg = "Check your inputs."
                 } else {
-                    val mName = inventoryMeds.find { it.id == selectedMedId }?.name ?: "Unknown"
+                    val medItem = inventoryMeds.find { it.id == selectedMedId }
+                    val rawName = medItem?.name ?: "Unknown"
+                    val stockDosage = medItem?.dosage?.trim() ?: ""
+                    val mName = if (stockDosage.isNotBlank() && !stockDosage.equals("N/A", ignoreCase = true) && !rawName.contains(stockDosage, ignoreCase = true)) {
+                        "$rawName $stockDosage"
+                    } else {
+                        rawName
+                    }
                     val nextRefill = System.currentTimeMillis() + (d.toLong() * 24L * 60L * 60L * 1000L)
                     onConfirm(customer.id, selectedMedId, mName, dose, c, d, nextRefill)
                 }
@@ -3181,6 +3193,7 @@ fun RefillCommandCenter(
     var isSendingBulk by remember { mutableStateOf(false) }
     var bulkSentCount by remember { mutableStateOf(0) }
     var bulkTotalCount by remember { mutableStateOf(0) }
+    var showBulkSmsConfirmDialog by remember { mutableStateOf(false) }
 
     // WhatsApp Sequencer State
     var showWhatsAppSequencer by remember { mutableStateOf(false) }
@@ -3270,6 +3283,63 @@ fun RefillCommandCenter(
         }
     }
 
+    if (showBulkSmsConfirmDialog) {
+        val selectedIds = chronicMedsDue.filter { selectedRefills[it.id] == true }
+        AlertDialog(
+            onDismissRequest = { showBulkSmsConfirmDialog = false },
+            icon = { Icon(Icons.Filled.FlashOn, contentDescription = null, tint = TealPrimary, modifier = Modifier.size(36.dp)) },
+            title = { Text("Confirm Bulk Multi-Channel Dispatch", fontWeight = FontWeight.Bold) },
+            text = {
+                Text("Are you sure you want to send refill reminders to the ${selectedIds.size} selected patient(s) via Twilio (WhatsApp/SMS)?")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showBulkSmsConfirmDialog = false
+                        if (selectedIds.isEmpty()) return@Button
+                        isSendingBulk = true
+                        bulkSentCount = 0
+                        bulkTotalCount = selectedIds.size
+
+                        coroutineScope.launch {
+                            for (med in selectedIds) {
+                                val customer = customers.find { it.id == med.customerId }
+                                if (customer != null) {
+                                    val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(med.nextRefillDate))
+                                    val result = viewModel.sendTwilioRefillReminder(
+                                        patientName = customer.name,
+                                        phone = customer.phoneNumber,
+                                        medicationName = med.medicationName,
+                                        dateStr = dateStr,
+                                        cost = med.cost,
+                                        medicationId = med.id.toLong()
+                                    )
+                                    if (result is com.example.util.TwilioMessagingManager.DispatchResult.Success) {
+                                        bulkSentCount++
+                                    }
+                                    kotlinx.coroutines.delay(1000L) // Anti-spam rate limiting: 1 msg/sec
+                                }
+                            }
+                            isSendingBulk = false
+                            Toast.makeText(context, "Bulk Refill Dispatch complete! Sent $bulkSentCount / $bulkTotalCount.", Toast.LENGTH_LONG).show()
+                            selectedRefills.clear()
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = TealPrimary, contentColor = Color.Black)
+                ) {
+                    Text("Proceed", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showBulkSmsConfirmDialog = false }
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
         if (chronicMedsDue.isEmpty()) {
             Spacer(modifier = Modifier.height(32.dp))
@@ -3332,7 +3402,7 @@ fun RefillCommandCenter(
                             trackColor = SlateBorderLight
                         )
                         Text(
-                            text = "Dispatching Termii SMS: $bulkSentCount / $bulkTotalCount completed...",
+                            text = "Dispatching Twilio Multi-Channel: $bulkSentCount / $bulkTotalCount completed...",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold
                         )
@@ -3345,40 +3415,17 @@ fun RefillCommandCenter(
                         Button(
                             onClick = {
                                 if (selectedIds.isEmpty()) return@Button
-                                isSendingBulk = true
-                                bulkSentCount = 0
-                                bulkTotalCount = selectedIds.size
-
-                                coroutineScope.launch {
-                                    for (med in selectedIds) {
-                                        val customer = customers.find { it.id == med.customerId }
-                                        if (customer != null) {
-                                            val dateStr = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(med.nextRefillDate))
-                                            val success = viewModel.sendTermiiRefillReminderSms(
-                                                patientName = customer.name,
-                                                phone = customer.phoneNumber,
-                                                medicationName = med.medicationName,
-                                                dateStr = dateStr,
-                                                cost = med.cost
-                                            )
-                                            if (success) {
-                                                bulkSentCount++
-                                            }
-                                        }
-                                    }
-                                    isSendingBulk = false
-                                    Toast.makeText(context, "Bulk SMS Refill Dispatch complete! Sent $bulkSentCount / $bulkTotalCount.", Toast.LENGTH_LONG).show()
-                                    selectedRefills.clear()
-                                }
+                                showBulkSmsConfirmDialog = true
                             },
                             enabled = selectedIds.isNotEmpty(),
                             colors = ButtonDefaults.buttonColors(containerColor = TealPrimary, contentColor = Color.Black),
                             shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Icon(Icons.Filled.FlashOn, contentDescription = null, modifier = Modifier.size(14.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Bulk SMS via Termii", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Icon(Icons.Filled.FlashOn, contentDescription = null, modifier = Modifier.size(13.dp))
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text("Bulk SMS", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
                         }
 
                         Button(
@@ -3391,11 +3438,12 @@ fun RefillCommandCenter(
                             enabled = selectedIds.isNotEmpty(),
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer),
                             shape = RoundedCornerShape(10.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Icon(Icons.Filled.Chat, contentDescription = null, modifier = Modifier.size(14.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("WhatsApp Sequence", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Icon(Icons.Filled.Chat, contentDescription = null, modifier = Modifier.size(13.dp))
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text("WhatsApp", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
                         }
                     }
                 }
@@ -3429,16 +3477,17 @@ fun RefillCommandCenter(
                         }
                     ) {
                         Row(
-                            modifier = Modifier.padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                            modifier = Modifier.padding(10.dp),
+                            verticalAlignment = Alignment.Top
                         ) {
                             Checkbox(
                                 checked = isSelected,
                                 onCheckedChange = { selectedRefills[med.id] = it },
-                                colors = CheckboxDefaults.colors(checkedColor = TealPrimary)
+                                colors = CheckboxDefaults.colors(checkedColor = TealPrimary),
+                                modifier = Modifier.size(24.dp).padding(top = 2.dp)
                             )
 
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(modifier = Modifier.width(10.dp))
 
                             Column(modifier = Modifier.weight(1f)) {
                                 Row(
@@ -3481,36 +3530,35 @@ fun RefillCommandCenter(
                                     }
                                 }
 
-                                Spacer(modifier = Modifier.height(4.dp))
+                                Spacer(modifier = Modifier.height(2.dp))
+
+                                Text(
+                                    text = med.medicationName,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = TealPrimary,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+
+                                Spacer(modifier = Modifier.height(2.dp))
 
                                 Row(
                                     verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    modifier = Modifier.fillMaxWidth()
                                 ) {
                                     Text(
-                                        text = med.medicationName,
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.SemiBold,
-                                        color = TealPrimary
-                                    )
-                                    Text(
-                                        text = med.customDosage,
+                                        text = "${med.customDosage} • ₦${String.format("%,.0f", med.cost)}",
                                         fontSize = 11.sp,
                                         color = SlateTextMedium
                                     )
                                     Text(
-                                        text = "₦${String.format("%,.0f", med.cost)}",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onSurface
+                                        text = "Due: ${SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(med.nextRefillDate))}",
+                                        fontSize = 10.sp,
+                                        color = SlateTextMedium,
+                                        fontWeight = FontWeight.SemiBold
                                     )
                                 }
-
-                                Text(
-                                    text = "Next Refill Due: ${SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(med.nextRefillDate))}",
-                                    fontSize = 10.sp,
-                                    color = SlateTextMedium
-                                )
                             }
                         }
                     }
@@ -3749,4 +3797,367 @@ fun ClinicalFollowUpsQueue(
             }
         }
     }
+}
+
+@Composable
+fun PatientTreatmentHistoryDialog(
+    customer: Customer,
+    medications: List<CustomerMedication>,
+    context: Context,
+    onDismiss: () -> Unit
+) {
+    var selectedOption by remember { mutableStateOf(0) }
+    val nowMs = remember { System.currentTimeMillis() }
+
+    val sdfDate = remember { SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()) }
+    var startDateStr by remember { mutableStateOf(sdfDate.format(Date(nowMs - 30L * 24 * 60 * 60 * 1000))) }
+    var endDateStr by remember { mutableStateOf(sdfDate.format(Date(nowMs))) }
+
+    val startDateMs: Long? = remember(selectedOption, startDateStr, nowMs) {
+        when (selectedOption) {
+            1 -> nowMs - (30L * 24 * 60 * 60 * 1000)
+            2 -> nowMs - (90L * 24 * 60 * 60 * 1000)
+            3 -> nowMs - (365L * 24 * 60 * 60 * 1000)
+            4 -> try { sdfDate.parse(startDateStr.trim())?.time } catch (e: Exception) { null }
+            else -> null
+        }
+    }
+
+    val endDateMs: Long? = remember(selectedOption, endDateStr, nowMs) {
+        when (selectedOption) {
+            4 -> try { sdfDate.parse(endDateStr.trim())?.time } catch (e: Exception) { null }
+            else -> null
+        }
+    }
+
+    val filteredMeds = remember(medications, startDateMs, endDateMs) {
+        medications.filter { med ->
+            val timestamp = if (med.dateAdded > 0) med.dateAdded else med.nextRefillDate
+            val matchesStart = startDateMs == null || timestamp >= startDateMs
+            val matchesEnd = endDateMs == null || timestamp <= endDateMs + (24L * 60 * 60 * 1000 - 1)
+            matchesStart && matchesEnd
+        }.sortedByDescending { if (it.dateAdded > 0) it.dateAdded else it.nextRefillDate }
+    }
+
+    val totalCost = remember(filteredMeds) { filteredMeds.sumOf { it.cost } }
+
+    var previewResult by remember { mutableStateOf<com.example.PatientHistoryPdfResult?>(null) }
+    var showInAppViewer by remember { mutableStateOf(false) }
+
+    if (showInAppViewer && previewResult != null) {
+        InAppPdfPreviewDialog(
+            result = previewResult!!,
+            customerName = customer.name,
+            context = context,
+            onDismiss = { showInAppViewer = false }
+        )
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(
+                    modifier = Modifier
+                        .size(36.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(TealSecondary),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Filled.PictureAsPdf, contentDescription = null, tint = TealPrimary, modifier = Modifier.size(20.dp))
+                }
+                Column {
+                    Text("Treatment & Medication History PDF", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = TealTertiary, fontSize = 14.sp)
+                    Text("Patient: ${customer.name}", style = MaterialTheme.typography.bodySmall, color = SlateTextMedium, fontSize = 11.sp)
+                }
+            }
+        },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+                Text(
+                    text = "Select date scope to generate the historical treatment dataset PDF report:",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = SlateTextMedium
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    val filterLabels = listOf("All Time", "Past 30 Days", "Past 90 Days", "Past 1 Year", "Custom Range")
+                    filterLabels.forEachIndexed { index, label ->
+                        FilterChip(
+                            selected = selectedOption == index,
+                            onClick = { selectedOption = index },
+                            label = { Text(label, fontSize = 11.sp) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = TealPrimary,
+                                selectedLabelColor = Color.White
+                            )
+                        )
+                    }
+                }
+
+                if (selectedOption == 4) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        OutlinedTextField(
+                            value = startDateStr,
+                            onValueChange = { startDateStr = it },
+                            label = { Text("Start (YYYY-MM-DD)", fontSize = 10.sp) },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                        OutlinedTextField(
+                            value = endDateStr,
+                            onValueChange = { endDateStr = it },
+                            label = { Text("End (YYYY-MM-DD)", fontSize = 10.sp) },
+                            singleLine = true,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = TealSurface),
+                    shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.dp, SlateBorderLight),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Records Found:", fontSize = 12.sp, color = SlateTextMedium)
+                            Text("${filteredMeds.size} Medications", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = TealTertiary)
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Total Cumulative Spend:", fontSize = 12.sp, color = SlateTextMedium)
+                            Text(String.format("₦%,.2f", totalCost), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = OKGreen)
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                if (filteredMeds.isNotEmpty()) {
+                    Text("Recent Items in Dataset:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = SlateTextMedium)
+                    Spacer(modifier = Modifier.height(4.dp))
+                    filteredMeds.take(3).forEach { med ->
+                        val dateStr = SimpleDateFormat("dd MMM yyyy", Locale.getDefault()).format(Date(if (med.dateAdded > 0) med.dateAdded else med.nextRefillDate))
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 2.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text("• ${med.medicationName}", fontSize = 11.sp, color = TealTertiary, maxLines = 1, modifier = Modifier.weight(1f))
+                            Text("$dateStr (₦${med.cost})", fontSize = 11.sp, color = SlateTextMedium)
+                        }
+                    }
+                    if (filteredMeds.size > 3) {
+                        Text("+ ${filteredMeds.size - 3} more items included in full PDF...", fontSize = 10.sp, color = SlateTextMedium)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Button(
+                    onClick = {
+                        val result = com.example.DocumentGenerator.generatePatientTreatmentHistoryReport(
+                            context = context,
+                            customer = customer,
+                            medications = medications,
+                            startDateMs = startDateMs,
+                            endDateMs = endDateMs
+                        )
+                        previewResult = result
+
+                        val pdfUri = result.pdfUri
+                        if (pdfUri != null) {
+                            val intent = Intent(Intent.ACTION_VIEW).apply {
+                                setDataAndType(pdfUri, "application/pdf")
+                                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            }
+                            try {
+                                context.startActivity(Intent.createChooser(intent, "Open Patient Treatment History PDF"))
+                            } catch (e: Exception) {
+                                showInAppViewer = true
+                            }
+                        } else {
+                            showInAppViewer = true
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().testTag("generate_open_pdf_btn"),
+                    colors = ButtonDefaults.buttonColors(containerColor = TealPrimary),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Icon(Icons.Filled.PictureAsPdf, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Generate & Open PDF Document", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = {
+                            val result = com.example.DocumentGenerator.generatePatientTreatmentHistoryReport(
+                                context = context,
+                                customer = customer,
+                                medications = medications,
+                                startDateMs = startDateMs,
+                                endDateMs = endDateMs
+                            )
+                            val shareUri = result.pdfUri
+                            if (shareUri != null) {
+                                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                    type = "application/pdf"
+                                    putExtra(Intent.EXTRA_STREAM, shareUri)
+                                    putExtra(Intent.EXTRA_SUBJECT, "Treatment History Report - ${customer.name}")
+                                    putExtra(Intent.EXTRA_TEXT, "Attached is the NDPA-compliant patient medication and treatment history dataset PDF report for ${customer.name}.")
+                                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                                context.startActivity(Intent.createChooser(shareIntent, "Share Treatment PDF via"))
+                            } else {
+                                Toast.makeText(context, "Failed to generate report file.", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Share PDF", fontSize = 11.sp)
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            previewResult = com.example.DocumentGenerator.generatePatientTreatmentHistoryReport(context, customer, medications, startDateMs, endDateMs)
+                            showInAppViewer = true
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Icon(Icons.Filled.Visibility, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("In-App View", fontSize = 11.sp)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                TextButton(
+                    onClick = onDismiss,
+                    modifier = Modifier.align(Alignment.End),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Text("Close", color = SlateTextMedium, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        },
+        dismissButton = null
+    )
+}
+
+@Composable
+fun InAppPdfPreviewDialog(
+    result: com.example.PatientHistoryPdfResult,
+    customerName: String,
+    context: Context,
+    onDismiss: () -> Unit
+) {
+    val bitmap = remember(result.pngFileName) {
+        try {
+            if (!result.pngFileName.isNullOrEmpty()) {
+                val file = java.io.File(context.filesDir, result.pngFileName)
+                if (file.exists()) {
+                    android.graphics.BitmapFactory.decodeFile(file.absolutePath)
+                } else null
+            } else null
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Patient Report: $customerName", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = TealTertiary, fontSize = 14.sp)
+                IconButton(onClick = onDismiss, modifier = Modifier.size(28.dp)) {
+                    Icon(Icons.Filled.Close, contentDescription = "Close", modifier = Modifier.size(18.dp))
+                }
+            }
+        },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+                Text(
+                    text = "Scope: ${result.dateFilterLabel} • ${result.totalRecords} Medications logged",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = SlateTextMedium
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+
+                if (bitmap != null) {
+                    androidx.compose.foundation.Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = "PDF Document Preview",
+                        modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).border(1.dp, SlateBorderLight, RoundedCornerShape(8.dp))
+                    )
+                } else {
+                    Text("PDF Document Ready (${result.pdfFile?.name})")
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val shareUri = result.pdfUri
+                    if (shareUri != null) {
+                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                            type = "application/pdf"
+                            putExtra(Intent.EXTRA_STREAM, shareUri)
+                            putExtra(Intent.EXTRA_SUBJECT, "Treatment History - $customerName")
+                            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                        }
+                        context.startActivity(Intent.createChooser(shareIntent, "Share PDF Document"))
+                    }
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = TealPrimary)
+            ) {
+                Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Share PDF File", fontSize = 12.sp)
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Dismiss")
+            }
+        }
+    )
 }

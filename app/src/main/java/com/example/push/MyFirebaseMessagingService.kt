@@ -19,46 +19,43 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
         // The system sends Day 3/7/14 alerts here via server-cron
         val title = remoteMessage.notification?.title ?: remoteMessage.data["title"] ?: "Patient Reminder"
         val body = remoteMessage.notification?.body ?: remoteMessage.data["body"] ?: "Follow up time!"
+        val targetTab = remoteMessage.data["targetTab"] ?: "branch_team"
+        val targetSubTab = remoteMessage.data["targetSubTab"] ?: "ops_task_board"
+        val taskId = remoteMessage.data["taskId"] ?: remoteMessage.data["targetTaskId"]
+        val customerName = remoteMessage.data["targetCustomerName"] ?: remoteMessage.data["customerName"] ?: remoteMessage.data["patientName"]
+        val urgencyStr = remoteMessage.data["urgency"] ?: remoteMessage.data["priority"]
+        val targetRole = remoteMessage.data["targetRole"]
+        val targetBranchId = remoteMessage.data["targetBranchId"] ?: remoteMessage.data["branchId"]
+        val dedupKey = remoteMessage.data["dedupKey"]
 
-        showNotification(title, body)
+        val urgency = when (urgencyStr?.lowercase()) {
+            "critical", "high" -> com.example.util.NotificationUrgency.CRITICAL
+            "digest", "low", "silent" -> com.example.util.NotificationUrgency.DIGEST
+            else -> if (title.contains("Expired", ignoreCase = true) || title.contains("Quarantine", ignoreCase = true)) {
+                com.example.util.NotificationUrgency.CRITICAL
+            } else {
+                com.example.util.NotificationUrgency.STANDARD
+            }
+        }
+
+        com.example.util.SmartNotificationDispatcher.dispatchNotification(
+            context = applicationContext,
+            title = title,
+            content = body,
+            urgency = urgency,
+            targetRole = targetRole,
+            targetBranchId = targetBranchId,
+            targetTab = targetTab,
+            targetSubTab = targetSubTab,
+            targetTaskId = taskId?.toLongOrNull(),
+            targetCustomerName = customerName,
+            dedupKey = dedupKey
+        )
     }
 
     override fun onNewToken(token: String) {
         super.onNewToken(token)
         // Store or send token to backend for routing Notifications
         println("FCM Token: $token")
-    }
-
-    private fun showNotification(title: String, message: String) {
-        val channelId = "pharmacy_alerts_channel"
-        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val channel = NotificationChannel(
-                channelId, "Pharmacy Alerts", NotificationManager.IMPORTANCE_HIGH
-            ).apply {
-                description = "Reminders for patient follow-ups"
-            }
-            notificationManager.createNotificationChannel(channel)
-        }
-
-        val intent = Intent(this, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-        }
-        val pendingIntent = PendingIntent.getActivity(
-            this, 0, intent,
-            PendingIntent.FLAG_ONE_SHOT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val builder = NotificationCompat.Builder(this, channelId)
-            // Use the generic mipmap instead of non-existent drawable
-            .setSmallIcon(android.R.drawable.ic_dialog_info) 
-            .setContentTitle(title)
-            .setContentText(message)
-            .setAutoCancel(true)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setContentIntent(pendingIntent)
-
-        notificationManager.notify(System.currentTimeMillis().toInt(), builder.build())
     }
 }

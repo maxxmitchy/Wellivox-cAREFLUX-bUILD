@@ -14,10 +14,12 @@ import com.example.data.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import com.squareup.moshi.Moshi
@@ -30,6 +32,46 @@ data class CartItem(
     val inventoryItem: InventoryItem,
     var quantity: Int,
     var needsRefill: Boolean = true
+)
+
+data class CsvProductImportItem(
+    val csvId: Int = 0,
+    val name: String = "",
+    val brand: String = "",
+    val dosage: String = "",
+    val category: String = "",
+    val stockQuantity: Int = 0,
+    val threshold: Int = 10,
+    val price: Double = 0.0,
+    val expiryDate: Long = 0L,
+    val batchNumber: String = "",
+    val supplier: String = "",
+    val unitForm: String = ""
+)
+
+data class CsvProductDiscrepancy(
+    val csvItem: CsvProductImportItem,
+    val existingItem: InventoryItem
+)
+
+enum class CsvDiscrepancyAction {
+    REPLACE,
+    UPDATE_ADD_QTY,
+    SKIP,
+    REPLACE_ALL,
+    UPDATE_ADD_QTY_ALL,
+    SKIP_ALL
+}
+
+data class CsvImportSessionState(
+    val discrepancies: List<CsvProductDiscrepancy> = emptyList(),
+    val newItemsToImportDirectly: List<CsvProductImportItem> = emptyList(),
+    val currentIndex: Int = 0,
+    val replacedCount: Int = 0,
+    val addedCount: Int = 0,
+    val skippedCount: Int = 0,
+    val directImportedCount: Int = 0,
+    val isFinished: Boolean = false
 )
 
 data class WhatsAppTemplate(
@@ -45,41 +87,49 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
 
     private var isFirstTaskSyncDone = false
 
-    private fun showLocalNotification(title: String, content: String, targetTab: String = "branch_team") {
+    private val _areNotificationsEnabled = kotlinx.coroutines.flow.MutableStateFlow(prefs.getBoolean("notifications_enabled", true))
+    val areNotificationsEnabled: StateFlow<Boolean> = _areNotificationsEnabled.asStateFlow()
+
+    fun getNotificationsEnabled(): Boolean {
+        return prefs.getBoolean("notifications_enabled", true)
+    }
+
+    fun setNotificationsEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean("notifications_enabled", enabled).apply()
+        _areNotificationsEnabled.value = enabled
+    }
+
+    private val _isProfileLoading = kotlinx.coroutines.flow.MutableStateFlow(prefs.getString("cached_branch_id", null) == null)
+    val isProfileLoading: StateFlow<Boolean> = _isProfileLoading.asStateFlow()
+
+    fun showLocalNotification(
+        title: String,
+        content: String,
+        targetTab: String = "branch_team",
+        targetSubTab: String? = "ops_task_board",
+        targetTaskId: Long? = null,
+        targetCustomerName: String? = null,
+        urgency: com.example.util.NotificationUrgency = com.example.util.NotificationUrgency.STANDARD,
+        targetRole: String? = null,
+        targetBranchId: String? = null,
+        dedupKey: String? = null
+    ) {
+        if (!getNotificationsEnabled()) return
         try {
             val context = getApplication<Application>().applicationContext
-            val channelId = "careflux_notifications_channel"
-            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                val channel = android.app.NotificationChannel(
-                    channelId,
-                    "Careflux Notifications",
-                    android.app.NotificationManager.IMPORTANCE_HIGH
-                )
-                val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as android.app.NotificationManager
-                manager.createNotificationChannel(channel)
-            }
-
-            val intent = android.content.Intent(context, com.example.MainActivity::class.java).apply {
-                flags = android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK
-                putExtra("OPEN_TAB", targetTab)
-            }
-            val pendingIntent: android.app.PendingIntent = android.app.PendingIntent.getActivity(
-                context, (0..9999).random(), intent, android.app.PendingIntent.FLAG_IMMUTABLE
+            com.example.util.SmartNotificationDispatcher.dispatchNotification(
+                context = context,
+                title = title,
+                content = content,
+                urgency = urgency,
+                targetRole = targetRole,
+                targetBranchId = targetBranchId,
+                targetTab = targetTab,
+                targetSubTab = targetSubTab,
+                targetTaskId = targetTaskId,
+                targetCustomerName = targetCustomerName,
+                dedupKey = dedupKey
             )
-
-            val notification = androidx.core.app.NotificationCompat.Builder(context, channelId)
-                .setSmallIcon(android.R.drawable.ic_dialog_info)
-                .setContentTitle(title)
-                .setContentText(content)
-                .setStyle(androidx.core.app.NotificationCompat.BigTextStyle().bigText(content))
-                .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
-                .setContentIntent(pendingIntent)
-                .setAutoCancel(true)
-                .build()
-
-            androidx.core.app.NotificationManagerCompat.from(context).notify((1000..9999).random(), notification)
-        } catch (e: SecurityException) {
-            e.printStackTrace()
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -96,6 +146,17 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
 
     private val _isNdpaPledgeSigned = kotlinx.coroutines.flow.MutableStateFlow(prefs.getBoolean("ndpa_pledge_signed", false))
     val isNdpaPledgeSigned: StateFlow<Boolean> = _isNdpaPledgeSigned.asStateFlow()
+
+    private val _activeHighlightTaskId = kotlinx.coroutines.flow.MutableStateFlow<Long?>(null)
+    val activeHighlightTaskId: StateFlow<Long?> = _activeHighlightTaskId.asStateFlow()
+
+    fun setHighlightTaskId(id: Long?) {
+        _activeHighlightTaskId.value = id
+    }
+
+    fun clearHighlightTaskId() {
+        _activeHighlightTaskId.value = null
+    }
 
     fun signNdpaPledge(adminName: String) {
         prefs.edit().putBoolean("ndpa_pledge_signed", true).apply()
@@ -217,6 +278,9 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
     val receipts: StateFlow<List<Receipt>>
     val inventoryItems: StateFlow<List<InventoryItem>>
     val lowStockItems: StateFlow<List<InventoryItem>>
+    val reconciled14DaysRatio: StateFlow<Float>
+    val unreconciled14DaysCount: StateFlow<Int>
+    val overdueReconciliationItems: StateFlow<List<InventoryItem>>
     val prescriptionVolumes: StateFlow<List<DailyPrescriptionVolume>>
     val customerAlerts: StateFlow<List<CustomerAlert>>
     
@@ -229,6 +293,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
     val adminAuditLogs: StateFlow<List<AdminAuditLog>>
     val inventoryBatches: StateFlow<List<com.example.data.InventoryBatch>>
     val smsLogs: StateFlow<List<com.example.data.OutboundSmsLog>>
+    val expiryAlertClaims: StateFlow<List<com.example.data.ExpiryAlertClaim>>
     
     private val _lastFailedSmsLog = kotlinx.coroutines.flow.MutableStateFlow<com.example.data.OutboundSmsLog?>(null)
     val lastFailedSmsLog: StateFlow<com.example.data.OutboundSmsLog?> = _lastFailedSmsLog.asStateFlow()
@@ -268,19 +333,19 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
     private var userProfileListener: com.google.firebase.firestore.ListenerRegistration? = null
     private val activeSyncListeners = mutableListOf<com.google.firebase.firestore.ListenerRegistration>()
 
-    private val _currentPharmacistBranchId = kotlinx.coroutines.flow.MutableStateFlow<String?>(null)
+    private val _currentPharmacistBranchId = kotlinx.coroutines.flow.MutableStateFlow<String?>(prefs.getString("cached_branch_id", null))
     val currentPharmacistBranchId: StateFlow<String?> = _currentPharmacistBranchId.asStateFlow()
 
-    private val _currentPharmacistRole = kotlinx.coroutines.flow.MutableStateFlow<String?>("Pharmacist")
+    private val _currentPharmacistRole = kotlinx.coroutines.flow.MutableStateFlow<String?>(prefs.getString("cached_role", "Pharmacist"))
     val currentPharmacistRole: StateFlow<String?> = _currentPharmacistRole.asStateFlow()
 
-    private val _currentPharmacistName = kotlinx.coroutines.flow.MutableStateFlow<String?>("Staff Pharmacist")
+    private val _currentPharmacistName = kotlinx.coroutines.flow.MutableStateFlow<String?>(prefs.getString("cached_name", "Staff Pharmacist"))
     val currentPharmacistName: StateFlow<String?> = _currentPharmacistName.asStateFlow()
 
-    private val _currentPharmacistBranchName = kotlinx.coroutines.flow.MutableStateFlow<String?>("Careflux Branch")
+    private val _currentPharmacistBranchName = kotlinx.coroutines.flow.MutableStateFlow<String?>(prefs.getString("cached_branch_name", "Careflux Branch"))
     val currentPharmacistBranchName: StateFlow<String?> = _currentPharmacistBranchName.asStateFlow()
 
-    private val _currentPharmacistPhone = kotlinx.coroutines.flow.MutableStateFlow<String?>("+2348000000000")
+    private val _currentPharmacistPhone = kotlinx.coroutines.flow.MutableStateFlow<String?>(prefs.getString("cached_phone", "+2348000000000"))
     val currentPharmacistPhone: StateFlow<String?> = _currentPharmacistPhone.asStateFlow()
 
     // Realtime staff list in the same branch
@@ -296,6 +361,196 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
 
     private val _isOnline = kotlinx.coroutines.flow.MutableStateFlow(true)
     val isOnline: StateFlow<Boolean> = _isOnline.asStateFlow()
+
+    private val _csvImportSession = kotlinx.coroutines.flow.MutableStateFlow<CsvImportSessionState?>(null)
+    val csvImportSession: StateFlow<CsvImportSessionState?> = _csvImportSession.asStateFlow()
+
+    fun prepareCsvProductImport(parsedItems: List<CsvProductImportItem>) {
+        viewModelScope.launch {
+            val currentInventory = repository.allInventoryItems.firstOrNull() ?: inventoryItems.value
+            val discrepancies = mutableListOf<CsvProductDiscrepancy>()
+            val newItems = mutableListOf<CsvProductImportItem>()
+
+            for (parsedItem in parsedItems) {
+                val trimmedName = parsedItem.name.trim()
+                if (trimmedName.isBlank()) continue
+
+                // 1. Check by CSV ID match if csvId > 0
+                val matchById = if (parsedItem.csvId > 0) currentInventory.find { it.id == parsedItem.csvId } else null
+                
+                // 2. Check by Name + Dosage match
+                val matchByNameDosage = currentInventory.find { 
+                    it.name.trim().equals(trimmedName, ignoreCase = true) && 
+                    (parsedItem.dosage.isBlank() || parsedItem.dosage.equals("N/A", ignoreCase = true) || it.dosage.trim().equals(parsedItem.dosage.trim(), ignoreCase = true))
+                }
+
+                // 3. Check by Name match
+                val matchByName = currentInventory.find { 
+                    it.name.trim().equals(trimmedName, ignoreCase = true) 
+                }
+
+                val existingMatch = matchById ?: matchByNameDosage ?: matchByName
+
+                if (existingMatch != null) {
+                    discrepancies.add(CsvProductDiscrepancy(parsedItem, existingMatch))
+                } else {
+                    newItems.add(parsedItem)
+                }
+            }
+
+            // Import non-discrepancy items directly
+            var directCount = 0
+            for (newItem in newItems) {
+                addOrUpdateInventory(
+                    name = newItem.name,
+                    dosage = newItem.dosage,
+                    currentStock = newItem.stockQuantity,
+                    minStock = newItem.threshold,
+                    category = newItem.category.ifBlank { "General" },
+                    price = newItem.price,
+                    expiryDate = newItem.expiryDate,
+                    batchNumber = newItem.batchNumber,
+                    supplier = newItem.supplier,
+                    unitForm = newItem.unitForm,
+                    brand = newItem.brand,
+                    reason = "CSV Direct Import"
+                )
+                directCount++
+            }
+
+            if (discrepancies.isEmpty()) {
+                _csvImportSession.value = null
+                Toast.makeText(getApplication(), "Successfully imported $directCount new products into inventory.", Toast.LENGTH_LONG).show()
+            } else {
+                _csvImportSession.value = CsvImportSessionState(
+                    discrepancies = discrepancies,
+                    newItemsToImportDirectly = newItems,
+                    currentIndex = 0,
+                    directImportedCount = directCount
+                )
+            }
+        }
+    }
+
+    fun resolveCsvDiscrepancy(action: CsvDiscrepancyAction) {
+        val session = _csvImportSession.value ?: return
+        val discrepancies = session.discrepancies
+        val idx = session.currentIndex
+
+        viewModelScope.launch {
+            var currentReplaced = session.replacedCount
+            var currentAdded = session.addedCount
+            var currentSkipped = session.skippedCount
+
+            when (action) {
+                CsvDiscrepancyAction.REPLACE -> {
+                    if (idx in discrepancies.indices) {
+                        val disc = discrepancies[idx]
+                        applyReplaceCsvItem(disc)
+                        currentReplaced++
+                    }
+                    val nextIdx = idx + 1
+                    if (nextIdx >= discrepancies.size) {
+                        finishCsvImportSession(session.copy(replacedCount = currentReplaced, addedCount = currentAdded, skippedCount = currentSkipped, isFinished = true))
+                    } else {
+                        _csvImportSession.value = session.copy(currentIndex = nextIdx, replacedCount = currentReplaced, addedCount = currentAdded, skippedCount = currentSkipped)
+                    }
+                }
+                CsvDiscrepancyAction.UPDATE_ADD_QTY -> {
+                    if (idx in discrepancies.indices) {
+                        val disc = discrepancies[idx]
+                        applyAddQuantityCsvItem(disc)
+                        currentAdded++
+                    }
+                    val nextIdx = idx + 1
+                    if (nextIdx >= discrepancies.size) {
+                        finishCsvImportSession(session.copy(replacedCount = currentReplaced, addedCount = currentAdded, skippedCount = currentSkipped, isFinished = true))
+                    } else {
+                        _csvImportSession.value = session.copy(currentIndex = nextIdx, replacedCount = currentReplaced, addedCount = currentAdded, skippedCount = currentSkipped)
+                    }
+                }
+                CsvDiscrepancyAction.SKIP -> {
+                    currentSkipped++
+                    val nextIdx = idx + 1
+                    if (nextIdx >= discrepancies.size) {
+                        finishCsvImportSession(session.copy(replacedCount = currentReplaced, addedCount = currentAdded, skippedCount = currentSkipped, isFinished = true))
+                    } else {
+                        _csvImportSession.value = session.copy(currentIndex = nextIdx, replacedCount = currentReplaced, addedCount = currentAdded, skippedCount = currentSkipped)
+                    }
+                }
+                CsvDiscrepancyAction.REPLACE_ALL -> {
+                    for (i in idx until discrepancies.size) {
+                        applyReplaceCsvItem(discrepancies[i])
+                        currentReplaced++
+                    }
+                    finishCsvImportSession(session.copy(replacedCount = currentReplaced, addedCount = currentAdded, skippedCount = currentSkipped, isFinished = true))
+                }
+                CsvDiscrepancyAction.UPDATE_ADD_QTY_ALL -> {
+                    for (i in idx until discrepancies.size) {
+                        applyAddQuantityCsvItem(discrepancies[i])
+                        currentAdded++
+                    }
+                    finishCsvImportSession(session.copy(replacedCount = currentReplaced, addedCount = currentAdded, skippedCount = currentSkipped, isFinished = true))
+                }
+                CsvDiscrepancyAction.SKIP_ALL -> {
+                    val remaining = discrepancies.size - idx
+                    currentSkipped += remaining
+                    finishCsvImportSession(session.copy(replacedCount = currentReplaced, addedCount = currentAdded, skippedCount = currentSkipped, isFinished = true))
+                }
+            }
+        }
+    }
+
+    private fun applyReplaceCsvItem(disc: CsvProductDiscrepancy) {
+        val csv = disc.csvItem
+        val existing = disc.existingItem
+        addOrUpdateInventory(
+            id = existing.id,
+            name = csv.name.ifBlank { existing.name },
+            dosage = csv.dosage.ifBlank { existing.dosage },
+            currentStock = csv.stockQuantity,
+            minStock = if (csv.threshold > 0) csv.threshold else existing.minRequiredStock,
+            category = csv.category.ifBlank { existing.category },
+            price = if (csv.price > 0) csv.price else existing.price,
+            expiryDate = if (csv.expiryDate > 0) csv.expiryDate else existing.expiryDate,
+            batchNumber = csv.batchNumber.ifBlank { existing.batchNumber },
+            supplier = csv.supplier.ifBlank { existing.supplier },
+            unitForm = csv.unitForm.ifBlank { existing.unitForm },
+            brand = csv.brand.ifBlank { existing.brand },
+            reason = "CSV Import - Replaced Item"
+        )
+    }
+
+    private fun applyAddQuantityCsvItem(disc: CsvProductDiscrepancy) {
+        val csv = disc.csvItem
+        val existing = disc.existingItem
+        val combinedQty = existing.stockQuantity + csv.stockQuantity
+        addOrUpdateInventory(
+            id = existing.id,
+            name = existing.name,
+            dosage = if (existing.dosage.isNotBlank() && existing.dosage != "N/A") existing.dosage else csv.dosage,
+            currentStock = combinedQty,
+            minStock = if (csv.threshold > 0) csv.threshold else existing.minRequiredStock,
+            category = existing.category.ifBlank { csv.category },
+            price = if (csv.price > 0) csv.price else existing.price,
+            expiryDate = if (csv.expiryDate > 0) csv.expiryDate else existing.expiryDate,
+            batchNumber = csv.batchNumber.ifBlank { existing.batchNumber },
+            supplier = csv.supplier.ifBlank { existing.supplier },
+            unitForm = csv.unitForm.ifBlank { existing.unitForm },
+            brand = csv.brand.ifBlank { existing.brand },
+            reason = "CSV Import - Added Stock (+${csv.stockQuantity})"
+        )
+    }
+
+    private fun finishCsvImportSession(finalState: CsvImportSessionState) {
+        _csvImportSession.value = null
+        val msg = "CSV Import Completed!\nNew Added: ${finalState.directImportedCount} | Replaced: ${finalState.replacedCount} | Quantities Added: ${finalState.addedCount} | Skipped: ${finalState.skippedCount}"
+        Toast.makeText(getApplication(), msg, Toast.LENGTH_LONG).show()
+    }
+
+    fun dismissCsvImportSession() {
+        _csvImportSession.value = null
+    }
 
     fun generateUniqueId(): Int {
         return java.util.UUID.randomUUID().hashCode() and 0x7FFFFFFF
@@ -432,6 +687,15 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
         }
         deviceId = id
 
+        val cachedBId = prefs.getString("cached_branch_id", null)
+        if (!cachedBId.isNullOrEmpty()) {
+            setupBranchRealtimeSync(cachedBId)
+        }
+        viewModelScope.launch {
+            kotlinx.coroutines.delay(1500)
+            _isProfileLoading.value = false
+        }
+
         // Connection Monitoring Network Callback
         try {
             val connectivityManager = application.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
@@ -505,16 +769,8 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
 
                     // Deep sync approved personal credentials if generated
                     val customGemini = snapshot.getString("customGeminiApiKey")
-                    val customTermii = snapshot.getString("customTermiiApiKey")
-                    val customTermiiSender = snapshot.getString("customTermiiSenderId")
                     if (!customGemini.isNullOrBlank()) {
                         prefs.edit().putString("custom_api_key", customGemini.trim()).apply()
-                    }
-                    if (!customTermii.isNullOrBlank()) {
-                        prefs.edit().putString("custom_termii_api_key", customTermii.trim()).apply()
-                    }
-                    if (!customTermiiSender.isNullOrBlank()) {
-                        prefs.edit().putString("custom_termii_sender_id", customTermiiSender.trim()).apply()
                     }
                 }
             }
@@ -601,6 +857,26 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
             initialValue = emptyList()
         )
 
+        val cutoff14Days = System.currentTimeMillis() - (14L * 24 * 60 * 60 * 1000L)
+        reconciled14DaysRatio = repository.allInventoryItems.map { items ->
+            if (items.isEmpty()) 1.0f
+            else {
+                val cutoff = System.currentTimeMillis() - (14L * 24 * 60 * 60 * 1000L)
+                val reconciled = items.count { it.lastReconciledAt >= cutoff }
+                reconciled.toFloat() / items.size.toFloat()
+            }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 1.0f)
+
+        unreconciled14DaysCount = repository.allInventoryItems.map { items ->
+            val cutoff = System.currentTimeMillis() - (14L * 24 * 60 * 60 * 1000L)
+            items.count { it.lastReconciledAt < cutoff }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+        overdueReconciliationItems = repository.allInventoryItems.map { items ->
+            val cutoff = System.currentTimeMillis() - (14L * 24 * 60 * 60 * 1000L)
+            items.filter { it.lastReconciledAt < cutoff }
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
         prescriptionVolumes = repository.allPrescriptionVolumes.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -656,6 +932,12 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
         )
 
         smsLogs = repository.allSmsLogs.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+        expiryAlertClaims = repository.allExpiryAlertClaims.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
@@ -839,6 +1121,12 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                     seedTriageDatabase()
                 }
             }
+        }
+
+        // Auto-refresh automated operational & expiry verification tasks on startup
+        viewModelScope.launch {
+            kotlinx.coroutines.delay(1500)
+            dispatchAutomatedVerificationTasks()
         }
     }
 
@@ -1205,8 +1493,9 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             val oldQty = item.stockQuantity
             val delta = newQuantity - oldQty
+            val now = System.currentTimeMillis()
             if (delta != 0) {
-                saveAndSyncInventoryItemDirectly(item.copy(stockQuantity = newQuantity, lastUpdated = System.currentTimeMillis()))
+                saveAndSyncInventoryItemDirectly(item.copy(stockQuantity = newQuantity, lastReconciledAt = now, lastUpdated = now))
                 
                 val isManager = _currentPharmacistRole.value == "Branch Manager" || isCurrentUserAdmin()
                 val userName = _currentPharmacistName.value ?: "Staff Pharmacist"
@@ -1252,6 +1541,53 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                     e.printStackTrace()
                 }
             }
+        }
+    }
+
+    fun reconcileItemStock(item: InventoryItem, verifiedQuantity: Int, reason: String = "14-Day Rolling Cycle Count Verification") {
+        viewModelScope.launch {
+            val now = System.currentTimeMillis()
+            val oldQty = item.stockQuantity
+            val delta = verifiedQuantity - oldQty
+            val updated = item.copy(
+                stockQuantity = verifiedQuantity,
+                lastReconciledAt = now,
+                lastUpdated = now
+            )
+            saveAndSyncInventoryItemDirectly(updated)
+
+            val userName = _currentPharmacistName.value ?: "Staff Pharmacist"
+            val userRole = _currentPharmacistRole.value ?: "Pharmacist"
+            val userUid = com.google.firebase.auth.FirebaseAuth.getInstance().currentUser?.uid ?: "LocalNode"
+            val branchId = _currentPharmacistBranchId.value ?: "Self"
+
+            val auditMap = hashMapOf(
+                "branchId" to branchId,
+                "uid" to userUid,
+                "displayName" to userName,
+                "role" to userRole,
+                "action" to "CYCLE_COUNT_RECONCILIATION",
+                "timestamp" to now,
+                "details" to "Reconciled stock for ${item.name} (${item.dosage}) from $oldQty to $verifiedQuantity. Discrepancy: ${if (delta > 0) "+$delta" else delta}. Reason: $reason",
+                "affectedId" to item.id.toString(),
+                "medicationId" to item.id,
+                "previousQty" to oldQty,
+                "newQty" to verifiedQuantity,
+                "verifiedBy" to "$userName ($userRole)"
+            )
+
+            try {
+                val db = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                db.collection("branch_audit_logs").add(auditMap)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+
+            logAuditTrail(
+                action = "CYCLE_COUNT",
+                details = "Physical count reconciled for ${item.name} (${item.dosage}): $oldQty -> $verifiedQuantity. Reason: $reason",
+                affectedId = item.id.toString()
+            )
         }
     }
 
@@ -1317,6 +1653,121 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
     fun deleteCustomerAlert(alert: CustomerAlert) {
         viewModelScope.launch {
             repository.deleteCustomerAlert(alert)
+        }
+    }
+
+    fun generatePatientFirstAutomaticAlerts() {
+        viewModelScope.launch {
+            val allCustomers = customers.value
+            val allMeds = customerMedications.value
+            val lowStock = lowStockItems.value
+            val currentAlerts = customerAlerts.value
+
+            if (allCustomers.isEmpty()) return@launch
+
+            // 1. STOCK SHORTAGE -> AFFECTED CUSTOMERS
+            lowStock.forEach { stockItem ->
+                val affectedMeds = allMeds.filter { it.inventoryItemId == stockItem.id }
+
+                affectedMeds.forEach { med ->
+                    val customer = allCustomers.find { it.id == med.customerId }
+                    if (customer != null) {
+                        val alreadyHasAlert = currentAlerts.any {
+                            it.customerName.equals(customer.name, ignoreCase = true) &&
+                            it.status == "Pending" &&
+                            it.alertType == "Stock Shortage Warning" &&
+                            it.medicationName.contains(stockItem.name, ignoreCase = true)
+                        }
+
+                        if (!alreadyHasAlert) {
+                            val alert = CustomerAlert(
+                                customerName = customer.name,
+                                phoneNumber = customer.phoneNumber,
+                                medicationName = "Stock Low: ${stockItem.name} (${med.customDosage})",
+                                alertType = "Stock Shortage Warning",
+                                status = "Pending",
+                                scheduledTime = "Immediate Outreach",
+                                timestamp = System.currentTimeMillis()
+                            )
+                            repository.insertCustomerAlert(alert)
+                        }
+                    }
+                }
+            }
+
+            // 2. SILENT RADAR SCAN (Inactivity Scan)
+            val thresholdTime = System.currentTimeMillis() - (30L * 24 * 60 * 60 * 1000) // 30 days
+            allCustomers.forEach { customer ->
+                val customerMedsList = allMeds.filter { it.customerId == customer.id }
+                
+                val lastActivityTime = if (customerMedsList.isEmpty()) {
+                    0L
+                } else {
+                    customerMedsList.maxOfOrNull { it.nextRefillDate - (it.cycleDays * 24L * 60 * 60 * 1000) } ?: 0L
+                }
+
+                val isSilent = customerMedsList.isEmpty() || lastActivityTime < thresholdTime
+
+                if (isSilent) {
+                    val alreadyHasRadarAlert = currentAlerts.any {
+                        it.customerName.equals(customer.name, ignoreCase = true) &&
+                        it.status == "Pending" &&
+                        it.alertType == "Silent Radar"
+                    }
+
+                    if (!alreadyHasRadarAlert) {
+                        val alert = CustomerAlert(
+                            customerName = customer.name,
+                            phoneNumber = customer.phoneNumber,
+                            medicationName = "Inactivity Radar: No recent contact/refills.",
+                            alertType = "Silent Radar",
+                            status = "Pending",
+                            scheduledTime = "Schedule Check-in",
+                            timestamp = System.currentTimeMillis()
+                        )
+                        repository.insertCustomerAlert(alert)
+                    }
+                }
+            }
+
+            // 3. PRIORITY PRESCRIPTION REFILL SCAN
+            val nowMs = System.currentTimeMillis()
+            val sevenDaysOutMs = nowMs + (7L * 24 * 60 * 60 * 1000)
+            val windowLabel = com.example.util.RefillNotificationSchedule.getWindowBadgeLabel(nowMs)
+
+            allMeds.forEach { med ->
+                val customer = allCustomers.find { it.id == med.customerId && it.name.isNotBlank() }
+                if (customer == null) {
+                    // Delete orphaned medication not assigned to any valid customer
+                    repository.deleteCustomerMedication(med)
+                } else if (med.cycleDays > 0 && med.nextRefillDate <= sevenDaysOutMs) {
+                    val alreadyHasRefillAlert = currentAlerts.any {
+                        it.customerName.equals(customer.name, ignoreCase = true) &&
+                        it.status == "Pending" &&
+                        it.medicationName.contains(med.medicationName, ignoreCase = true) &&
+                        (it.alertType == "Refill Reminder" || it.alertType == "Priority Refill Alert")
+                    }
+
+                    if (!alreadyHasRefillAlert) {
+                        val alertMsg = com.example.util.RefillNotificationSchedule.formatRefillMessage(
+                            patientName = customer.name,
+                            medicationName = med.medicationName,
+                            dosage = med.customDosage,
+                            phone = customer.phoneNumber
+                        )
+                        val alert = CustomerAlert(
+                            customerName = customer.name,
+                            phoneNumber = customer.phoneNumber,
+                            medicationName = alertMsg,
+                            alertType = "Priority Refill Alert",
+                            status = "Pending",
+                            scheduledTime = windowLabel,
+                            timestamp = nowMs
+                        )
+                        repository.insertCustomerAlert(alert)
+                    }
+                }
+            }
         }
     }
 
@@ -1495,7 +1946,11 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                     return@launch
                 }
                 // Update customer notes
-                val updatedCustomer = customer.copy(notes = userNotes.trim())
+                val updatedCustomer = com.example.ui.PatientIntelligenceParser.appendTextNote(
+                    customer = customer,
+                    medications = emptyList(),
+                    noteText = userNotes.trim()
+                )
                 repository.updateCustomer(updatedCustomer)
                 syncCustomerToBranch(updatedCustomer)
                 
@@ -1559,6 +2014,16 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
             )
             repository.insertOperationTask(task)
             
+            if (!assignedToName.isNullOrBlank() && assignedToName != "All Staff") {
+                showLocalNotification(
+                    title = com.example.util.RefillNotificationSchedule.formatTaskAssignedTitle(title),
+                    content = com.example.util.RefillNotificationSchedule.formatTaskAssignedMessage(_currentPharmacistName.value ?: "Manager", title),
+                    targetTab = "branch_team",
+                    targetSubTab = "ops_task_board",
+                    targetTaskId = task.id.toLong()
+                )
+            }
+            
             val branchId = _currentPharmacistBranchId.value
             if (!branchId.isNullOrBlank()) {
                 val map = mapOf(
@@ -1601,6 +2066,9 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 verifiedAt = System.currentTimeMillis()
             )
             repository.updateOperationTask(updated)
+            if (_activeHighlightTaskId.value == task.id.toLong()) {
+                _activeHighlightTaskId.value = null
+            }
             
             val branchId = _currentPharmacistBranchId.value
             if (!branchId.isNullOrBlank()) {
@@ -1682,6 +2150,217 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 )
             }
             onFinished(true, "Task approved and finalized by manager.")
+        }
+    }
+
+    fun claimOperationTask(task: OperationTask, staffName: String) {
+        viewModelScope.launch {
+            var updatedDesc = task.description
+            if (task.title.contains("Expiry", ignoreCase = true) || task.category.contains("Expiry", ignoreCase = true) || updatedDesc.contains("30 days", ignoreCase = true)) {
+                val items = repository.allInventoryItems.first()
+                val productName = task.title.substringAfter("Expiry Shelf Audit:").replace("Perform FEFO check on", "", ignoreCase = true).trim()
+                val matchedItem = items.find { 
+                    it.name.equals(productName, ignoreCase = true) || 
+                    task.title.contains(it.name, ignoreCase = true) || 
+                    it.name.contains(productName, ignoreCase = true) ||
+                    task.description.contains(it.name, ignoreCase = true) ||
+                    productName.lowercase().split(" ").firstOrNull { w -> w.length > 3 }?.let { word -> it.name.lowercase().contains(word) } == true
+                }
+                
+                val smartDesc = if (matchedItem != null) {
+                    val now = System.currentTimeMillis()
+                    val sdf = java.text.SimpleDateFormat("MMM d, yyyy", java.util.Locale.getDefault())
+                    val batch = matchedItem.batchNumber.ifBlank { "N/A" }
+                    val dateStr = if (matchedItem.expiryDate > 0) sdf.format(java.util.Date(matchedItem.expiryDate)) else "Soon"
+                    val daysLeft = if (matchedItem.expiryDate > 0) ((matchedItem.expiryDate - now) / (1000L * 60 * 60 * 24)).toInt() else 0
+                    
+                    when {
+                        matchedItem.expiryDate <= 0 -> "Batch $batch expiring soon. Perform physical count & apply FEFO markdown."
+                        daysLeft < 0 -> {
+                            val absDays = Math.abs(daysLeft)
+                            "EXPIRED $absDays day${if (absDays == 1) "" else "s"} ago on $dateStr (Batch $batch). Immediately quarantine stock or record disposal write-off."
+                        }
+                        daysLeft == 0 -> "EXPIRES TODAY ($dateStr, Batch $batch). Move to quarantine or apply clearance discount immediately."
+                        else -> "Expires in $daysLeft day${if (daysLeft == 1) "" else "s"} on $dateStr (Batch $batch). Perform physical count & apply FEFO markdown."
+                    }
+                } else {
+                    if (updatedDesc.contains("expiring within 30 days", ignoreCase = true)) {
+                        updatedDesc.replace("expiring within 30 days", "expiring batch - perform physical count & FEFO audit", ignoreCase = true)
+                    } else {
+                        "Perform physical stock count & apply FEFO markdown for expiring batch."
+                    }
+                }
+
+                if (updatedDesc.startsWith("Assignee:")) {
+                    val assigneePrefix = updatedDesc.substringBefore(" | instructions: ")
+                    updatedDesc = "$assigneePrefix | instructions: $smartDesc"
+                } else {
+                    updatedDesc = smartDesc
+                }
+            }
+
+            val updated = task.copy(assignedToName = staffName, description = updatedDesc)
+            repository.updateOperationTask(updated)
+            if (_activeHighlightTaskId.value == task.id.toLong()) {
+                _activeHighlightTaskId.value = null
+            }
+            
+            val branchId = _currentPharmacistBranchId.value
+            if (!branchId.isNullOrBlank()) {
+                val map: Map<String, Any> = mapOf(
+                    "id" to updated.id,
+                    "title" to updated.title,
+                    "description" to updated.description,
+                    "urgency" to updated.urgency,
+                    "category" to updated.category,
+                    "isCompleted" to updated.isCompleted,
+                    "createdAt" to updated.createdAt,
+                    "branchId" to branchId,
+                    "assignedToName" to (updated.assignedToName ?: ""),
+                    "assignedToUid" to (updated.assignedToUid ?: "")
+                )
+                syncEntityToFirestore("branch_operation_tasks", updated.id.toString(), map)
+                logAuditTrail(
+                    action = "CLAIM_TASK",
+                    details = "Pharmacist $staffName claimed responsibility for task '${updated.title}'.",
+                    affectedId = updated.id.toString()
+                )
+            }
+        }
+    }
+
+    fun dispatchAutomatedVerificationTasks(onFinished: (Int) -> Unit = {}) {
+        viewModelScope.launch {
+            val currentTasks = repository.allOperationTasks.first()
+            val items = repository.allInventoryItems.first()
+            val now = System.currentTimeMillis()
+            val sdf = java.text.SimpleDateFormat("MMM d, yyyy", java.util.Locale.getDefault())
+            val ninetyDaysMs = 90L * 24 * 60 * 60 * 1000L
+
+            var dispatchedCount = 0
+
+            // 1. Low stock automatic verification tasks
+            val existingTitles = currentTasks.map { it.title.lowercase() }.toSet()
+            items.filter { it.stockQuantity <= it.minRequiredStock }.forEach { item ->
+                val expectedTitle = "Inventory Verification: ${item.name}".lowercase()
+                if (!existingTitles.contains(expectedTitle)) {
+                    addOperationTask(
+                        title = "Inventory Verification: ${item.name}",
+                        description = "Stock low (${item.stockQuantity} remaining, min ${item.minRequiredStock}). Verify shelf count & reconcile discrepancies.",
+                        urgency = "High",
+                        category = "Clinical Intelligence",
+                        assignedToName = null
+                    )
+                    dispatchedCount++
+                }
+            }
+
+            // 2. Comprehensive sweep & refresh for ALL existing tasks in DB (including claimed & assigned tasks)
+            currentTasks.forEach { task ->
+                val isExpiryTask = task.title.contains("Expiry", ignoreCase = true) || 
+                                  task.category.contains("Expiry", ignoreCase = true) || 
+                                  task.description.contains("30 days", ignoreCase = true)
+                if (isExpiryTask) {
+                    val productName = task.title.substringAfter("Expiry Shelf Audit:").replace("Perform FEFO check on", "", ignoreCase = true).trim()
+                    val matchedItem = items.find { 
+                        it.name.equals(productName, ignoreCase = true) || 
+                        task.title.contains(it.name, ignoreCase = true) || 
+                        it.name.contains(productName, ignoreCase = true) ||
+                        task.description.contains(it.name, ignoreCase = true) ||
+                        productName.lowercase().split(" ").firstOrNull { w -> w.length > 3 }?.let { word -> it.name.lowercase().contains(word) } == true
+                    }
+                    
+                    val smartDesc = if (matchedItem != null) {
+                        val batch = matchedItem.batchNumber.ifBlank { "N/A" }
+                        val dateStr = if (matchedItem.expiryDate > 0) sdf.format(java.util.Date(matchedItem.expiryDate)) else "Soon"
+                        val daysLeft = if (matchedItem.expiryDate > 0) ((matchedItem.expiryDate - now) / (1000L * 60 * 60 * 24)).toInt() else 0
+                        
+                        when {
+                            matchedItem.expiryDate <= 0 -> "Batch $batch expiring soon. Perform physical count & apply FEFO markdown."
+                            daysLeft < 0 -> {
+                                val absDays = Math.abs(daysLeft)
+                                "EXPIRED $absDays day${if (absDays == 1) "" else "s"} ago on $dateStr (Batch $batch). Immediately quarantine stock or record disposal write-off."
+                            }
+                            daysLeft == 0 -> "EXPIRES TODAY ($dateStr, Batch $batch). Move to quarantine or apply clearance discount immediately."
+                            else -> "Expires in $daysLeft day${if (daysLeft == 1) "" else "s"} on $dateStr (Batch $batch). Perform physical count & apply FEFO markdown."
+                        }
+                    } else {
+                        if (task.description.contains("expiring within 30 days", ignoreCase = true)) {
+                            task.description.replace("expiring within 30 days", "expiring batch - perform physical count & FEFO audit", ignoreCase = true)
+                        } else {
+                            "Perform physical stock count & apply FEFO markdown for expiring batch."
+                        }
+                    }
+                    val daysLeftCalc = matchedItem?.let { if (it.expiryDate > 0) ((it.expiryDate - now) / (1000L * 60 * 60 * 24)).toInt() else 0 } ?: 14
+                    val urgencyStr = if (daysLeftCalc <= 7) "High" else "Medium"
+
+                    val targetDesc = if (task.description.startsWith("Assignee:")) {
+                        val assigneePrefix = task.description.substringBefore(" | instructions: ")
+                        "$assigneePrefix | instructions: $smartDesc"
+                    } else {
+                        smartDesc
+                    }
+
+                    if (task.description != targetDesc || task.urgency != urgencyStr) {
+                        repository.updateOperationTask(task.copy(description = targetDesc, urgency = urgencyStr))
+                    }
+                }
+            }
+
+            // 3. Near-expiry & expired automatic audit tasks creation for items not yet in tasks
+            val existingExpiryTitles = currentTasks.map { it.title.lowercase() }.toSet()
+            items.filter { (it.expiryDate in 1L..(now + ninetyDaysMs) || (it.expiryDate > 0 && it.expiryDate < now)) && it.stockQuantity > 0 }.forEach { item ->
+                val expectedTitle = "Expiry Shelf Audit: ${item.name}".lowercase()
+                if (!existingExpiryTitles.contains(expectedTitle)) {
+                    val batch = item.batchNumber.ifBlank { "N/A" }
+                    val dateStr = if (item.expiryDate > 0) sdf.format(java.util.Date(item.expiryDate)) else "Soon"
+                    val daysLeft = if (item.expiryDate > 0) ((item.expiryDate - now) / (1000L * 60 * 60 * 24)).toInt() else 0
+                    
+                    val desc = when {
+                        item.expiryDate <= 0 -> "Batch $batch expiring soon. Perform physical count & apply FEFO markdown."
+                        daysLeft < 0 -> {
+                            val absDays = Math.abs(daysLeft)
+                            "EXPIRED $absDays day${if (absDays == 1) "" else "s"} ago on $dateStr (Batch $batch). Immediately quarantine stock or record disposal write-off."
+                        }
+                        daysLeft == 0 -> "EXPIRES TODAY ($dateStr, Batch $batch). Move to quarantine or apply clearance discount immediately."
+                        else -> "Expires in $daysLeft day${if (daysLeft == 1) "" else "s"} on $dateStr (Batch $batch). Perform physical count & apply FEFO markdown."
+                    }
+                    val urgencyStr = if (daysLeft <= 7) "High" else "Medium"
+
+                    addOperationTask(
+                        title = "Expiry Shelf Audit: ${item.name}",
+                        description = desc,
+                        urgency = urgencyStr,
+                        category = "Revenue & Retention",
+                        assignedToName = null
+                    )
+                    dispatchedCount++
+                }
+            }
+
+            // 4. Rolling 14-Day Cycle Count automatic tasks for items overdue for reconciliation
+            val cutoff14Days = now - (14L * 24 * 60 * 60 * 1000L)
+            val overdueItems = items.filter { it.lastReconciledAt < cutoff14Days && it.stockQuantity > 0 }
+            val cycleRatio = if (items.isNotEmpty()) (items.size - overdueItems.size).toFloat() / items.size.toFloat() else 1.0f
+            if (cycleRatio < 0.80f) {
+                val existingCycleTitles = currentTasks.map { it.title.lowercase() }.toSet()
+                overdueItems.take(5).forEach { item ->
+                    val expectedTitle = "14-day cycle count: ${item.name}".lowercase()
+                    if (!existingCycleTitles.contains(expectedTitle)) {
+                        val lastRecStr = if (item.lastReconciledAt > 0) sdf.format(java.util.Date(item.lastReconciledAt)) else "Never"
+                        addOperationTask(
+                            title = "14-Day Cycle Count: ${item.name}",
+                            description = "Rolling 14-day cycle count compliance alert (${(cycleRatio * 100).toInt()}% reconciled). Last counted: $lastRecStr. Verify physical shelf count of ${item.name} (${item.dosage}).",
+                            urgency = "High",
+                            category = "Clinical Intelligence",
+                            assignedToName = null
+                        )
+                        dispatchedCount++
+                    }
+                }
+            }
+
+            onFinished(dispatchedCount)
         }
     }
 
@@ -1767,6 +2446,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
 
     // --- Customer Actions ---
     fun triggerImmediateSync() {
+        generatePatientFirstAutomaticAlerts()
         try {
             _syncState.value = SyncState.Syncing
             val db = com.google.firebase.firestore.FirebaseFirestore.getInstance()
@@ -1849,6 +2529,136 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
         if (normalizedNew.isEmpty()) return true
         return customers.value.none { 
             it.id != excludeId && it.phoneNumber.replace(Regex("[^+\\d]"), "").equals(normalizedNew, ignoreCase = true)
+        }
+    }
+
+    fun checkAndAutoSyncExternalPatientByPhone(phone: String, onSyncComplete: () -> Unit = {}) {
+        val cleanPhone = phone.trim().replace("[^0-9]".toRegex(), "")
+        if (cleanPhone.length < 10) return
+
+        viewModelScope.launch {
+            // Check if already exists locally
+            val localCust = customers.value.find { 
+                it.phoneNumber.trim().replace("[^0-9]".toRegex(), "") == cleanPhone 
+            }
+            if (localCust != null) {
+                // Already exists locally, no need to sync externally
+                return@launch
+            }
+
+            try {
+                val db = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                db.collection("customers")
+                    .whereEqualTo("phoneNumber", phone.trim())
+                    .get()
+                    .addOnSuccessListener { qSnap ->
+                        val results = qSnap.documents.map { doc ->
+                            val data = doc.data?.toMutableMap() ?: mutableMapOf()
+                            data["id"] = doc.id
+                            data
+                        }.filter {
+                            (it["syncedFromDevice"] as? String) != deviceId
+                        }
+
+                        if (results.isNotEmpty()) {
+                            val targetCust = results.first()
+                            val name = targetCust["name"] as? String ?: "Unknown Patient"
+                            val pPhone = targetCust["phoneNumber"] as? String ?: phone
+                            val email = targetCust["email"] as? String ?: ""
+                            val notes = (targetCust["notes"] as? String ?: "") + " [Auto-imported from global registry]"
+                            val age = (targetCust["age"] as? Long ?: 30L).toInt()
+                            val gender = targetCust["gender"] as? String ?: "Male"
+                            val state = targetCust["state"] as? String ?: "Lagos"
+                            val lga = targetCust["lga"] as? String ?: "Ikeja"
+                            val city = targetCust["city"] as? String ?: "Ikeja"
+
+                            viewModelScope.launch {
+                                val newCust = com.example.data.Customer(
+                                    name = name,
+                                    phoneNumber = pPhone,
+                                    email = email,
+                                    notes = notes,
+                                    age = age,
+                                    gender = gender,
+                                    state = state,
+                                    lga = lga,
+                                    city = city,
+                                    consentPrescriptionTracking = true,
+                                    consentSmsRefills = false,
+                                    consentCloudSync = true,
+                                    consentChannel = "Auto Handshake",
+                                    consentLastUpdated = System.currentTimeMillis()
+                                )
+                                val insertedId = repository.insertCustomer(newCust)
+                                val resolvedLocalId = insertedId.toInt()
+
+                                val targetId = targetCust["id"] as? String ?: ""
+                                
+                                // Sync medications
+                                db.collection("customer_medications")
+                                    .whereEqualTo("globalCustomerDocId", targetId)
+                                    .get()
+                                    .addOnSuccessListener { medSnap ->
+                                        viewModelScope.launch {
+                                            medSnap.documents.forEach { doc ->
+                                                val mName = doc.getString("medicationName") ?: ""
+                                                val mDosage = doc.getString("customDosage") ?: ""
+                                                val mCost = doc.getDouble("cost") ?: 0.0
+                                                val mCycle = doc.getLong("cycleDays")?.toInt() ?: 30
+                                                val mNext = doc.getLong("nextRefillDate") ?: System.currentTimeMillis()
+                                                
+                                                val newMed = com.example.data.CustomerMedication(
+                                                    customerId = resolvedLocalId,
+                                                    inventoryItemId = 0,
+                                                    medicationName = mName,
+                                                    customDosage = mDosage,
+                                                    cost = mCost,
+                                                    cycleDays = mCycle,
+                                                    nextRefillDate = mNext
+                                                )
+                                                repository.insertCustomerMedication(newMed)
+                                            }
+                                            
+                                            // Sync interventions
+                                            db.collection("interventions")
+                                                .whereEqualTo("globalCustomerDocId", targetId)
+                                                .get()
+                                                .addOnSuccessListener { intSnap ->
+                                                    viewModelScope.launch {
+                                                        intSnap.documents.forEach { doc2 ->
+                                                            val pres = doc2.getString("presentation") ?: ""
+                                                            val tRes = doc2.getString("testResults") ?: ""
+                                                            val rec = doc2.getString("recommendation") ?: ""
+                                                            
+                                                            val newInt = com.example.data.ClinicalIntervention(
+                                                                customerId = resolvedLocalId,
+                                                                presentation = pres,
+                                                                testResults = tRes,
+                                                                recommendation = rec,
+                                                                currentStatus = doc2.getString("currentStatus") ?: "Pending",
+                                                                followUpDay3Sent = doc2.getBoolean("followUpDay3Sent") ?: false,
+                                                                followUpDay7Sent = doc2.getBoolean("followUpDay7Sent") ?: false,
+                                                                followUpDay14Sent = doc2.getBoolean("followUpDay14Sent") ?: false,
+                                                                dateAdded = doc2.getLong("dateAdded") ?: System.currentTimeMillis()
+                                                            )
+                                                            repository.insertClinicalIntervention(newInt)
+                                                        }
+                                                        android.widget.Toast.makeText(
+                                                            getApplication(),
+                                                            "Global Network Registry Sync complete! Patient '$name' history successfully imported.",
+                                                            android.widget.Toast.LENGTH_LONG
+                                                        ).show()
+                                                        onSyncComplete()
+                                                    }
+                                                }
+                                        }
+                                    }
+                            }
+                        }
+                    }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
     }
 
@@ -1946,16 +2756,27 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
         }
     }
     
-    fun addCustomerMedication(customerId: Int, invItemId: Int, medName: String, customDosage: String, cost: Double, cycleDays: Int, nextRefill: Long) {
+    fun addCustomerMedication(customerId: Int, invItemId: Int, medName: String, customDosage: String, cost: Double, cycleDays: Int, nextRefill: Long, dateAdded: Long = System.currentTimeMillis()) {
         viewModelScope.launch {
+            var finalName = medName.trim()
+            if (invItemId > 0) {
+                val invItem = inventoryItems.value.find { it.id == invItemId }
+                if (invItem != null) {
+                    val stockDosage = invItem.dosage.trim()
+                    if (stockDosage.isNotBlank() && !stockDosage.equals("N/A", ignoreCase = true) && !finalName.contains(stockDosage, ignoreCase = true)) {
+                        finalName = "$finalName $stockDosage"
+                    }
+                }
+            }
             val med = CustomerMedication(
                 customerId = customerId,
                 inventoryItemId = invItemId,
-                medicationName = medName,
+                medicationName = finalName,
                 customDosage = customDosage,
                 cost = cost,
                 cycleDays = cycleDays,
-                nextRefillDate = nextRefill
+                nextRefillDate = nextRefill,
+                dateAdded = dateAdded
             )
             val insertedId = repository.insertCustomerMedication(med)
             syncCustomerMedicationToBranch(med.copy(id = insertedId))
@@ -2920,118 +3741,77 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
         repository.clearAllData()
     }
 
-    // --- Termii API Management ---
-    fun getTermiiApiKey(): String {
-        return prefs.getString("custom_termii_api_key", null)?.takeIf { it.isNotBlank() }
-            ?: com.example.BuildConfig.TERMII_API_KEY
+    // --- Production Twilio Multi-Channel Messaging Gateway ---
+    suspend fun sendTwilioMessage(
+        phone: String,
+        messageContent: String,
+        messageType: String = "General",
+        medicationIdOrKey: String = "general",
+        forceOverrideQuietHours: Boolean = false,
+        templateContentSid: String? = null
+    ): com.example.util.TwilioMessagingManager.DispatchResult {
+        return com.example.util.TwilioMessagingManager.dispatchMessage(
+            context = getApplication(),
+            dao = com.example.data.PharmacyDatabase.getDatabase(getApplication()).pharmacyDao(),
+            rawPhone = phone,
+            messageContent = messageContent,
+            messageType = messageType,
+            medicationIdOrKey = medicationIdOrKey,
+            forceOverrideQuietHours = forceOverrideQuietHours,
+            templateContentSid = templateContentSid
+        )
     }
 
-    fun setTermiiApiKey(key: String) {
-        prefs.edit().putString("custom_termii_api_key", key.trim()).apply()
-    }
-
-    fun getTermiiSenderId(): String {
-        return prefs.getString("custom_termii_sender_id", null)?.takeIf { it.isNotBlank() }
-            ?: "N-Alert"
-    }
-
-    fun setTermiiSenderId(senderId: String) {
-        prefs.edit().putString("custom_termii_sender_id", senderId.trim()).apply()
-    }
-
-    suspend fun sendTermiiSms(to: String, smsContent: String): Boolean {
-        var cleanPhone = to.trim().replace("[^0-9]".toRegex(), "")
-        if (cleanPhone.startsWith("0") && cleanPhone.length == 11) {
-            cleanPhone = "234" + cleanPhone.substring(1)
-        } else if (!cleanPhone.startsWith("234") && cleanPhone.length == 10) {
-            cleanPhone = "234" + cleanPhone
-        }
-        if (cleanPhone.isBlank()) {
-            cleanPhone = to
-        }
-
-        val apiKey = getTermiiApiKey()
-        val senderId = getTermiiSenderId()
-
-        if (apiKey.isBlank() || apiKey == "YOUR_TERMII_API_KEY" || apiKey == "TERMII_API_KEY_DEFAULT_VALUE") {
-            android.util.Log.w("PharmacyViewModel", "Termii API Key is not configured or using default placeholder.")
-            val errorLog = com.example.data.OutboundSmsLog(
-                recipientPhone = cleanPhone,
-                messageContent = smsContent,
-                deliveryStatus = "Failed",
-                gatewayUsed = "Termii API",
-                errorMessage = "Termii API credentials missing or unconfigured"
-            )
-            val logId = repository.insertSmsLog(errorLog)
-            _lastFailedSmsLog.value = errorLog.copy(id = logId.toInt())
-            return false
-        }
-
-        return try {
-            val request = com.example.data.TermiiSmsRequest(
-                to = cleanPhone,
-                from = senderId,
-                sms = smsContent,
-                apiKey = apiKey
-            )
-            val response = com.example.data.TermiiRetrofitClient.service.sendSms(request)
-            val isSuccess = response.code == "ok" || 
-                            response.code == "200" || 
-                            response.message?.contains("Successfully Sent", ignoreCase = true) == true || 
-                            !response.messageId.isNullOrBlank() || 
-                            !response.messageIdStr.isNullOrBlank()
-            
-            val status = if (isSuccess) "Delivered" else "Failed"
-            val errorMsg = if (isSuccess) null else (response.message ?: "Response error code: ${response.code}")
-            
-            val smsLog = com.example.data.OutboundSmsLog(
-                recipientPhone = cleanPhone,
-                messageContent = smsContent,
-                deliveryStatus = status,
-                gatewayUsed = "Termii API",
-                errorMessage = errorMsg
-            )
-            val logId = repository.insertSmsLog(smsLog)
-            
-            if (!isSuccess) {
-                _lastFailedSmsLog.value = smsLog.copy(id = logId.toInt())
-            }
-            
-            android.util.Log.d("PharmacyViewModel", "Termii SMS Sent to $cleanPhone. Success: $isSuccess. Code: ${response.code}. Message: ${response.message}")
-            isSuccess
-        } catch (e: Exception) {
-            e.printStackTrace()
-            val smsLog = com.example.data.OutboundSmsLog(
-                recipientPhone = cleanPhone,
-                messageContent = smsContent,
-                deliveryStatus = "Failed",
-                gatewayUsed = "Termii API",
-                errorMessage = e.message ?: e.toString()
-            )
-            val logId = repository.insertSmsLog(smsLog)
-            _lastFailedSmsLog.value = smsLog.copy(id = logId.toInt())
-            false
-        }
-    }
-
-    // --- Option 1: Automated / Direct Refill Reminders via Termii ---
-    suspend fun sendTermiiRefillReminderSms(patientName: String, phone: String, medicationName: String, dateStr: String, cost: Double): Boolean {
+    suspend fun sendTwilioRefillReminder(
+        patientName: String,
+        phone: String,
+        medicationName: String,
+        dateStr: String,
+        cost: Double,
+        medicationId: Long = 0L,
+        forceSend: Boolean = false
+    ): com.example.util.TwilioMessagingManager.DispatchResult {
         val formattedCost = "%,.2f".format(cost)
-        val message = "Careflux Refill Reminder:\nHello $patientName, your medication $medicationName is due for refill on $dateStr (Est. Cost: ₦$formattedCost). Stay consistent with your therapy! Reply or visit Careflux to refill."
-        return sendTermiiSms(phone, message)
+        val message = "CareFlux Refill Notice:\nHello $patientName, your medication $medicationName is due for refill on $dateStr (Est. Cost: ₦$formattedCost). Stay consistent with your therapy! Reply or visit CareFlux Pharmacy to confirm."
+        return sendTwilioMessage(
+            phone = phone,
+            messageContent = message,
+            messageType = "Refill Reminder",
+            medicationIdOrKey = medicationId.toString(),
+            forceOverrideQuietHours = forceSend,
+            templateContentSid = com.example.data.TwilioConstants.TEMPLATE_REFILL_SID
+        )
     }
 
-    // --- Option 2: Patient Welfare Check-up / Clinical Follow-up via Termii ---
-    suspend fun sendTermiiWelfareCheckSms(patientName: String, phone: String, wellnessQuestion: String): Boolean {
-        val message = "Careflux Health Follow-up:\nHello $patientName, this is Careflux Pharmacy checking up on your recovery! $wellnessQuestion We care about your health journey. Let us know if you need any adjustments."
-        return sendTermiiSms(phone, message)
+    suspend fun sendTwilioWelfareCheck(
+        patientName: String,
+        phone: String,
+        wellnessQuestion: String
+    ): com.example.util.TwilioMessagingManager.DispatchResult {
+        val message = "CareFlux Health Check:\nHello $patientName, CareFlux Pharmacy checking up on your recovery! $wellnessQuestion Reply if you need any clinical guidance."
+        return sendTwilioMessage(
+            phone = phone,
+            messageContent = message,
+            messageType = "Welfare Check",
+            medicationIdOrKey = "welfare_${System.currentTimeMillis()}"
+        )
     }
 
-    // --- Option 3: Dispensing Confirmation / Receipt Notice via Termii ---
-    suspend fun sendTermiiDispenseConfirmationSms(patientName: String, phone: String, itemsSummary: String, amount: Double): Boolean {
+    suspend fun sendTwilioDispenseConfirmation(
+        patientName: String,
+        phone: String,
+        itemsSummary: String,
+        amount: Double
+    ): com.example.util.TwilioMessagingManager.DispatchResult {
         val formattedAmount = "%,.2f".format(amount)
-        val message = "Careflux Transaction Alert:\nDear $patientName, your prescription ($itemsSummary) was successfully dispensed. Total: ₦$formattedAmount. Thank you for choosing Careflux Pharmacy!"
-        return sendTermiiSms(phone, message)
+        val message = "CareFlux Receipt Alert:\nDear $patientName, your prescription ($itemsSummary) was successfully dispensed. Total: ₦$formattedAmount. Thank you for choosing CareFlux Pharmacy!"
+        return sendTwilioMessage(
+            phone = phone,
+            messageContent = message,
+            messageType = "Dispense Receipt",
+            medicationIdOrKey = "receipt_${System.currentTimeMillis()}",
+            forceOverrideQuietHours = true // Immediate transactional receipt
+        )
     }
 
     fun insertCustomSmsLog(log: com.example.data.OutboundSmsLog) {
@@ -3058,9 +3838,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                     "state" to getPharmacyState(),
                     "requestedAt" to System.currentTimeMillis(),
                     "status" to "PENDING",
-                    "geminiKey" to "",
-                    "termiiApiKey" to "",
-                    "termiiSenderId" to ""
+                    "geminiKey" to ""
                 )
                 requestDoc.set(requestData, com.google.firebase.firestore.SetOptions.merge())
             } catch (e: Exception) {
@@ -3069,7 +3847,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun approveKeyRequest(targetDeviceId: String, gemini: String, termii: String, sender: String) {
+    fun approveKeyRequest(targetDeviceId: String, gemini: String) {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
                 val db = com.google.firebase.firestore.FirebaseFirestore.getInstance()
@@ -3078,17 +3856,13 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 db.collection("key_creation_requests").document(targetDeviceId)
                     .update(
                         "status", "APPROVED",
-                        "geminiKey", gemini,
-                        "termiiApiKey", termii,
-                        "termiiSenderId", sender
+                        "geminiKey", gemini
                     )
                 
                 // 2. Provision custom keys to device config
                 db.collection("device_configs").document(targetDeviceId)
                     .update(
-                        "customGeminiApiKey", gemini,
-                        "customTermiiApiKey", termii,
-                        "customTermiiSenderId", sender
+                        "customGeminiApiKey", gemini
                     )
                 
                 // 3. Log to audit trail
@@ -3234,6 +4008,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 .addSnapshotListener { snapshot, e ->
                     if (e != null) {
                         android.util.Log.e("PharmacyViewModel", "Error fetching user details", e)
+                        _isProfileLoading.value = false
                         return@addSnapshotListener
                     }
                     if (snapshot != null && snapshot.exists()) {
@@ -3259,12 +4034,22 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                         _currentPharmacistRole.value = role
                         _currentPharmacistName.value = displayName
                         _currentPharmacistPhone.value = phoneNumber
+                        _isProfileLoading.value = false
+                        
+                        prefs.edit()
+                            .putString("cached_branch_id", bId)
+                            .putString("cached_branch_name", bName)
+                            .putString("cached_role", role)
+                            .putString("cached_name", displayName)
+                            .putString("cached_phone", phoneNumber)
+                            .apply()
                         
                         if (bId.isNotEmpty()) {
                             setupBranchRealtimeSync(bId)
                             triggerImmediateSync()
                         }
                     } else if (snapshot != null && !snapshot.exists()) {
+                        _isProfileLoading.value = false
                         // Create default registered_pharmacist profile document if missing (e.g. for Google Sign-In or new users)
                         val devId = deviceId
                         val deviceModel = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
@@ -3479,10 +4264,11 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
         val medListener = db.collection("branch_customer_medications")
             .whereEqualTo("branchId", userBranchId)
             .addSnapshotListener { snapshot, e ->
-                if (e != null || snapshot == null) return@addSnapshotListener
+                if (e != null || snapshot == null || snapshot.metadata.hasPendingWrites()) return@addSnapshotListener
                 viewModelScope.launch {
                     try {
                         snapshot.documents.forEach { doc ->
+                            if (doc.metadata.hasPendingWrites()) return@forEach
                             val data = doc.data ?: return@forEach
                             val id = (data["id"] as? Number)?.toInt() ?: return@forEach
                             val customerId = (data["customerId"] as? Number)?.toInt() ?: return@forEach
@@ -3493,18 +4279,17 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                             val cycleDays = (data["cycleDays"] as? Number)?.toInt() ?: 30
                             val nextRefillDate = (data["nextRefillDate"] as? Number)?.toLong() ?: System.currentTimeMillis()
 
-                            repository.insertCustomerMedication(
-                                com.example.data.CustomerMedication(
-                                    id = id,
-                                    customerId = customerId,
-                                    inventoryItemId = inventoryItemId,
-                                    medicationName = medicationName,
-                                    customDosage = customDosage,
-                                    cost = cost,
-                                    cycleDays = cycleDays,
-                                    nextRefillDate = nextRefillDate
-                                )
+                            val remoteMed = com.example.data.CustomerMedication(
+                                id = id,
+                                customerId = customerId,
+                                inventoryItemId = inventoryItemId,
+                                medicationName = medicationName,
+                                customDosage = customDosage,
+                                cost = cost,
+                                cycleDays = cycleDays,
+                                nextRefillDate = nextRefillDate
                             )
+                            repository.insertCustomerMedication(remoteMed)
                         }
                     } catch (ex: Exception) {
                         ex.printStackTrace()
@@ -3623,13 +4408,17 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                                         showLocalNotification(
                                             title = "New Task Assigned",
                                             content = "You have been assigned a new task: ${remote.title}.",
-                                            targetTab = "ai_tasks"
+                                            targetTab = "branch_team",
+                                            targetSubTab = "ops_task_board",
+                                            targetTaskId = remote.id.toLong()
                                         )
                                     } else if (local.assignedToUid != remote.assignedToUid) {
                                         showLocalNotification(
                                             title = "Task Reassigned to You",
                                             content = "Task '${remote.title}' is now assigned to you.",
-                                            targetTab = "ai_tasks"
+                                            targetTab = "branch_team",
+                                            targetSubTab = "ops_task_board",
+                                            targetTaskId = remote.id.toLong()
                                         )
                                     }
                                 }
@@ -3640,7 +4429,9 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                                         showLocalNotification(
                                             title = "Task Completed by Staff",
                                             content = "Task '${remote.title}' has been marked completed by ${remote.verifiedBy ?: "staff"}.",
-                                            targetTab = "branch_team"
+                                            targetTab = "branch_team",
+                                            targetSubTab = "ops_task_board",
+                                            targetTaskId = remote.id.toLong()
                                         )
                                     }
                                 }
@@ -3651,13 +4442,17 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                                         showLocalNotification(
                                             title = "Incoming Stock Transfer",
                                             content = remote.description,
-                                            targetTab = "branch_team"
+                                            targetTab = "branch_team",
+                                            targetSubTab = "ops_task_board",
+                                            targetTaskId = remote.id.toLong()
                                         )
                                     } else if (isManager && remote.assignedToName == "Branch Manager" && remote.assignedToUid.isNullOrEmpty()) {
                                         showLocalNotification(
                                             title = "New Manager Task",
                                             content = "A new task requires your attention: ${remote.title}.",
-                                            targetTab = "branch_team"
+                                            targetTab = "branch_team",
+                                            targetSubTab = "ops_task_board",
+                                            targetTaskId = remote.id.toLong()
                                         )
                                     }
                                 }
@@ -4182,6 +4977,87 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 affectedId = item.id.toString()
             )
             android.widget.Toast.makeText(getApplication(), "Expired inventory successfully written off & logged", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun claimExpiryAlert(item: com.example.data.InventoryItem, staffName: String) {
+        viewModelScope.launch {
+            val currentClaim = repository.allExpiryAlertClaims.first().find { it.inventoryItemId == item.id }
+            val newClaim = com.example.data.ExpiryAlertClaim(
+                inventoryItemId = item.id,
+                medicationName = item.name,
+                batchNumber = item.batchNumber,
+                expiryDate = item.expiryDate,
+                claimedByStaffName = staffName,
+                claimTimestamp = System.currentTimeMillis(),
+                status = "CLAIMED",
+                actionTaken = currentClaim?.actionTaken ?: "",
+                actionDetails = currentClaim?.actionDetails ?: "",
+                actionTimestamp = currentClaim?.actionTimestamp ?: 0L
+            )
+            repository.insertExpiryAlertClaim(newClaim)
+            logAuditTrail(
+                action = "CLAIM_EXPIRY_ALERT",
+                details = "Pharmacist $staffName claimed responsibility to act on expiring batch ${item.batchNumber.ifBlank { "N/A" }} of ${item.name}.",
+                affectedId = item.id.toString()
+            )
+            android.widget.Toast.makeText(getApplication(), "Expiry alert claimed by $staffName", android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    fun resolveExpiryAlert(item: com.example.data.InventoryItem, staffName: String, actionTaken: String, actionDetails: String) {
+        viewModelScope.launch {
+            if (actionTaken == "PRICE_DISCOUNT") {
+                val newPrice = (item.price * 0.80).coerceAtLeast(0.0)
+                val updatedItem = item.copy(
+                    price = newPrice,
+                    salesStrategy = "20% Near-Expiry Markdown Applied",
+                    lastUpdated = System.currentTimeMillis()
+                )
+                repository.insertInventoryItem(updatedItem)
+                val map = mapOf(
+                    "id" to updatedItem.id,
+                    "name" to updatedItem.name,
+                    "dosage" to updatedItem.dosage,
+                    "stockQuantity" to updatedItem.stockQuantity,
+                    "minRequiredStock" to updatedItem.minRequiredStock,
+                    "category" to updatedItem.category,
+                    "price" to updatedItem.price,
+                    "expiryDate" to updatedItem.expiryDate,
+                    "batchNumber" to updatedItem.batchNumber,
+                    "supplier" to updatedItem.supplier,
+                    "unitForm" to updatedItem.unitForm,
+                    "lastSoldDate" to updatedItem.lastSoldDate,
+                    "totalSoldQuantity" to updatedItem.totalSoldQuantity,
+                    "brand" to updatedItem.brand,
+                    "salesStrategy" to updatedItem.salesStrategy,
+                    "lastUpdated" to updatedItem.lastUpdated
+                )
+                syncEntityToFirestore("branch_inventory", updatedItem.id.toString(), map)
+            } else if (actionTaken == "RESCUE_MARKETPLACE") {
+                val discountedPrice = (item.price * 0.80).coerceAtLeast(0.0)
+                createRescueListing(item, item.stockQuantity, discountedPrice, 10.0, 14)
+            }
+
+            val claim = com.example.data.ExpiryAlertClaim(
+                inventoryItemId = item.id,
+                medicationName = item.name,
+                batchNumber = item.batchNumber,
+                expiryDate = item.expiryDate,
+                claimedByStaffName = staffName,
+                claimTimestamp = System.currentTimeMillis(),
+                status = "RESOLVED",
+                actionTaken = actionTaken,
+                actionDetails = actionDetails,
+                actionTimestamp = System.currentTimeMillis()
+            )
+            repository.insertExpiryAlertClaim(claim)
+            logAuditTrail(
+                action = "RESOLVE_EXPIRY_ALERT",
+                details = "Pharmacist $staffName resolved expiring batch ${item.batchNumber.ifBlank { "N/A" }} of ${item.name}. Action: $actionTaken ($actionDetails).",
+                affectedId = item.id.toString()
+            )
+            android.widget.Toast.makeText(getApplication(), "Expiry alert marked as resolved by $staffName", android.widget.Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -5021,7 +5897,8 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                         customDosage = "Take 1 tablet twice daily",
                         cost = 2000.0,
                         cycleDays = 30,
-                        nextRefillDate = now + (10L * 24 * 60 * 60 * 1000)
+                        nextRefillDate = now + (10L * 24 * 60 * 60 * 1000),
+                        dateAdded = now - (20L * 24 * 60 * 60 * 1000)
                     ),
                     com.example.data.CustomerMedication(
                         id = generateUniqueId(),
@@ -5031,7 +5908,8 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                         customDosage = "Take 1 tablet with meals twice daily",
                         cost = 1200.0,
                         cycleDays = 30,
-                        nextRefillDate = now + (5L * 24 * 60 * 60 * 1000)
+                        nextRefillDate = now + (5L * 24 * 60 * 60 * 1000),
+                        dateAdded = now - (25L * 24 * 60 * 60 * 1000)
                     ),
                     com.example.data.CustomerMedication(
                         id = generateUniqueId(),
@@ -5041,7 +5919,8 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                         customDosage = "Take 1 tablet daily in the morning",
                         cost = 6500.0,
                         cycleDays = 30,
-                        nextRefillDate = now + (2L * 24 * 60 * 60 * 1000) // Refill very soon!
+                        nextRefillDate = now + (2L * 24 * 60 * 60 * 1000),
+                        dateAdded = now - (28L * 24 * 60 * 60 * 1000)
                     )
                 )
 

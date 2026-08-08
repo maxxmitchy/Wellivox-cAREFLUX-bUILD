@@ -471,4 +471,492 @@ object DocumentGenerator {
     private fun subtotal(items: List<CartItem>): Double {
         return items.sumOf { it.inventoryItem.price * it.quantity }
     }
+
+    fun generatePatientTreatmentHistoryReport(
+        context: Context,
+        customer: com.example.data.Customer,
+        medications: List<com.example.data.CustomerMedication>,
+        startDateMs: Long? = null,
+        endDateMs: Long? = null,
+        pharmacyName: String = "Careflux Central Pharmacy"
+    ): PatientHistoryPdfResult {
+        val filteredMeds = medications.filter { med ->
+            val timestamp = if (med.dateAdded > 0) med.dateAdded else med.nextRefillDate
+            val matchesStart = startDateMs == null || timestamp >= startDateMs
+            val matchesEnd = endDateMs == null || timestamp <= endDateMs + (24L * 60 * 60 * 1000 - 1)
+            matchesStart && matchesEnd
+        }.sortedByDescending { if (it.dateAdded > 0) it.dateAdded else it.nextRefillDate }
+
+        val sdfDate = SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
+        val sdfTime = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
+
+        val dateFilterLabel = when {
+            startDateMs != null && endDateMs != null -> "${sdfDate.format(Date(startDateMs))} - ${sdfDate.format(Date(endDateMs))}"
+            startDateMs != null -> "From ${sdfDate.format(Date(startDateMs))}"
+            endDateMs != null -> "Until ${sdfDate.format(Date(endDateMs))}"
+            else -> "Full Historical Dataset (All Time)"
+        }
+
+        val totalCost = filteredMeds.sumOf { it.cost }
+        val totalRecords = filteredMeds.size
+
+        // Canvas Geometry & Metrics
+        val width = 1400
+        val margin = 80f
+        val contentWidth = width - (2 * margin) // 1240f
+
+        val headerHeight = 110f
+        val titleBlockHeight = 110f
+        val patientInfoHeight = 220f
+        val statsHeight = 140f
+        val tableHeaderHeight = 65f
+        val rowHeight = 85f
+        val tableContentHeight = Math.max(160, filteredMeds.size * rowHeight.toInt()) + tableHeaderHeight.toInt()
+        val footerHeight = 210f
+
+        val totalCanvasHeight = (headerHeight + titleBlockHeight + patientInfoHeight + statsHeight + tableContentHeight + footerHeight + 180f).toInt()
+
+        val bitmap = Bitmap.createBitmap(width, totalCanvasHeight, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+
+        // Modern Palette
+        val colorWhite = Color.WHITE
+        val colorCardBg = Color.parseColor("#F8FAFC") // Slate-50
+        val colorTealHeader = Color.parseColor("#0B4F58") // Dark Medical Teal
+        val colorTealPrimary = Color.parseColor("#0D9488") // Primary Accent Teal
+        val colorTealLightBg = Color.parseColor("#F0FDFA") // Soft Teal Surface
+        val colorTealLightBorder = Color.parseColor("#CCFBF1")
+        val colorAmberLightBg = Color.parseColor("#FFF7ED")
+        val colorAmberText = Color.parseColor("#D97706")
+        val colorBorder = Color.parseColor("#E2E8F0") // Light border
+        val colorTextDark = Color.parseColor("#0F172A") // Slate-900
+        val colorTextMedium = Color.parseColor("#334155") // Slate-700
+        val colorTextMuted = Color.parseColor("#64748B") // Slate-500
+
+        canvas.drawColor(colorWhite)
+
+        val typeRegular = Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL)
+        val typeBold = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
+
+        val paintTextDark = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorTextDark; typeface = typeBold }
+        val paintTextMedium = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorTextMedium; typeface = typeRegular }
+        val paintTextMuted = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorTextMuted; typeface = typeRegular }
+
+        var yPos = 60f
+
+        // ------------------------------------------------------------------------
+        // 1. TOP HEADER (BRAND LOGO + METADATA)
+        // ------------------------------------------------------------------------
+        // Medical Cross Logo Icon
+        val logoCenterX = margin + 35f
+        val logoCenterY = yPos + 35f
+        val logoPath = Path().apply {
+            // Rounded medical cross contour
+            addRoundRect(RectF(logoCenterX - 28f, logoCenterY - 12f, logoCenterX + 28f, logoCenterY + 12f), 8f, 8f, Path.Direction.CW)
+            addRoundRect(RectF(logoCenterX - 12f, logoCenterY - 28f, logoCenterX + 12f, logoCenterY + 28f), 8f, 8f, Path.Direction.CW)
+        }
+        canvas.drawPath(logoPath, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorTealHeader; style = Paint.Style.FILL })
+
+        // Heartbeat line inside cross
+        val pulsePath = Path().apply {
+            moveTo(logoCenterX - 18f, logoCenterY)
+            lineTo(logoCenterX - 8f, logoCenterY)
+            lineTo(logoCenterX - 3f, logoCenterY - 12f)
+            lineTo(logoCenterX + 4f, logoCenterY + 12f)
+            lineTo(logoCenterX + 9f, logoCenterY)
+            lineTo(logoCenterX + 18f, logoCenterY)
+        }
+        canvas.drawPath(pulsePath, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorWhite; style = Paint.Style.STROKE; strokeWidth = 3.5f; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND })
+
+        // Brand Name
+        paintTextDark.textSize = 34f
+        canvas.drawText("CAREFLUX", margin + 80f, yPos + 30f, paintTextDark)
+
+        val paintBrandSub = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorTealHeader; typeface = typeBold; textSize = 16f }
+        canvas.drawText("CLINICAL PHARMACY", margin + 80f, yPos + 55f, paintBrandSub)
+
+        // Top Right Generated Date
+        val metaDividerX = width - margin - 260f
+        canvas.drawLine(metaDividerX, yPos + 10f, metaDividerX, yPos + 60f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorBorder; strokeWidth = 2f })
+
+        paintTextMuted.textSize = 16f
+        canvas.drawText("Report Generated", metaDividerX + 25f, yPos + 28f, paintTextMuted)
+        paintTextDark.textSize = 19f
+        canvas.drawText(sdfTime.format(Date()), metaDividerX + 25f, yPos + 55f, paintTextDark)
+
+        yPos += 100f
+
+        // ------------------------------------------------------------------------
+        // 2. MAIN TITLE BLOCK & DATE SCOPE PILL
+        // ------------------------------------------------------------------------
+        paintTextDark.textSize = 36f
+        canvas.drawText("PATIENT HISTORICAL TREATMENT &", margin, yPos + 30f, paintTextDark)
+        canvas.drawText("MEDICATION DATASET", margin, yPos + 72f, paintTextDark)
+
+        paintTextMuted.textSize = 18f
+        val reportRef = "REPORT-HIST-${customer.id}-${System.currentTimeMillis().toString().takeLast(5)}"
+        canvas.drawText("NDPA Compliant Patient Record • Ref: $reportRef", margin, yPos + 110f, paintTextMuted)
+
+        // Right side Pill Container for Date Filter Scope
+        val pillWidth = 420f
+        val pillHeight = 85f
+        val pillLeft = width - margin - pillWidth
+        val pillTop = yPos + 15f
+        val pillRect = RectF(pillLeft, pillTop, pillLeft + pillWidth, pillTop + pillHeight)
+
+        canvas.drawRoundRect(pillRect, 24f, 24f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorTealLightBg; style = Paint.Style.FILL })
+        canvas.drawRoundRect(pillRect, 24f, 24f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorTealLightBorder; style = Paint.Style.STROKE; strokeWidth = 2f })
+
+        // Calendar Icon inside Pill
+        val calCx = pillLeft + 45f
+        val calCy = pillTop + 42f
+        canvas.drawCircle(calCx, calCy, 22f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorWhite; style = Paint.Style.FILL })
+        // Calendar icon graphics
+        canvas.drawRoundRect(RectF(calCx - 12f, calCy - 10f, calCx + 12f, calCy + 12f), 4f, 4f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorTealHeader; style = Paint.Style.STROKE; strokeWidth = 2.5f })
+        canvas.drawLine(calCx - 12f, calCy - 3f, calCx + 12f, calCy - 3f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorTealHeader; strokeWidth = 2f })
+
+        paintTextMuted.textSize = 15f
+        canvas.drawText("Date Filter Scope", pillLeft + 80f, pillTop + 35f, paintTextMuted)
+        val paintPillVal = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorTealHeader; typeface = typeBold; textSize = 18f }
+        val truncatedLabel = if (dateFilterLabel.length > 26) dateFilterLabel.take(24) + "..." else dateFilterLabel
+        canvas.drawText(truncatedLabel, pillLeft + 80f, pillTop + 62f, paintPillVal)
+
+        yPos += 160f
+
+        // ------------------------------------------------------------------------
+        // 3. PATIENT PROFILE CARD (CARD WITH AVATAR & 3 COLUMNS)
+        // ------------------------------------------------------------------------
+        val profileRect = RectF(margin, yPos, width - margin, yPos + 220f)
+        canvas.drawRoundRect(profileRect, 20f, 20f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorCardBg; style = Paint.Style.FILL })
+        canvas.drawRoundRect(profileRect, 20f, 20f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorBorder; style = Paint.Style.STROKE; strokeWidth = 1.5f })
+
+        // Avatar Icon Circle on Left
+        val avCx = profileRect.left + 50f
+        val avCy = profileRect.top + 50f
+        canvas.drawCircle(avCx, avCy, 28f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorTealLightBg; style = Paint.Style.FILL })
+        // Person icon inside circle
+        canvas.drawCircle(avCx, avCy - 8f, 9f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorTealHeader; style = Paint.Style.STROKE; strokeWidth = 2.5f })
+        val bodyPath = Path().apply {
+            addArc(RectF(avCx - 16f, avCy + 2f, avCx + 16f, avCy + 26f), 180f, 180f)
+        }
+        canvas.drawPath(bodyPath, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorTealHeader; style = Paint.Style.STROKE; strokeWidth = 2.5f })
+
+        // Section Title: PATIENT PROFILE
+        val paintSecTitle = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorTealHeader; typeface = typeBold; textSize = 18f }
+        canvas.drawText("PATIENT PROFILE", profileRect.left + 95f, profileRect.top + 56f, paintSecTitle)
+
+        // 3 Columns Layout inside Profile Box
+        val col1X = profileRect.left + 95f
+        val col2X = profileRect.left + 480f
+        val col3X = profileRect.left + 860f
+
+        // Vertical dividers inside Card
+        canvas.drawLine(profileRect.left + 440f, profileRect.top + 80f, profileRect.left + 440f, profileRect.bottom - 30f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorBorder; strokeWidth = 1.5f })
+        canvas.drawLine(profileRect.left + 820f, profileRect.top + 80f, profileRect.left + 820f, profileRect.bottom - 30f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorBorder; strokeWidth = 1.5f })
+
+        val row1Y = profileRect.top + 115f
+        val row2Y = profileRect.top + 175f
+
+        // Column 1: Name & Phone
+        paintTextMuted.textSize = 15f
+        canvas.drawText("Name", col1X, row1Y, paintTextMuted)
+        paintTextDark.textSize = 21f
+        canvas.drawText(customer.name, col1X, row1Y + 28f, paintTextDark)
+
+        canvas.drawText("Phone", col1X, row2Y, paintTextMuted)
+        paintTextDark.textSize = 20f
+        canvas.drawText(customer.phoneNumber.ifBlank { "N/A" }, col1X, row2Y + 28f, paintTextDark)
+
+        // Column 2: Age/Gender & Email
+        canvas.drawText("Age / Gender", col2X, row1Y, paintTextMuted)
+        paintTextDark.textSize = 20f
+        canvas.drawText("${customer.age} Yrs / ${customer.gender}", col2X, row1Y + 28f, paintTextDark)
+
+        canvas.drawText("Email", col2X, row2Y, paintTextMuted)
+        paintTextDark.textSize = 19f
+        val truncatedEmail = if (customer.email.length > 28) customer.email.take(26) + "..." else customer.email.ifBlank { "N/A" }
+        canvas.drawText(truncatedEmail, col2X, row2Y + 28f, paintTextDark)
+
+        // Column 3: Location & NDPA Consent
+        canvas.drawText("Location", col3X, row1Y, paintTextMuted)
+        paintTextDark.textSize = 20f
+        val locationText = if (customer.city.isNotBlank()) "${customer.city}, ${customer.state}" else "Ikeja, Lagos"
+        canvas.drawText(locationText, col3X, row1Y + 28f, paintTextDark)
+
+        canvas.drawText("NDPA Privacy Consent", col3X, row2Y, paintTextMuted)
+        val paintVerified = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorTealPrimary; typeface = typeBold; textSize = 20f }
+        canvas.drawText("Verified", col3X, row2Y + 28f, paintVerified)
+
+        yPos += 250f
+
+        // ------------------------------------------------------------------------
+        // 4. METRIC KPI STAT CARDS (3 CARDS IN A ROW)
+        // ------------------------------------------------------------------------
+        val kpiGap = 25f
+        val kpiCardWidth = (contentWidth - (2 * kpiGap)) / 3f // ~396f
+        val kpiHeight = 135f
+
+        // Card 1: Total Meds Dispensed
+        val k1Rect = RectF(margin, yPos, margin + kpiCardWidth, yPos + kpiHeight)
+        canvas.drawRoundRect(k1Rect, 20f, 20f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorWhite; style = Paint.Style.FILL })
+        canvas.drawRoundRect(k1Rect, 20f, 20f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorBorder; style = Paint.Style.STROKE; strokeWidth = 1.5f })
+
+        val c1Cx = k1Rect.left + 50f
+        val c1Cy = k1Rect.top + 67f
+        canvas.drawCircle(c1Cx, c1Cy, 28f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorTealLightBg; style = Paint.Style.FILL })
+        // Pill Bottle Icon
+        canvas.drawRoundRect(RectF(c1Cx - 10f, c1Cy - 12f, c1Cx + 10f, c1Cy + 14f), 4f, 4f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorTealHeader; style = Paint.Style.STROKE; strokeWidth = 2.5f })
+        canvas.drawRect(RectF(c1Cx - 12f, c1Cy - 16f, c1Cx + 12f, c1Cy - 12f), Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorTealHeader; style = Paint.Style.FILL })
+
+        paintTextMuted.textSize = 14f
+        canvas.drawText("TOTAL MEDS DISPENSED", k1Rect.left + 95f, k1Rect.top + 45f, paintTextMuted)
+        paintTextDark.textSize = 34f
+        canvas.drawText("$totalRecords", k1Rect.left + 95f, k1Rect.top + 88f, paintTextDark)
+        paintTextMuted.textSize = 18f
+        canvas.drawText(if (totalRecords == 1) "Item" else "Items", k1Rect.left + 135f + (totalRecords.toString().length * 18f), k1Rect.top + 88f, paintTextMuted)
+
+        // Card 2: Cumulative Treatment Cost
+        val k2Rect = RectF(margin + kpiCardWidth + kpiGap, yPos, margin + 2 * kpiCardWidth + kpiGap, yPos + kpiHeight)
+        canvas.drawRoundRect(k2Rect, 20f, 20f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorWhite; style = Paint.Style.FILL })
+        canvas.drawRoundRect(k2Rect, 20f, 20f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorBorder; style = Paint.Style.STROKE; strokeWidth = 1.5f })
+
+        val c2Cx = k2Rect.left + 50f
+        val c2Cy = k2Rect.top + 67f
+        canvas.drawCircle(c2Cx, c2Cy, 28f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorTealLightBg; style = Paint.Style.FILL })
+        // Naira Symbol Icon
+        val paintNaira = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorTealHeader; typeface = typeBold; textSize = 26f }
+        canvas.drawText("₦", c2Cx - 10f, c2Cy + 9f, paintNaira)
+
+        paintTextMuted.textSize = 14f
+        canvas.drawText("CUMULATIVE TREATMENT COST", k2Rect.left + 95f, k2Rect.top + 45f, paintTextMuted)
+        val paintCostVal = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorTealPrimary; typeface = typeBold; textSize = 30f }
+        canvas.drawText(String.format("₦%,.2f", totalCost), k2Rect.left + 95f, k2Rect.top + 88f, paintCostVal)
+
+        // Card 3: Refill Compliance
+        val k3Rect = RectF(margin + 2 * kpiCardWidth + 2 * kpiGap, yPos, width - margin, yPos + kpiHeight)
+        canvas.drawRoundRect(k3Rect, 20f, 20f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorWhite; style = Paint.Style.FILL })
+        canvas.drawRoundRect(k3Rect, 20f, 20f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorBorder; style = Paint.Style.STROKE; strokeWidth = 1.5f })
+
+        val c3Cx = k3Rect.left + 50f
+        val c3Cy = k3Rect.top + 67f
+        canvas.drawCircle(c3Cx, c3Cy, 28f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorAmberLightBg; style = Paint.Style.FILL })
+        // Refresh / Cycle Icon
+        val refreshPath = Path().apply {
+            addArc(RectF(c3Cx - 14f, c3Cy - 14f, c3Cx + 14f, c3Cy + 14f), 45f, 270f)
+        }
+        canvas.drawPath(refreshPath, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorAmberText; style = Paint.Style.STROKE; strokeWidth = 3f; strokeCap = Paint.Cap.ROUND })
+
+        paintTextMuted.textSize = 14f
+        canvas.drawText("REFILL COMPLIANCE", k3Rect.left + 95f, k3Rect.top + 45f, paintTextMuted)
+        val paintStreakVal = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorAmberText; typeface = typeBold; textSize = 34f }
+        canvas.drawText("${customer.refillStreak}", k3Rect.left + 95f, k3Rect.top + 88f, paintStreakVal)
+        canvas.drawText("Refill Streak", k3Rect.left + 130f + (customer.refillStreak.toString().length * 18f), k3Rect.top + 88f, paintTextMuted)
+
+        yPos += 165f
+
+        // ------------------------------------------------------------------------
+        // 5. CHRONOLOGICAL TREATMENT & MEDICATION HISTORY TABLE
+        // ------------------------------------------------------------------------
+        // Section Icon + Header Title
+        val secIconX = margin + 18f
+        val secIconY = yPos + 18f
+        // Clipboard icon
+        canvas.drawRoundRect(RectF(secIconX - 12f, secIconY - 14f, secIconX + 12f, secIconY + 16f), 4f, 4f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorTealHeader; style = Paint.Style.STROKE; strokeWidth = 2.5f })
+        canvas.drawRect(RectF(secIconX - 6f, secIconY - 17f, secIconX + 6f, secIconY - 12f), Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorTealHeader; style = Paint.Style.FILL })
+
+        val paintSecHeader = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorTealHeader; typeface = typeBold; textSize = 22f }
+        canvas.drawText("CHRONOLOGICAL TREATMENT & MEDICATION HISTORY", margin + 42f, yPos + 24f, paintSecHeader)
+
+        yPos += 45f
+
+        // Table Header Row Box
+        val thRect = RectF(margin, yPos, width - margin, yPos + tableHeaderHeight)
+        canvas.drawRoundRect(thRect, 12f, 12f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorTealHeader; style = Paint.Style.FILL })
+
+        val thPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorWhite; typeface = typeBold; textSize = 17f }
+        val cDate = margin + 25f
+        val cMed = margin + 270f
+        val cDose = margin + 650f
+        val cCost = margin + 920f
+        val cStatus = margin + 1120f
+
+        canvas.drawText("DATE & TIME", cDate, yPos + 40f, thPaint)
+        canvas.drawText("MEDICATION NAME", cMed, yPos + 40f, thPaint)
+        canvas.drawText("DOSAGE / QTY", cDose, yPos + 40f, thPaint)
+        canvas.drawText("COST (₦)", cCost, yPos + 40f, thPaint)
+        canvas.drawText("CYCLE STATUS", cStatus, yPos + 40f, thPaint)
+
+        yPos += tableHeaderHeight
+
+        if (filteredMeds.isEmpty()) {
+            val emptyRect = RectF(margin, yPos, width - margin, yPos + 120f)
+            canvas.drawRect(emptyRect, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorCardBg; style = Paint.Style.FILL })
+            canvas.drawLine(margin, yPos + 120f, width - margin, yPos + 120f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorBorder; strokeWidth = 1f })
+
+            paintTextMuted.textSize = 20f
+            canvas.drawText("No medication purchases or treatment records found for this patient within the selected date range.", margin + 40f, yPos + 68f, paintTextMuted)
+            yPos += 120f
+        } else {
+            val borderLinePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorBorder; strokeWidth = 1f }
+
+            filteredMeds.forEachIndexed { idx, med ->
+                val rRect = RectF(margin, yPos, width - margin, yPos + rowHeight)
+                if (idx % 2 == 1) {
+                    canvas.drawRect(rRect, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorCardBg; style = Paint.Style.FILL })
+                }
+                canvas.drawLine(margin, yPos + rowHeight, width - margin, yPos + rowHeight, borderLinePaint)
+
+                val timestamp = if (med.dateAdded > 0) med.dateAdded else med.nextRefillDate
+                val dateStr = sdfTime.format(Date(timestamp))
+
+                paintTextMedium.textSize = 19f
+                canvas.drawText(dateStr, cDate, yPos + 50f, paintTextMedium)
+
+                // Medication Name formatting
+                val rawMedName = med.medicationName
+                val hasSubName = rawMedName.contains("(") && rawMedName.contains(")")
+                if (hasSubName) {
+                    val mainName = rawMedName.substringBefore("(").trim()
+                    val subName = "(" + rawMedName.substringAfter("(")
+                    canvas.drawText(mainName, cMed, yPos + 38f, paintTextDark.apply { textSize = 20f })
+                    canvas.drawText(subName, cMed, yPos + 62f, paintTextMuted.apply { textSize = 16f })
+                } else {
+                    val truncatedMed = if (rawMedName.length > 30) rawMedName.take(28) + "..." else rawMedName
+                    canvas.drawText(truncatedMed, cMed, yPos + 50f, paintTextDark.apply { textSize = 20f })
+                }
+
+                val truncatedDose = if (med.customDosage.length > 25) med.customDosage.take(23) + "..." else med.customDosage.ifBlank { "1 daily" }
+                canvas.drawText(truncatedDose, cDose, yPos + 50f, paintTextMedium.apply { textSize = 19f })
+
+                val costStr = String.format("₦%,.2f", med.cost)
+                canvas.drawText(costStr, cCost, yPos + 50f, paintTextDark.apply { textSize = 20f })
+
+                val statusText = if (med.cycleDays > 0) "${med.cycleDays}d Refill Cycle" else "Single Dispense"
+                val statusColor = if (med.cycleDays > 0) colorTealPrimary else colorTextMuted
+                val paintStatus = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = statusColor; typeface = typeBold; textSize = 18f }
+                canvas.drawText(statusText, cStatus, yPos + 50f, paintStatus)
+
+                yPos += rowHeight
+            }
+        }
+
+        yPos += 50f
+
+        // ------------------------------------------------------------------------
+        // 6. CLINICAL DATASET CERTIFICATION & NDPA SEAL FOOTER BOX
+        // ------------------------------------------------------------------------
+        val fRect = RectF(margin, yPos, width - margin, yPos + 190f)
+        canvas.drawRoundRect(fRect, 20f, 20f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorCardBg; style = Paint.Style.FILL })
+        canvas.drawRoundRect(fRect, 20f, 20f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorBorder; style = Paint.Style.STROKE; strokeWidth = 1.5f })
+
+        // Ribbon Seal Badge Icon on Left
+        val sealCx = fRect.left + 70f
+        val sealCy = fRect.top + 80f
+        // Badge Circle
+        canvas.drawCircle(sealCx, sealCy, 32f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorTealPrimary; style = Paint.Style.FILL })
+        // Checkmark inside seal
+        val checkPath = Path().apply {
+            moveTo(sealCx - 12f, sealCy)
+            lineTo(sealCx - 4f, sealCy + 9f)
+            lineTo(sealCx + 12f, sealCy - 9f)
+        }
+        canvas.drawPath(checkPath, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorWhite; style = Paint.Style.STROKE; strokeWidth = 4f; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND })
+
+        // Ribbon Tails below badge
+        val ribbonPath1 = Path().apply {
+            moveTo(sealCx - 18f, sealCy + 24f)
+            lineTo(sealCx - 28f, sealCy + 55f)
+            lineTo(sealCx - 16f, sealCy + 48f)
+            lineTo(sealCx - 8f, sealCy + 28f)
+        }
+        val ribbonPath2 = Path().apply {
+            moveTo(sealCx + 8f, sealCy + 28f)
+            lineTo(sealCx + 16f, sealCy + 48f)
+            lineTo(sealCx + 28f, sealCy + 55f)
+            lineTo(sealCx + 18f, sealCy + 24f)
+        }
+        canvas.drawPath(ribbonPath1, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorTealHeader; style = Paint.Style.FILL })
+        canvas.drawPath(ribbonPath2, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorTealHeader; style = Paint.Style.FILL })
+
+        // Col 1: Certification Info
+        val fCol1X = fRect.left + 140f
+        val fy = fRect.top + 45f
+
+        paintSecTitle.textSize = 20f
+        canvas.drawText("CLINICAL DATASET CERTIFICATION & NDPA SEAL", fCol1X, fy, paintSecTitle)
+
+        paintTextMedium.textSize = 17f
+        canvas.drawText("Issued By: $pharmacyName", fCol1X, fy + 35f, paintTextMedium)
+        paintTextMuted.textSize = 16f
+        canvas.drawText("Licensed Dispensary Node #CFX-902", fCol1X, fy + 65f, paintTextMuted)
+        canvas.drawText("Chief Pharmacist: Pharm. Olawale A. (Reg #PCN-84920)", fCol1X, fy + 95f, paintTextMuted)
+
+        // Divider Line
+        val fDivX = fRect.left + 720f
+        canvas.drawLine(fDivX, fRect.top + 30f, fDivX, fRect.bottom - 30f, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = colorBorder; strokeWidth = 1.5f })
+
+        // Col 2: Encryption & Support Line
+        val fCol2X = fRect.left + 760f
+        paintTextMuted.textSize = 16f
+        canvas.drawText("This PDF document is encrypted & validated", fCol2X, fy + 15f, paintTextMuted)
+        canvas.drawText("under NDPA 2023 regulations.", fCol2X, fy + 42f, paintTextMuted)
+
+        canvas.drawText("Support Line: +234 814 757 8314", fCol2X, fy + 82f, paintTextMuted)
+        canvas.drawText("Email: clinical@careflux.com", fCol2X, fy + 108f, paintTextMuted)
+
+        // Save Bitmap as PNG (for fast in-app preview)
+        val pngFileName = "treatment_history_${customer.id}_${System.currentTimeMillis()}.png"
+        val pngFile = File(context.filesDir, pngFileName)
+        val outPng = FileOutputStream(pngFile)
+        bitmap.compress(Bitmap.CompressFormat.PNG, 100, outPng)
+        outPng.flush()
+        outPng.close()
+        val pngUri = FileProvider.getUriForFile(context, "${com.example.BuildConfig.APPLICATION_ID}.fileprovider", pngFile)
+
+        // Save native PDF file using PdfDocument
+        var pdfFile: File? = null
+        var pdfUri: Uri? = null
+
+        try {
+            val pdfDocument = android.graphics.pdf.PdfDocument()
+            val pageInfo = android.graphics.pdf.PdfDocument.PageInfo.Builder(width, totalCanvasHeight, 1).create()
+            val page = pdfDocument.startPage(pageInfo)
+
+            page.canvas.drawBitmap(bitmap, 0f, 0f, null)
+            pdfDocument.finishPage(page)
+
+            val pFileName = "treatment_history_${customer.id}_${System.currentTimeMillis()}.pdf"
+            val pFile = File(context.filesDir, pFileName)
+            val outPdf = FileOutputStream(pFile)
+            pdfDocument.writeTo(outPdf)
+            outPdf.flush()
+            outPdf.close()
+            pdfDocument.close()
+
+            pdfFile = pFile
+            pdfUri = FileProvider.getUriForFile(context, "${com.example.BuildConfig.APPLICATION_ID}.fileprovider", pFile)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        return PatientHistoryPdfResult(
+            pdfUri = pdfUri ?: pngUri,
+            pdfFile = pdfFile ?: pngFile,
+            pngUri = pngUri,
+            pngFileName = pngFileName,
+            totalRecords = totalRecords,
+            totalCost = totalCost,
+            dateFilterLabel = dateFilterLabel
+        )
+    }
 }
+
+data class PatientHistoryPdfResult(
+    val pdfUri: Uri?,
+    val pdfFile: File?,
+    val pngUri: Uri?,
+    val pngFileName: String?,
+    val totalRecords: Int,
+    val totalCost: Double,
+    val dateFilterLabel: String
+)

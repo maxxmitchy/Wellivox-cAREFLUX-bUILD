@@ -530,7 +530,7 @@ fun CustomerEngagementTab(viewModel: PharmacyViewModel) {
                         ) {
                             Icon(Icons.Filled.History, null, modifier = Modifier.size(36.dp), tint = SlateTextMedium)
                             Text("Gateway log is empty", fontWeight = FontWeight.Bold, color = TealTertiary, fontSize = 13.sp)
-                            Text("Launch an automated customer engagement campaign above to seed real Termii API or local device logs.", color = SlateTextMedium, fontSize = 11.sp, textAlign = TextAlign.Center, modifier = Modifier.width(250.dp))
+                            Text("Launch an automated customer engagement campaign above to seed real Twilio API or local device logs.", color = SlateTextMedium, fontSize = 11.sp, textAlign = TextAlign.Center, modifier = Modifier.width(250.dp))
                         }
                     }
                 }
@@ -928,7 +928,9 @@ fun CustomerEngagementTab(viewModel: PharmacyViewModel) {
                                                     recipientPhone = customer.phoneNumber,
                                                     messageContent = customizedText,
                                                     deliveryStatus = "Delivered",
-                                                    gatewayUsed = "Termii API Engine",
+                                                    gatewayUsed = "Twilio Multi-Channel",
+                                                    channel = "WhatsApp",
+                                                    messageType = campaign.type.name,
                                                     timestamp = System.currentTimeMillis()
                                                 )
                                                 viewModel.insertCustomSmsLog(log)
@@ -987,7 +989,7 @@ fun CustomerEngagementTab(viewModel: PharmacyViewModel) {
                     Text("Campaign Dispatched", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = TealTertiary)
                     
                     Text(
-                        text = "Successfully sent $lastDispatchedCount packages for '$lastDispatchedCampaignTitle' over the Termii API cloud gateway. Delivery logs added.",
+                        text = "Successfully sent $lastDispatchedCount packages for '$lastDispatchedCampaignTitle' over the Twilio Multi-Channel cloud gateway. Delivery logs added.",
                         style = MaterialTheme.typography.bodySmall,
                         color = SlateTextMedium,
                         lineHeight = 16.sp,

@@ -1,9 +1,18 @@
 package com.example.data
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "operations_tasks")
+@Entity(
+    tableName = "operations_tasks",
+    indices = [
+        Index(value = ["isCompleted"]),
+        Index(value = ["createdAt"]),
+        Index(value = ["category"]),
+        Index(value = ["assignedToUid"])
+    ]
+)
 data class OperationTask(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
     val title: String,

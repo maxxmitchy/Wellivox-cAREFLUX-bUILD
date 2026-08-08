@@ -26,6 +26,12 @@ data class CustomerAlert(
             "Ready for Pickup" -> {
                 "Great news, $customerName! Your prescription for $medicationName is fully prepared and ready for pickup at $pharmacyName. Please visit us to collect it at your earliest convenience."
             }
+            "Stock Shortage Warning" -> {
+                "Hello, $customerName. This is a supportive care update from $pharmacyName. We noticed that stock is currently low on your medication: $medicationName. To make sure your treatment is not interrupted, we have reserved a pack or can offer a clinical alternative. Please let us know if we should process this for you!"
+            }
+            "Silent Radar" -> {
+                "Hello, $customerName! We hope you are doing great. It has been a little while since we last checked in. We wanted to reach out to see how you are feeling and if you need any medication refills or a wellness check. Your health is our priority! - $pharmacyName"
+            }
             else -> "Hello $customerName, this is a message from $pharmacyName regarding your medication: $medicationName."
         }
     }

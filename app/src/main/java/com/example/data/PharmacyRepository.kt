@@ -264,6 +264,13 @@ class PharmacyRepository(private val pharmacyDao: PharmacyDao) {
         pharmacyDao.clearSmsLogs()
     }
 
+    // --- Expiry Alert Claims ---
+    val allExpiryAlertClaims: Flow<List<ExpiryAlertClaim>> = pharmacyDao.getAllExpiryAlertClaims()
+
+    suspend fun insertExpiryAlertClaim(claim: ExpiryAlertClaim) {
+        pharmacyDao.insertExpiryAlertClaim(claim)
+    }
+
     suspend fun clearAllData() {
         pharmacyDao.clearAllData()
     }

@@ -59,6 +59,16 @@ object CarefluxAIEngine {
         }.joinToString("\n")}
         """.trimIndent()
 
+        val isMorningWindow = com.example.util.RefillNotificationSchedule.isMorningRefillWindow()
+        val isEveningWindow = com.example.util.RefillNotificationSchedule.isEveningRefillWindow()
+        val isAfternoonRestockWindow = com.example.util.RefillNotificationSchedule.isAfternoonRestockWindow()
+        val priorityNotice = when {
+            isMorningWindow -> "\n4. REFILL WINDOW PRIORITY: Current time is in the MORNING PEAK REFILL WINDOW (9:00 AM - 11:00 AM). You MUST prioritize prescription/medication refill reminders and chronic patient refill follow-ups at the TOP of highPriorityTasks list."
+            isEveningWindow -> "\n4. REFILL WINDOW PRIORITY: Current time is in the EVENING PEAK REFILL WINDOW (8:00 PM - 11:00 PM). You MUST prioritize prescription/medication refill reminders and evening refill follow-ups at the TOP of highPriorityTasks list."
+            isAfternoonRestockWindow -> "\n4. RESTOCK CUTOFF PRIORITY: Current time is in the AFTERNOON RESTOCK CUTOFF WINDOW (3:00 PM - 6:00 PM). You MUST prioritize low-stock items and procurement order cutoffs at the TOP of highPriorityTasks list."
+            else -> ""
+        }
+
         val promptText = """
         You are the AI operations assistant for Careflux, a Nigerian pharmacy and patient engagement platform.
         Your role is to intelligently monitor pharmacy operations daily and automatically generate actionable tasks, reminders, alerts, operational recommendations, patient engagement prompts, and performance goals.
@@ -66,7 +76,7 @@ object CarefluxAIEngine {
         STRICT RULES:
         1. DO NOT HALLUCINATE OR MAKE UP NAMES: You must ONLY use the exact customer names provided in the Customer List and Customer Prescriptions list. Do not invent any new patients.
         2. DO NOT HALLUCINATE MEDICATIONS: You must ONLY reference medications that exist in the Inventory or Customer Prescriptions list. Do not suggest following up on random medications like "Lisinopril" unless a specific customer in the list is taking it.
-        3. DO NOT INVENT ARBITRARY SCENARIOS: Do not invent scenarios like "power fluctuations", "system outtages", or "fridge broken". Base all tasks STRICTLY on the actual numbers and states provided in the input. If stock is low, mention low stock. If refill is soon, mention refill.
+        3. DO NOT INVENT ARBITRARY SCENARIOS: Do not invent scenarios like "power fluctuations", "system outtages", or "fridge broken". Base all tasks STRICTLY on the actual numbers and states provided in the input. If stock is low, mention low stock. If refill is soon, mention refill.$priorityNotice
         
         $stateSummary
         

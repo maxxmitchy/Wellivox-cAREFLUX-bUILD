@@ -35,6 +35,37 @@ data class CarouselSlide(
     val imageUri: String? = null
 )
 
+@JsonClass(generateAdapter = true)
+data class PromoProductConfig(
+    val id: Int,
+    val name: String,
+    val subtitle: String,
+    val price: String,
+    val currency: String = "₦",
+    val imageUri: String? = null,
+    val drawableResId: Int? = null,
+    val bgTintHex: String = "#E8ECE0",
+    val priceColorHex: String = "#1E4D2B",
+    val textColorHex: String = "#0D1B2A",
+    val badgeIcon: String = "droplet",
+    val badgeBgHex: String = "#A1C19C",
+    val isVisible: Boolean = true
+)
+
+enum class FlyerTemplateStyle(
+    val id: String,
+    val displayName: String,
+    val subtitle: String,
+    val isDark: Boolean
+) {
+    CAREFLUX_MASTER("CAREFLUX_MASTER", "Careflux Master Flyer (Pixel-Perfect)", "Exact replica of Careflux Pharmacy 4-product promo flyer with live editor", false),
+    VIBRANT_3D_BLAST("VIBRANT_3D_BLAST", "Vibrant 3D Promo Blast", "Dark radiant gradient, bold 3D headers & discount tags", true),
+    CYAN_GOLD_GLOSSY("CYAN_GOLD_GLOSSY", "Cyan & Gold Glossy 3D", "Teal background, glossy frame, metallic gold emblem", true),
+    PRO_MEDICAL_GRID("PRO_MEDICAL_GRID", "Pro Medical Grid", "Feature bullet points, side-by-side cards & price pills", false),
+    ECO_ORGANIC_CLEAN("ECO_ORGANIC_CLEAN", "Eco-Organic Clean", "Soft pastel cards with leaf accents & signature", false),
+    MEDICAL_OUTREACH("MEDICAL_OUTREACH", "Medical Outreach Event", "Anniversary & health event poster with service schedule", false)
+}
+
 enum class PromoUiMode {
     Selection,
     Configuration,
@@ -47,10 +78,125 @@ data class PromoStudioState(
     val selectedItems: List<InventoryItem> = emptyList(),
     val priceOverrides: Map<Int, String> = emptyMap(),
     val nameOverrides: Map<Int, String> = emptyMap(),
+    val dosageOverrides: Map<Int, String> = emptyMap(),
+    val featureBullet1Overrides: Map<Int, String> = emptyMap(),
+    val featureBullet2Overrides: Map<Int, String> = emptyMap(),
+    val badgeIconOverrides: Map<Int, String> = emptyMap(),
+    
+    val templateStyle: FlyerTemplateStyle = FlyerTemplateStyle.CAREFLUX_MASTER,
     val isOfferBanner: Boolean = true,
+    
+    // Careflux Master Products (100% Editable)
+    val products: List<PromoProductConfig> = listOf(
+        PromoProductConfig(
+            id = 1,
+            name = "ACCU-CHEK\nTest Strips",
+            subtitle = "1 Strip",
+            price = "20,000",
+            currency = "₦",
+            drawableResId = com.example.R.drawable.accu_chek_strips_1785078662332,
+            bgTintHex = "#E8ECE0",
+            priceColorHex = "#1E4D2B",
+            textColorHex = "#0D1B2A",
+            badgeIcon = "droplet",
+            badgeBgHex = "#A1C19C"
+        ),
+        PromoProductConfig(
+            id = 2,
+            name = "ADVIL PM",
+            subtitle = "Ibuprofen +\nDiphenhydramine\n200mg + 38mg",
+            price = "13,000",
+            currency = "₦",
+            drawableResId = com.example.R.drawable.advil_pm_box_1785078677350,
+            bgTintHex = "#E3EAF7",
+            priceColorHex = "#3B62AD",
+            textColorHex = "#0D1B2A",
+            badgeIcon = "moon",
+            badgeBgHex = "#A6BEE0"
+        ),
+        PromoProductConfig(
+            id = 3,
+            name = "MACA",
+            subtitle = "500mg",
+            price = "23,000",
+            currency = "₦",
+            drawableResId = com.example.R.drawable.maca_bottle_1785078692587,
+            bgTintHex = "#FAF2D8",
+            priceColorHex = "#D98A11",
+            textColorHex = "#0D1B2A",
+            badgeIcon = "lightning",
+            badgeBgHex = "#F3DC82"
+        ),
+        PromoProductConfig(
+            id = 4,
+            name = "SAW\nPALMETTO",
+            subtitle = "500mg",
+            price = "20,000",
+            currency = "₦",
+            drawableResId = com.example.R.drawable.saw_palmetto_bottle_1785078705069,
+            bgTintHex = "#E3EDE2",
+            priceColorHex = "#276B2D",
+            textColorHex = "#0D1B2A",
+            badgeIcon = "leaf",
+            badgeBgHex = "#AFD1A9"
+        )
+    ),
+
+    // Active Section for Live Editor Drawer/Panel
+    val activeEditSection: String = "grid", // "grid", "product_0", "product_1", "product_2", "product_3", "header", "features", "background"
+    val bgColorHex: String = "#F8F7F0",
+    val showLeaves: Boolean = true,
+    val leavesOpacity: Float = 0.9f,
+    val leavesResId: Int = com.example.R.drawable.decorative_leaves_1785078719121,
+
+    // Header & Taglines (Editable)
+    val pharmacyName: String = "CAREFLUX",
+    val pharmacySubtitle: String = "PHARMACY",
+    val pharmacySlogan: String = "Quality products. Trusted care.",
+    val headerTitle: String = "TODAY'S SPECIAL OFFERS",
+    val headerTitleSuffix: String = "& PROMOTIONS",
     val subheader: String = "TODAY'S SPECIAL OFFERS & PROMOTIONS",
+    val topTrustText: String = "QUALITY YOU CAN TRUST, CARE YOU CAN COUNT ON.",
+    val badgeEmblemText: String = "SAVE MORE LIVE BETTER ★★★",
+    val footerTagline: String = "Your health, our priority. ♡",
+    
+    // Footer Trust Badges (Editable)
+    val trustBadge1Title: String = "100% GENUINE",
+    val trustBadge1Sub: String = "Quality you can trust",
+    val trustBadge2Title: String = "ASK OUR PHARMACIST",
+    val trustBadge2Sub: String = "We're here to help",
+    val trustBadge3Title: String = "FAST & RELIABLE\nDELIVERY",
+    val trustBadge3Sub: String = "To your doorstep",
+    val trustBadge4Title: String = "ORDER & CHAT",
+    val trustBadge4Sub: String = "Easy on WhatsApp",
+    
+    // Medical Outreach Fields (Editable)
+    val outreachTitle: String = "MEDICAL OUTREACH",
+    val outreachSubhead: String = "Join us for a",
+    val outreachOccasion: String = "1ST ANNIVERSARY",
+    val outreachMessage: String = "As we celebrate our 1st Anniversary, we want to say THANK YOU to our amazing customers for your trust and support.",
+    val outreachBannerRight: String = "Let's keep building a healthier community together!",
+    val outreachService1: String = "BLOOD PRESSURE & PULSE CHECKS",
+    val outreachService2: String = "FREE SUGAR TESTS",
+    val outreachService3: String = "FREE HIV TESTING",
+    val outreachService4: String = "HEPATITIS B TEST (First 100)",
+    val outreachDiscount1: String = "5-10% DISCOUNT on all purchases",
+    val outreachDiscount2: String = "FREE WORM MEDICINE & SUPPLEMENTS",
+    val outreachDate: String = "THURSDAY, 6TH AUGUST, 2026",
+    val outreachTime: String = "10:00 AM",
+    val outreachLocation: String = "CAREFLUX PHARMACY, Main Station Road, Port-Harcourt",
+
     val promoTheme: PromoThemeStyle = PromoThemeStyle.MIDNIGHT_CYAN,
-    val generatedUri: Uri? = null
+    val generatedUri: Uri? = null,
+
+    // Music & MP4 Export
+    val musicTrack: AudioTrackOption = AudioTrackOption.UPBEAT_RETAIL,
+    val customAudioUri: Uri? = null,
+    val videoAspectRatio: VideoAspectRatio = VideoAspectRatio.SQUARE_1_1,
+    val slideDurationSeconds: Int = 4,
+    val isVideoEncoding: Boolean = false,
+    val videoEncodingProgress: Float = 0f,
+    val generatedVideoUri: Uri? = null
 )
 
 class AIContentEngineViewModel(private val repository: PharmacyRepository) : ViewModel() {
@@ -74,6 +220,72 @@ class AIContentEngineViewModel(private val repository: PharmacyRepository) : Vie
     private val _promoState = MutableStateFlow(PromoStudioState())
     val promoState: StateFlow<PromoStudioState> = _promoState
 
+    fun syncProductsFromSelectedItems() {
+        val current = _promoState.value
+        if (current.selectedItems.isEmpty()) return
+
+        val newProducts = current.products.toMutableList()
+        val bgTints = listOf("#E8ECE0", "#E3EAF7", "#FAF2D8", "#E3EDE2")
+        val priceColors = listOf("#1E4D2B", "#3B62AD", "#D98A11", "#276B2D")
+        val badgeIcons = listOf("droplet", "moon", "lightning", "leaf")
+        val badgeBgs = listOf("#A1C19C", "#A6BEE0", "#F3DC82", "#AFD1A9")
+
+        current.selectedItems.take(4).forEachIndexed { index, item ->
+            val formattedPrice = try {
+                if (item.price % 1.0 == 0.0) {
+                    String.format("%,.0f", item.price)
+                } else {
+                    String.format("%,.2f", item.price)
+                }
+            } catch (e: Exception) {
+                item.price.toString()
+            }
+
+            val subtitleStr = if (item.brand.isNotBlank() && item.category.isNotBlank()) {
+                "${item.brand} • ${item.category}"
+            } else if (item.brand.isNotBlank()) {
+                item.brand
+            } else if (item.category.isNotBlank()) {
+                item.category
+            } else {
+                "Health & Wellness"
+            }
+
+            val defaultProd = current.products.getOrElse(index) { current.products[0] }
+
+            newProducts[index] = PromoProductConfig(
+                id = item.id,
+                name = item.name,
+                subtitle = subtitleStr,
+                price = current.priceOverrides[item.id] ?: formattedPrice,
+                currency = "₦",
+                imageUri = item.imageUri,
+                drawableResId = if (item.imageUri.isNullOrEmpty()) defaultProd.drawableResId else null,
+                bgTintHex = bgTints.getOrElse(index) { "#E8ECE0" },
+                priceColorHex = priceColors.getOrElse(index) { "#1E4D2B" },
+                textColorHex = "#0D1B2A",
+                badgeIcon = badgeIcons.getOrElse(index) { "droplet" },
+                badgeBgHex = badgeBgs.getOrElse(index) { "#A1C19C" }
+            )
+        }
+
+        val selectedCount = current.selectedItems.size
+        if (selectedCount in 1..3) {
+            for (i in selectedCount..3) {
+                val sourceProd = newProducts[i % selectedCount]
+                newProducts[i] = sourceProd.copy(
+                    id = i + 100,
+                    bgTintHex = bgTints.getOrElse(i) { "#E8ECE0" },
+                    priceColorHex = priceColors.getOrElse(i) { "#1E4D2B" },
+                    badgeIcon = badgeIcons.getOrElse(i) { "droplet" },
+                    badgeBgHex = badgeBgs.getOrElse(i) { "#A1C19C" }
+                )
+            }
+        }
+
+        _promoState.value = current.copy(products = newProducts)
+    }
+
     fun togglePromoProductSelection(item: InventoryItem) {
         val current = _promoState.value
         val list = current.selectedItems.toMutableList()
@@ -86,6 +298,7 @@ class AIContentEngineViewModel(private val repository: PharmacyRepository) : Vie
             }
         }
         _promoState.value = current.copy(selectedItems = list)
+        syncProductsFromSelectedItems()
     }
 
     fun updatePromoPriceOverride(itemId: Int, priceStr: String) {
@@ -100,6 +313,206 @@ class AIContentEngineViewModel(private val repository: PharmacyRepository) : Vie
         val overrides = current.nameOverrides.toMutableMap()
         overrides[itemId] = nameStr
         _promoState.value = current.copy(nameOverrides = overrides)
+    }
+
+    fun updateFlyerTemplateStyle(style: FlyerTemplateStyle) {
+        val current = _promoState.value
+        _promoState.value = current.copy(templateStyle = style)
+    }
+
+    fun updatePromoDosageOverride(itemId: Int, dosageStr: String) {
+        val current = _promoState.value
+        val map = current.dosageOverrides.toMutableMap()
+        map[itemId] = dosageStr
+        _promoState.value = current.copy(dosageOverrides = map)
+    }
+
+    fun updatePromoFeatureBullet1(itemId: Int, bulletStr: String) {
+        val current = _promoState.value
+        val map = current.featureBullet1Overrides.toMutableMap()
+        map[itemId] = bulletStr
+        _promoState.value = current.copy(featureBullet1Overrides = map)
+    }
+
+    fun updatePromoFeatureBullet2(itemId: Int, bulletStr: String) {
+        val current = _promoState.value
+        val map = current.featureBullet2Overrides.toMutableMap()
+        map[itemId] = bulletStr
+        _promoState.value = current.copy(featureBullet2Overrides = map)
+    }
+
+    fun updatePromoBadgeIcon(itemId: Int, badgeStr: String) {
+        val current = _promoState.value
+        val map = current.badgeIconOverrides.toMutableMap()
+        map[itemId] = badgeStr
+        _promoState.value = current.copy(badgeIconOverrides = map)
+    }
+
+    fun updateMasterProductConfig(index: Int, newConfig: PromoProductConfig) {
+        val current = _promoState.value
+        val list = current.products.toMutableList()
+        if (index in list.indices) {
+            list[index] = newConfig
+            _promoState.value = current.copy(products = list)
+        }
+    }
+
+    fun updateMasterProductName(index: Int, name: String) {
+        val current = _promoState.value
+        val list = current.products.toMutableList()
+        if (index in list.indices) {
+            list[index] = list[index].copy(name = name)
+            _promoState.value = current.copy(products = list)
+        }
+    }
+
+    fun updateMasterProductSubtitle(index: Int, subtitle: String) {
+        val current = _promoState.value
+        val list = current.products.toMutableList()
+        if (index in list.indices) {
+            list[index] = list[index].copy(subtitle = subtitle)
+            _promoState.value = current.copy(products = list)
+        }
+    }
+
+    fun updateMasterProductPrice(index: Int, price: String) {
+        val current = _promoState.value
+        val list = current.products.toMutableList()
+        if (index in list.indices) {
+            list[index] = list[index].copy(price = price)
+            _promoState.value = current.copy(products = list)
+        }
+    }
+
+    fun updateMasterProductImageUri(index: Int, uriStr: String?) {
+        val current = _promoState.value
+        val list = current.products.toMutableList()
+        if (index in list.indices) {
+            list[index] = list[index].copy(imageUri = uriStr)
+            _promoState.value = current.copy(products = list)
+        }
+    }
+
+    fun updateMasterProductBgTint(index: Int, bgHex: String) {
+        val current = _promoState.value
+        val list = current.products.toMutableList()
+        if (index in list.indices) {
+            list[index] = list[index].copy(bgTintHex = bgHex)
+            _promoState.value = current.copy(products = list)
+        }
+    }
+
+    fun updateMasterProductPriceColor(index: Int, priceHex: String) {
+        val current = _promoState.value
+        val list = current.products.toMutableList()
+        if (index in list.indices) {
+            list[index] = list[index].copy(priceColorHex = priceHex)
+            _promoState.value = current.copy(products = list)
+        }
+    }
+
+    fun updateMasterProductBadgeIcon(index: Int, badgeIcon: String) {
+        val current = _promoState.value
+        val list = current.products.toMutableList()
+        if (index in list.indices) {
+            list[index] = list[index].copy(badgeIcon = badgeIcon)
+            _promoState.value = current.copy(products = list)
+        }
+    }
+
+    fun updatePharmacyHeader(name: String, subtitle: String, slogan: String) {
+        val current = _promoState.value
+        _promoState.value = current.copy(
+            pharmacyName = name,
+            pharmacySubtitle = subtitle,
+            pharmacySlogan = slogan
+        )
+    }
+
+    fun updateTrustBadges(b1Title: String, b1Sub: String, b2Title: String, b2Sub: String, b3Title: String, b3Sub: String, b4Title: String, b4Sub: String) {
+        val current = _promoState.value
+        _promoState.value = current.copy(
+            trustBadge1Title = b1Title,
+            trustBadge1Sub = b1Sub,
+            trustBadge2Title = b2Title,
+            trustBadge2Sub = b2Sub,
+            trustBadge3Title = b3Title,
+            trustBadge3Sub = b3Sub,
+            trustBadge4Title = b4Title,
+            trustBadge4Sub = b4Sub
+        )
+    }
+
+    fun updateBackgroundConfig(bgColorHex: String, showLeaves: Boolean, leavesOpacity: Float) {
+        val current = _promoState.value
+        _promoState.value = current.copy(
+            bgColorHex = bgColorHex,
+            showLeaves = showLeaves,
+            leavesOpacity = leavesOpacity
+        )
+    }
+
+    fun updateActiveEditSection(section: String) {
+        val current = _promoState.value
+        _promoState.value = current.copy(activeEditSection = section)
+    }
+
+    fun updateFlyerHeaderDetails(
+        pharmacyName: String? = null,
+        pharmacySlogan: String? = null,
+        headerTitle: String? = null,
+        headerTitleSuffix: String? = null,
+        subheader: String? = null,
+        topTrustText: String? = null,
+        badgeEmblemText: String? = null,
+        footerTagline: String? = null
+    ) {
+        val cur = _promoState.value
+        _promoState.value = cur.copy(
+            pharmacyName = pharmacyName ?: cur.pharmacyName,
+            pharmacySlogan = pharmacySlogan ?: cur.pharmacySlogan,
+            headerTitle = headerTitle ?: cur.headerTitle,
+            headerTitleSuffix = headerTitleSuffix ?: cur.headerTitleSuffix,
+            subheader = subheader ?: cur.subheader,
+            topTrustText = topTrustText ?: cur.topTrustText,
+            badgeEmblemText = badgeEmblemText ?: cur.badgeEmblemText,
+            footerTagline = footerTagline ?: cur.footerTagline
+        )
+    }
+
+    fun updateOutreachDetails(
+        title: String? = null,
+        subhead: String? = null,
+        occasion: String? = null,
+        message: String? = null,
+        rightBanner: String? = null,
+        service1: String? = null,
+        service2: String? = null,
+        service3: String? = null,
+        service4: String? = null,
+        discount1: String? = null,
+        discount2: String? = null,
+        date: String? = null,
+        time: String? = null,
+        location: String? = null
+    ) {
+        val cur = _promoState.value
+        _promoState.value = cur.copy(
+            outreachTitle = title ?: cur.outreachTitle,
+            outreachSubhead = subhead ?: cur.outreachSubhead,
+            outreachOccasion = occasion ?: cur.outreachOccasion,
+            outreachMessage = message ?: cur.outreachMessage,
+            outreachBannerRight = rightBanner ?: cur.outreachBannerRight,
+            outreachService1 = service1 ?: cur.outreachService1,
+            outreachService2 = service2 ?: cur.outreachService2,
+            outreachService3 = service3 ?: cur.outreachService3,
+            outreachService4 = service4 ?: cur.outreachService4,
+            outreachDiscount1 = discount1 ?: cur.outreachDiscount1,
+            outreachDiscount2 = discount2 ?: cur.outreachDiscount2,
+            outreachDate = date ?: cur.outreachDate,
+            outreachTime = time ?: cur.outreachTime,
+            outreachLocation = location ?: cur.outreachLocation
+        )
     }
 
     fun setPromoTemplateMode(isOfferBanner: Boolean) {
@@ -118,6 +531,9 @@ class AIContentEngineViewModel(private val repository: PharmacyRepository) : Vie
     }
 
     fun setPromoUiMode(mode: PromoUiMode) {
+        if (mode == PromoUiMode.Configuration) {
+            syncProductsFromSelectedItems()
+        }
         val current = _promoState.value
         _promoState.value = current.copy(uiMode = mode)
     }
@@ -125,6 +541,33 @@ class AIContentEngineViewModel(private val repository: PharmacyRepository) : Vie
     fun setPromoGeneratedUri(uri: Uri?) {
         val current = _promoState.value
         _promoState.value = current.copy(generatedUri = uri)
+    }
+
+    fun updateMusicTrack(track: AudioTrackOption) {
+        _promoState.value = _promoState.value.copy(musicTrack = track)
+    }
+
+    fun updateCustomAudioUri(uri: Uri?) {
+        _promoState.value = _promoState.value.copy(
+            customAudioUri = uri,
+            musicTrack = AudioTrackOption.CUSTOM_FILE
+        )
+    }
+
+    fun updateVideoAspectRatio(ratio: VideoAspectRatio) {
+        _promoState.value = _promoState.value.copy(videoAspectRatio = ratio)
+    }
+
+    fun updateSlideDurationSeconds(seconds: Int) {
+        _promoState.value = _promoState.value.copy(slideDurationSeconds = seconds)
+    }
+
+    fun setVideoEncodingState(isEncoding: Boolean, progress: Float = 0f, videoUri: Uri? = null) {
+        _promoState.value = _promoState.value.copy(
+            isVideoEncoding = isEncoding,
+            videoEncodingProgress = progress,
+            generatedVideoUri = videoUri ?: if (isEncoding) null else _promoState.value.generatedVideoUri
+        )
     }
 
     fun clearPromoStudioState() {

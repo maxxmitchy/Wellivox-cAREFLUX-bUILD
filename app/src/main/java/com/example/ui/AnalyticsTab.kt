@@ -7,6 +7,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -21,6 +22,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -28,7 +30,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import kotlin.math.roundToInt
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.*
 import com.example.ui.theme.*
@@ -44,6 +49,8 @@ fun AnalyticsTab(viewModel: PharmacyViewModel, isUserAdmin: Boolean = false) {
     val customerMeds by viewModel.customerMedications.collectAsStateWithLifecycle()
     val interventions by viewModel.clinicalInterventions.collectAsStateWithLifecycle()
     val medicationSales by viewModel.medicationSales.collectAsStateWithLifecycle()
+    val currentPharmacistName by viewModel.currentPharmacistName.collectAsStateWithLifecycle()
+    val activeStaffName = currentPharmacistName?.ifBlank { "Staff Pharmacist" } ?: "Staff Pharmacist"
 
     val timeNow = System.currentTimeMillis()
     val dayMs = 24L * 60 * 60 * 1000L
@@ -60,22 +67,26 @@ fun AnalyticsTab(viewModel: PharmacyViewModel, isUserAdmin: Boolean = false) {
     val activePrescriptions = customerMeds.filter { it.nextRefillDate >= timeNow - 30 * dayMs }.size
 
     // --- Inventory & Product Insights ---
-    val topSellers = inventory.sortedByDescending { it.totalSoldQuantity }.take(3)
+    val topSellers = inventory.filter { it.totalSoldQuantity > 0 }.sortedByDescending { it.totalSoldQuantity }.take(5)
     val criticalStock = inventory.filter { it.stockQuantity <= it.minRequiredStock && it.stockQuantity > 0 }.size
     
     // --- Operational & Clinical Impact ---
     val recentInterventions = interventions.filter { it.dateAdded >= thirtyDaysAgo }.size
 
-    // --- Near-Expiry ---
-    val expiring30List = inventory.filter { it.expiryDate in 1L..timeNow + 30 * dayMs }
-    val expiring60List = inventory.filter { it.expiryDate in (timeNow + 30 * dayMs)..(timeNow + 60 * dayMs) }
-    val expiring90List = inventory.filter { it.expiryDate in (timeNow + 60 * dayMs)..(timeNow + 90 * dayMs) }
+    // --- 5-Tier Daily Expiry Alerts ---
+    val expiryAlertClaims by viewModel.expiryAlertClaims.collectAsStateWithLifecycle()
+    val expiring30List = inventory.filter { it.expiryDate in 1L..timeNow + 30 * dayMs && it.stockQuantity > 0 }
+    val expiring60List = inventory.filter { it.expiryDate in (timeNow + 30 * dayMs)..(timeNow + 60 * dayMs) && it.stockQuantity > 0 }
+    val expiring90List = inventory.filter { it.expiryDate in (timeNow + 60 * dayMs)..(timeNow + 90 * dayMs) && it.stockQuantity > 0 }
+    val expiring180List = inventory.filter { it.expiryDate in (timeNow + 90 * dayMs)..(timeNow + 180 * dayMs) && it.stockQuantity > 0 }
+    val safeShelfList = inventory.filter { it.expiryDate > timeNow + 180 * dayMs && it.stockQuantity > 0 }
 
     // --- Dead Stock & Missed Revenue ---
     val deadStock = inventory.filter { it.lastSoldDate < ninetyDaysAgo }
     val potentialLostSales = inventory.filter { it.stockQuantity == 0 }.sumOf { it.price * it.minRequiredStock }
 
     var deadStockLimit by remember { mutableStateOf(5) }
+    var nearExpiryFilterTab by remember { mutableStateOf(0) } // 0 = Tier 1 (<30d), 1 = Tier 2 (31-60d), 2 = Tier 3 (61-90d), 3 = Tier 4 (91-180d), 4 = Tier 5 (>180d)
     var inventorySegmentTab by remember { mutableStateOf(0) } // 0 = Near-Expiry, 1 = Top Sellers, 2 = Dead Stock
     var demographicsSegmentTab by remember { mutableStateOf(0) } // 0 = Patient Age, 1 = Meds & Brands, 2 = Location (Geo), 3 = Nodes
     val formatPrice: (Double) -> String = { "₦%,.2f".format(it) }
@@ -90,22 +101,29 @@ fun AnalyticsTab(viewModel: PharmacyViewModel, isUserAdmin: Boolean = false) {
 
     LaunchedEffect(selectedExpiringItem) {
         if (selectedExpiringItem != null) {
-            isEditingStrategy = false
-            editedStrategyText = ""
+            val item = selectedExpiringItem!!
+            if (item.salesStrategy.isNotBlank()) {
+                isEditingStrategy = false
+                generatedStrategyText = item.salesStrategy
+                editedStrategyText = item.salesStrategy
+                isLoadingStrategy = false
+            } else {
+                isEditingStrategy = true
+                generatedStrategyText = ""
+                editedStrategyText = ""
+                isLoadingStrategy = false
+            }
         }
     }
 
     if (selectedExpiringItem != null) {
         val item = selectedExpiringItem!!
-        LaunchedEffect(item, triggerRegen) {
-            if (item.salesStrategy.isNotBlank() && !triggerRegen) {
-                generatedStrategyText = item.salesStrategy
-                isLoadingStrategy = false
-            } else {
+        LaunchedEffect(triggerRegen) {
+            if (triggerRegen) {
                 isLoadingStrategy = true
-                generatedStrategyText = ""
                 val strategy = CarefluxAIEngine.generateExpiryStrategy(viewModel.getApiKey(), item)
                 generatedStrategyText = strategy
+                editedStrategyText = strategy
                 viewModel.updateInventorySalesStrategy(item, strategy)
                 isLoadingStrategy = false
                 triggerRegen = false
@@ -134,7 +152,7 @@ fun AnalyticsTab(viewModel: PharmacyViewModel, isUserAdmin: Boolean = false) {
                             )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text(
-                                text = if (isEditingStrategy) "Edit Intel Brief" else "Clinical Intel Brief",
+                                text = if (isEditingStrategy) "Edit Selling Strategy" else "Branch Selling Strategy",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold
                             )
@@ -149,7 +167,7 @@ fun AnalyticsTab(viewModel: PharmacyViewModel, isUserAdmin: Boolean = false) {
                     if (item.salesStrategy.isNotBlank() && !isLoadingStrategy && !isEditingStrategy) {
                         SuggestionChip(
                             onClick = {},
-                            label = { Text("Cached", style = MaterialTheme.typography.labelSmall) },
+                            label = { Text("Branch Shared", style = MaterialTheme.typography.labelSmall) },
                             colors = SuggestionChipDefaults.suggestionChipColors(
                                 containerColor = MaterialTheme.colorScheme.primaryContainer,
                                 labelColor = MaterialTheme.colorScheme.onPrimaryContainer
@@ -162,7 +180,7 @@ fun AnalyticsTab(viewModel: PharmacyViewModel, isUserAdmin: Boolean = false) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 300.dp)
+                        .heightIn(max = 320.dp)
                         .padding(vertical = 4.dp),
                     contentAlignment = Alignment.Center
                 ) {
@@ -174,7 +192,7 @@ fun AnalyticsTab(viewModel: PharmacyViewModel, isUserAdmin: Boolean = false) {
                             CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                             Spacer(modifier = Modifier.height(12.dp))
                             Text(
-                                "Formulating the comprehensive Pharmacist Intelligence Brief...",
+                                "Formulating AI selling plan proposal...",
                                 style = MaterialTheme.typography.bodySmall,
                                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -185,10 +203,17 @@ fun AnalyticsTab(viewModel: PharmacyViewModel, isUserAdmin: Boolean = false) {
                             OutlinedTextField(
                                 value = editedStrategyText,
                                 onValueChange = { editedStrategyText = it },
-                                modifier = Modifier.fillMaxWidth().height(250.dp),
+                                modifier = Modifier.fillMaxWidth().height(220.dp),
                                 textStyle = MaterialTheme.typography.bodyMedium,
-                                label = { Text("Edit Brief (Markdown)") },
-                                placeholder = { Text("Enter counseling guides, cautions, selling strategies...") }
+                                label = { Text("Branch Selling Strategy & Notes") },
+                                placeholder = { Text("Enter counseling guidance, discount plans, or selling strategy for your pharmacy team...") }
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                "✨ Content saved here is immediately synced to all staff members in your branch.",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = TealTertiary,
+                                fontWeight = FontWeight.Medium
                             )
                         }
                     } else {
@@ -413,12 +438,13 @@ fun AnalyticsTab(viewModel: PharmacyViewModel, isUserAdmin: Boolean = false) {
                             viewModel.updateInventorySalesStrategy(item, editedStrategyText)
                             generatedStrategyText = editedStrategyText
                             isEditingStrategy = false
+                            android.widget.Toast.makeText(context, "Saved & synced strategy across branch!", android.widget.Toast.LENGTH_SHORT).show()
                         }
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Filled.Save, contentDescription = "Save", modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Save")
+                            Text("Save & Sync")
                         }
                     }
                 } else {
@@ -436,33 +462,27 @@ fun AnalyticsTab(viewModel: PharmacyViewModel, isUserAdmin: Boolean = false) {
             dismissButton = {
                 if (isEditingStrategy) {
                     TextButton(
-                        onClick = { isEditingStrategy = false }
+                        onClick = { 
+                            if (item.salesStrategy.isNotBlank()) {
+                                isEditingStrategy = false
+                            } else {
+                                selectedExpiringItem = null
+                            }
+                        }
                     ) {
                         Text("Cancel")
                     }
                 } else if (!isLoadingStrategy) {
-                    Row {
-                        TextButton(
-                            onClick = { 
-                                editedStrategyText = generatedStrategyText
-                                isEditingStrategy = true 
-                            }
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Filled.Edit, contentDescription = "Edit Brief", modifier = Modifier.size(14.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Edit")
-                            }
+                    TextButton(
+                        onClick = { 
+                            editedStrategyText = generatedStrategyText
+                            isEditingStrategy = true 
                         }
-                        Spacer(modifier = Modifier.width(4.dp))
-                        TextButton(
-                            onClick = { triggerRegen = true }
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(Icons.Filled.Refresh, contentDescription = "Regenerate Strategy", modifier = Modifier.size(14.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Re-Gen")
-                            }
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Filled.Edit, contentDescription = "Edit Strategy", modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Edit")
                         }
                     }
                 }
@@ -529,41 +549,54 @@ fun AnalyticsTab(viewModel: PharmacyViewModel, isUserAdmin: Boolean = false) {
             }
         }
 
-        // Subtab Pill Selectors (Only render selectors if user is indeed an administrator)
-        if (isUserAdmin) {
-            Row(
-                modifier = Modifier.fillMaxWidth().height(38.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
+        // Subtab Pill Selectors (Operational, Order History & Receipts, Demographics for Admin)
+        Row(
+            modifier = Modifier.fillMaxWidth().height(38.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Button(
+                onClick = { activeAnalyticsSubTab = 0 },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (activeAnalyticsSubTab == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = if (activeAnalyticsSubTab == 0) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                ),
+                modifier = Modifier.weight(1f),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
             ) {
+                Icon(Icons.Filled.Insights, contentDescription = null, modifier = Modifier.size(14.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Operational", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
+
+            Button(
+                onClick = { activeAnalyticsSubTab = 1 },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (activeAnalyticsSubTab == 1) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                    contentColor = if (activeAnalyticsSubTab == 1) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                ),
+                modifier = Modifier.weight(1.2f),
+                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+            ) {
+                Icon(Icons.Filled.ReceiptLong, contentDescription = null, modifier = Modifier.size(14.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Order History", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+            }
+
+            if (isUserAdmin) {
                 Button(
-                    onClick = { activeAnalyticsSubTab = 0 },
+                    onClick = { activeAnalyticsSubTab = 2 },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = if (activeAnalyticsSubTab == 0) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                        contentColor = if (activeAnalyticsSubTab == 0) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                        containerColor = if (activeAnalyticsSubTab == 2) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = if (activeAnalyticsSubTab == 2) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
                     ),
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
-                ) {
-                    Icon(Icons.Filled.Insights, contentDescription = null, modifier = Modifier.size(14.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Operational", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                }
-                Button(
-                    onClick = { activeAnalyticsSubTab = 1 },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (activeAnalyticsSubTab == 1) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
-                        contentColor = if (activeAnalyticsSubTab == 1) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
-                    ),
-                    modifier = Modifier.weight(1f),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
+                    modifier = Modifier.weight(1.1f),
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
                 ) {
                     Icon(Icons.Filled.People, contentDescription = null, modifier = Modifier.size(14.dp))
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("Demographics", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("Demographics", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                 }
             }
-        } else {
-            activeAnalyticsSubTab = 0
         }
 
         if (activeAnalyticsSubTab == 0) {
@@ -631,8 +664,8 @@ fun AnalyticsTab(viewModel: PharmacyViewModel, isUserAdmin: Boolean = false) {
                 )
             }
 
-            // Area/Line Chart of Revenue Trend (Visual Analytics Graph)
-            CompactRevenueTrendChart(
+            // Interactive Revenue Comparison Chart (Monthly MRR vs 15-Day Daily Trend)
+            MonthlyMRRComparisonChart(
                 receipts = receipts,
                 formatPrice = formatPrice,
                 modifier = Modifier.fillMaxWidth()
@@ -798,93 +831,194 @@ fun AnalyticsTab(viewModel: PharmacyViewModel, isUserAdmin: Boolean = false) {
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         Text(
-                            text = "💡 Tap any medication below to formulate an AI selling plan.",
+                            text = "💡 5-Tier Expiry Digest & Multi-Staff Action Hub. Claim tasks to coordinate actions and prevent duplicate work across branch colleagues.",
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.primary,
                             fontWeight = FontWeight.Medium
                         )
                         
+                        // 5-Tier Selector
                         Row(
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            modifier = Modifier.fillMaxWidth()
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState())
                         ) {
                             val capsuleColors = listOf(
-                                Triple("< 30 Days", "${expiring30List.size} Items", WarningRed),
-                                Triple("< 60 Days", "${expiring60List.size} Items", PendingOrange),
-                                Triple("< 90 Days", "${expiring90List.size} Items", TealPrimary)
+                                Triple("Tier 1 (<30d)", "${expiring30List.size} Critical", WarningRed),
+                                Triple("Tier 2 (31-60d)", "${expiring60List.size} High", PendingOrange),
+                                Triple("Tier 3 (61-90d)", "${expiring90List.size} Mod", TealPrimary),
+                                Triple("Tier 4 (91-180d)", "${expiring180List.size} Monitor", SlateTextMedium),
+                                Triple("Tier 5 (>180d)", "${safeShelfList.size} Safe", Color(0xFF2E7D32))
                             )
-                            capsuleColors.forEach { (label, count, color) ->
+                            capsuleColors.forEachIndexed { index, (label, count, color) ->
+                                val isSelected = nearExpiryFilterTab == index
                                 Box(
                                     modifier = Modifier
-                                        .weight(1f)
                                         .clip(RoundedCornerShape(8.dp))
-                                        .background(color.copy(alpha = 0.08f))
-                                        .border(1.dp, color.copy(alpha = 0.15f), RoundedCornerShape(8.dp))
-                                        .padding(vertical = 6.dp, horizontal = 8.dp)
+                                        .background(if (isSelected) color.copy(alpha = 0.22f) else color.copy(alpha = 0.08f))
+                                        .border(
+                                            width = if (isSelected) 2.dp else 1.dp,
+                                            color = if (isSelected) color else color.copy(alpha = 0.15f),
+                                            shape = RoundedCornerShape(8.dp)
+                                        )
+                                        .clickable { nearExpiryFilterTab = index }
+                                        .padding(vertical = 8.dp, horizontal = 8.dp)
                                 ) {
-                                    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                                        Text(label, fontSize = 9.sp, fontWeight = FontWeight.Bold, color = SlateTextMedium)
-                                        Text(count, fontSize = 11.sp, fontWeight = FontWeight.ExtraBold, color = color)
+                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                        Text(
+                                            text = label,
+                                            fontSize = 9.5.sp,
+                                            fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Bold,
+                                            color = if (isSelected) color else SlateTextMedium
+                                        )
+                                        Text(
+                                            text = count,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.ExtraBold,
+                                            color = color
+                                        )
                                     }
                                 }
                             }
                         }
 
-                        val allExpiringList = expiring30List + expiring60List + expiring90List
-                        if (allExpiringList.isNotEmpty()) {
+                        val selectedFilterList = when (nearExpiryFilterTab) {
+                            0 -> expiring30List
+                            1 -> expiring60List
+                            2 -> expiring90List
+                            3 -> expiring180List
+                            else -> safeShelfList
+                        }
+                        val displayedExpiringList = selectedFilterList.sortedBy { it.expiryDate }
+
+                        var actionTargetItem by remember { mutableStateOf<InventoryItem?>(null) }
+
+                        if (displayedExpiringList.isNotEmpty()) {
                             Card(
                                 colors = CardDefaults.cardColors(containerColor = TealSurface),
                                 shape = RoundedCornerShape(12.dp),
                                 border = BorderStroke(1.dp, SlateBorderLight.copy(alpha = 0.4f)),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Column(modifier = Modifier.padding(6.dp)) {
-                                    allExpiringList.sortedBy { it.expiryDate }.take(5).forEachIndexed { index, item ->
+                                Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    displayedExpiringList.forEachIndexed { index, item ->
                                         val daysUntil = ((item.expiryDate - timeNow) / dayMs).toInt()
                                         val pillColor = when {
                                             daysUntil <= 30 -> WarningRed
                                             daysUntil <= 60 -> PendingOrange
-                                            else -> TealPrimary
+                                            daysUntil <= 90 -> TealPrimary
+                                            daysUntil <= 180 -> SlateTextMedium
+                                            else -> Color(0xFF2E7D32)
                                         }
-                                        
-                                        Row(
+
+                                        val claim = expiryAlertClaims.find { it.inventoryItemId == item.id }
+
+                                        Column(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .clickable { selectedExpiringItem = item }
-                                                .padding(vertical = 6.dp, horizontal = 8.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.SpaceBetween
+                                                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(8.dp))
+                                                .border(1.dp, SlateBorderLight.copy(alpha = 0.25f), RoundedCornerShape(8.dp))
+                                                .padding(10.dp),
+                                            verticalArrangement = Arrangement.spacedBy(6.dp)
                                         ) {
-                                            Column(modifier = Modifier.weight(1f)) {
-                                                Text(
-                                                    text = item.name,
-                                                    fontSize = 12.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = MaterialTheme.colorScheme.onSurface
-                                                )
-                                                Text(
-                                                    text = "Stock: ${item.stockQuantity} • Expiry: ${java.text.SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(java.util.Date(item.expiryDate))}",
-                                                    fontSize = 9.5.sp,
-                                                    color = SlateTextMedium
-                                                )
-                                            }
-                                            
-                                            Box(
-                                                modifier = Modifier
-                                                    .clip(RoundedCornerShape(6.dp))
-                                                    .background(pillColor.copy(alpha = 0.12f))
-                                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.SpaceBetween
                                             ) {
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text(
+                                                        text = item.name,
+                                                        fontSize = 12.5.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = MaterialTheme.colorScheme.onSurface
+                                                    )
+                                                    Text(
+                                                        text = "Batch: ${item.batchNumber.ifBlank { "N/A" }} • Stock: ${item.stockQuantity} • Expiry: ${java.text.SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(java.util.Date(item.expiryDate))}",
+                                                        fontSize = 10.sp,
+                                                        color = SlateTextMedium
+                                                    )
+                                                }
+                                                
+                                                Box(
+                                                    modifier = Modifier
+                                                        .clip(RoundedCornerShape(6.dp))
+                                                        .background(pillColor.copy(alpha = 0.12f))
+                                                        .padding(horizontal = 6.dp, vertical = 3.dp)
+                                                ) {
+                                                    Text(
+                                                        text = if (daysUntil < 0) "Expired" else "in $daysUntil d",
+                                                        fontSize = 10.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = pillColor
+                                                    )
+                                                }
+                                            }
+
+                                            // Multi-Staff Claim & Status Bar
+                                            Row(
+                                                modifier = Modifier
+                                                    .fillMaxWidth()
+                                                    .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f), RoundedCornerShape(6.dp))
+                                                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.SpaceBetween
+                                            ) {
+                                                val statusText = when (claim?.status) {
+                                                    "CLAIMED" -> "🟡 In Progress: ${claim.claimedByStaffName}"
+                                                    "RESOLVED" -> "🟢 Resolved: ${claim.claimedByStaffName} (${claim.actionTaken})"
+                                                    else -> "⚪ Unclaimed"
+                                                }
+                                                val statusColor = when (claim?.status) {
+                                                    "CLAIMED" -> PendingOrange
+                                                    "RESOLVED" -> Color(0xFF2E7D32)
+                                                    else -> SlateTextMedium
+                                                }
+
                                                 Text(
-                                                    text = if (daysUntil < 0) "Expired" else "in $daysUntil d",
+                                                    text = statusText,
                                                     fontSize = 10.sp,
                                                     fontWeight = FontWeight.Bold,
-                                                    color = pillColor
+                                                    color = statusColor,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    modifier = Modifier.weight(1f)
                                                 )
+
+                                                Spacer(modifier = Modifier.width(6.dp))
+
+                                                when (claim?.status) {
+                                                    "RESOLVED" -> {
+                                                        Text(
+                                                            text = "Done",
+                                                            fontSize = 10.sp,
+                                                            fontWeight = FontWeight.SemiBold,
+                                                            color = Color(0xFF2E7D32)
+                                                        )
+                                                    }
+                                                    "CLAIMED" -> {
+                                                        Button(
+                                                            onClick = { actionTargetItem = item },
+                                                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                                                            modifier = Modifier.height(28.dp)
+                                                        ) {
+                                                            Text("Take Action", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                                                        }
+                                                    }
+                                                    else -> {
+                                                        OutlinedButton(
+                                                            onClick = { viewModel.claimExpiryAlert(item, activeStaffName) },
+                                                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary),
+                                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
+                                                            modifier = Modifier.height(28.dp)
+                                                        ) {
+                                                            Text("Claim Task", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                                        }
+                                                    }
+                                                }
                                             }
-                                        }
-                                        if (index < allExpiringList.take(5).size - 1) {
-                                            HorizontalDivider(color = SlateBorderLight.copy(alpha = 0.25f), thickness = 0.5.dp)
                                         }
                                     }
                                 }
@@ -896,10 +1030,83 @@ fun AnalyticsTab(viewModel: PharmacyViewModel, isUserAdmin: Boolean = false) {
                                 border = BorderStroke(1.dp, SlateBorderLight.copy(alpha = 0.4f)),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Box(modifier = Modifier.fillMaxWidth().padding(12.dp), contentAlignment = Alignment.Center) {
-                                    Text("No near-expiry medications. Pharmacy storage is fully clear.", fontSize = 11.sp, color = SlateTextMedium)
+                                Box(
+                                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "No medications found in this expiry tier.",
+                                        fontSize = 12.sp,
+                                        color = SlateTextMedium,
+                                        fontWeight = FontWeight.Medium
+                                    )
                                 }
                             }
+                        }
+
+                        // Take Action Dialog for Claimed Expiry Alert
+                        if (actionTargetItem != null) {
+                            val activeItem = actionTargetItem!!
+                            AlertDialog(
+                                onDismissRequest = { actionTargetItem = null },
+                                title = { Text("Resolve Expiry Action: ${activeItem.name}", fontSize = 14.sp, fontWeight = FontWeight.Bold) },
+                                text = {
+                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Text("Select the action taken on this expiring batch to notify your team and resolve the alert:", fontSize = 11.5.sp)
+                                        
+                                        Button(
+                                            onClick = {
+                                                viewModel.resolveExpiryAlert(activeItem, activeStaffName, "PRICE_DISCOUNT", "Applied 20% discount markdown")
+                                                actionTargetItem = null
+                                            },
+                                            modifier = Modifier.fillMaxWidth(),
+                                            colors = ButtonDefaults.buttonColors(containerColor = PendingOrange)
+                                        ) {
+                                            Text("🏷️ Apply 20% Discount Markdown", fontSize = 11.sp)
+                                        }
+
+                                        Button(
+                                            onClick = {
+                                                viewModel.resolveExpiryAlert(activeItem, activeStaffName, "RESCUE_MARKETPLACE", "Listed on Rescue Marketplace")
+                                                actionTargetItem = null
+                                            },
+                                            modifier = Modifier.fillMaxWidth(),
+                                            colors = ButtonDefaults.buttonColors(containerColor = TealPrimary)
+                                        ) {
+                                            Text("🛒 List on Rescue Marketplace", fontSize = 11.sp)
+                                        }
+
+                                        Button(
+                                            onClick = {
+                                                viewModel.resolveExpiryAlert(activeItem, activeStaffName, "BRANCH_TRANSFER", "Transferred to high-turnover branch")
+                                                actionTargetItem = null
+                                            },
+                                            modifier = Modifier.fillMaxWidth(),
+                                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+                                        ) {
+                                            Text("🚚 Transfer to High-Volume Branch", fontSize = 11.sp)
+                                        }
+
+                                        Button(
+                                            onClick = {
+                                                viewModel.performExpiryWriteOff(activeItem, activeItem.stockQuantity, "Expired stock written off")
+                                                viewModel.resolveExpiryAlert(activeItem, activeStaffName, "WRITE_OFF", "Wrote-off ${activeItem.stockQuantity} units as expired")
+                                                actionTargetItem = null
+                                            },
+                                            modifier = Modifier.fillMaxWidth(),
+                                            colors = ButtonDefaults.buttonColors(containerColor = WarningRed)
+                                        ) {
+                                            Text("🗑️ Perform Spoilage Write-Off", fontSize = 11.sp)
+                                        }
+                                    }
+                                },
+                                confirmButton = {},
+                                dismissButton = {
+                                    TextButton(onClick = { actionTargetItem = null }) {
+                                        Text("Cancel")
+                                    }
+                                }
+                            )
                         }
                     }
                 }
@@ -978,7 +1185,14 @@ fun AnalyticsTab(viewModel: PharmacyViewModel, isUserAdmin: Boolean = false) {
                     }
                 }
             }
-        } else {
+        } else if (activeAnalyticsSubTab == 1) {
+            OrderHistorySection(
+                receipts = receipts,
+                medicationSales = medicationSales,
+                viewModel = viewModel,
+                context = context
+            )
+        } else if (activeAnalyticsSubTab == 2 && isUserAdmin) {
             // Demographics Cockpit
             Card(
                 colors = CardDefaults.cardColors(containerColor = TealSurface),
@@ -1391,18 +1605,45 @@ fun CompactMetricCard(
 }
 
 @Composable
-fun CompactRevenueTrendChart(
+fun MonthlyMRRComparisonChart(
     receipts: List<Receipt>,
     formatPrice: (Double) -> String,
     modifier: Modifier = Modifier
 ) {
-    val trendDays = 15 // Beautiful and compact 15-day view
+    var isMonthlyView by remember { mutableStateOf(true) }
+
+    // Monthly Data (Last 6 Months)
+    val monthlyData = remember(receipts) {
+        val cal = java.util.Calendar.getInstance()
+        val list = mutableListOf<Pair<String, Double>>()
+        val sdf = java.text.SimpleDateFormat("MMM yyyy", Locale.getDefault())
+        val shortSdf = java.text.SimpleDateFormat("MMM", Locale.getDefault())
+
+        for (i in 5 downTo 0) {
+            val targetCal = java.util.Calendar.getInstance().apply {
+                add(java.util.Calendar.MONTH, -i)
+            }
+            val year = targetCal.get(java.util.Calendar.YEAR)
+            val month = targetCal.get(java.util.Calendar.MONTH)
+
+            val monthTotal = receipts.filter { r ->
+                val rCal = java.util.Calendar.getInstance().apply { timeInMillis = r.timestamp }
+                rCal.get(java.util.Calendar.YEAR) == year && rCal.get(java.util.Calendar.MONTH) == month
+            }.sumOf { it.totalAmount }
+
+            val label = shortSdf.format(targetCal.time)
+            list.add(Pair(label, monthTotal))
+        }
+        list
+    }
+
+    // 15-Day Daily Data
     val dailyData = remember(receipts) {
         val now = System.currentTimeMillis()
         val dayMs = 24L * 60 * 60 * 1000L
         val list = mutableListOf<Pair<String, Double>>()
         val sdf = java.text.SimpleDateFormat("dd MMM", Locale.getDefault())
-        for (i in (trendDays - 1) downTo 0) {
+        for (i in 14 downTo 0) {
             val dayStart = now - (i + 1) * dayMs
             val dayEnd = now - i * dayMs
             val dayTotal = receipts.filter { it.timestamp in dayStart until dayEnd }.sumOf { it.totalAmount }
@@ -1412,11 +1653,22 @@ fun CompactRevenueTrendChart(
         list
     }
 
-    val maxAmount = remember(dailyData) {
-        dailyData.maxOfOrNull { it.second } ?: 0.0
+    val activeData = if (isMonthlyView) monthlyData else dailyData
+    val currentMRR = monthlyData.lastOrNull()?.second ?: 0.0
+    val previousMRR = if (monthlyData.size >= 2) monthlyData[monthlyData.size - 2].second else 0.0
+    val mrrGrowth = if (previousMRR > 0) ((currentMRR - previousMRR) / previousMRR) * 100.0 else 0.0
+
+    val maxAmount = remember(activeData) {
+        activeData.maxOfOrNull { it.second } ?: 0.0
     }
-    
-    val maxVal = if (maxAmount > 0) maxAmount * 1.15 else 10000.0
+    val maxVal = if (maxAmount > 0) maxAmount * 1.2 else 10000.0
+
+    var selectedIndex by remember { mutableStateOf<Int?>(null) }
+
+    // Reset selection on view switch
+    LaunchedEffect(isMonthlyView) {
+        selectedIndex = null
+    }
 
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -1427,49 +1679,172 @@ fun CompactRevenueTrendChart(
         border = BorderStroke(1.dp, SlateBorderLight.copy(alpha = 0.5f))
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
+            // Header with toggle & growth pill
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            text = if (isMonthlyView) "Monthly MRR Comparison" else "15-Day Daily Revenue",
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        if (isMonthlyView && mrrGrowth != 0.0) {
+                            val isPos = mrrGrowth >= 0
+                            Surface(
+                                color = if (isPos) OKGreenContainer.copy(alpha = 0.3f) else WarningRedContainerSoft,
+                                shape = RoundedCornerShape(4.dp)
+                            ) {
+                                Text(
+                                    text = "${if (isPos) "+" else ""}${"%.1f".format(mrrGrowth)}% MoM",
+                                    fontSize = 9.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isPos) OKGreenText else WarningRed,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                )
+                            }
+                        }
+                    }
                     Text(
-                        text = "15-Day Revenue Performance",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = "Chronological transactional volume",
+                        text = if (isMonthlyView) "Compare monthly recurring revenue across last 6 months" else "Tap or drag along chart to inspect daily totals",
                         style = MaterialTheme.typography.labelSmall,
-                        color = SlateTextMedium
+                        color = SlateTextMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
-                
-                Box(
+
+                Spacer(modifier = Modifier.width(6.dp))
+
+                // Toggle Pills
+                Row(
                     modifier = Modifier
                         .clip(RoundedCornerShape(8.dp))
-                        .background(OKGreenContainer.copy(alpha = 0.2f))
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+                        .padding(2.dp)
                 ) {
-                    Text(
-                        text = "Peak: ${formatPrice(maxAmount).replace(".00", "")}",
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = OKGreenText
-                    )
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(if (isMonthlyView) TealPrimary else Color.Transparent)
+                            .clickable { isMonthlyView = true }
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            "MRR",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isMonthlyView) Color.White else SlateTextMedium
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(if (!isMonthlyView) TealPrimary else Color.Transparent)
+                            .clickable { isMonthlyView = false }
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            "Daily",
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (!isMonthlyView) Color.White else SlateTextMedium
+                        )
+                    }
                 }
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
-            // Canvas drawing
+            // Inspection Callout Banner when a point/bar is selected
+            if (selectedIndex != null && selectedIndex!! in activeData.indices) {
+                val idx = selectedIndex!!
+                val selectedPair = activeData[idx]
+                Surface(
+                    color = TealPrimary.copy(alpha = 0.12f),
+                    shape = RoundedCornerShape(8.dp),
+                    border = BorderStroke(1.dp, TealPrimary.copy(alpha = 0.35f)),
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.TouchApp,
+                                contentDescription = null,
+                                tint = TealPrimary,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = "${selectedPair.first}:",
+                                fontSize = 11.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = formatPrice(selectedPair.second),
+                                fontSize = 12.5.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                color = TealPrimary
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Clear selection",
+                            tint = SlateTextMedium,
+                            modifier = Modifier
+                                .size(16.dp)
+                                .clickable { selectedIndex = null }
+                        )
+                    }
+                }
+            }
+
+            // Canvas drawing with gestures (Bar chart for MRR, Line area chart for Daily)
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(110.dp)
+                    .height(130.dp)
             ) {
-                androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
+                androidx.compose.foundation.Canvas(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .pointerInput(activeData, isMonthlyView) {
+                            detectTapGestures { offset ->
+                                val paddingLeft = 14f
+                                val paddingRight = 14f
+                                val chartWidth = size.width - paddingLeft - paddingRight
+                                if (activeData.isNotEmpty() && chartWidth > 0) {
+                                    val relX = offset.x - paddingLeft
+                                    val idx = (relX / chartWidth * (activeData.size - 1)).roundToInt().coerceIn(0, activeData.size - 1)
+                                    selectedIndex = if (selectedIndex == idx) null else idx
+                                }
+                            }
+                        }
+                        .pointerInput(activeData, isMonthlyView) {
+                            detectDragGestures { change, _ ->
+                                val paddingLeft = 14f
+                                val paddingRight = 14f
+                                val chartWidth = size.width - paddingLeft - paddingRight
+                                if (activeData.isNotEmpty() && chartWidth > 0) {
+                                    val relX = change.position.x - paddingLeft
+                                    val idx = (relX / chartWidth * (activeData.size - 1)).roundToInt().coerceIn(0, activeData.size - 1)
+                                    selectedIndex = idx
+                                }
+                            }
+                        }
+                ) {
                     val width = size.width
                     val height = size.height
                     
@@ -1490,86 +1865,158 @@ fun CompactRevenueTrendChart(
                             start = androidx.compose.ui.geometry.Offset(paddingLeft, y),
                             end = androidx.compose.ui.geometry.Offset(width - paddingRight, y),
                             strokeWidth = 1.dp.toPx(),
-                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 12f), 0f)
+                            pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(12f, 12f), 0f)
                         )
                     }
 
-                    if (dailyData.isNotEmpty()) {
-                        val points = dailyData.mapIndexed { index, pair ->
-                            val x = paddingLeft + (chartWidth / (dailyData.size - 1)) * index
-                            val y = paddingTop + chartHeight - ((pair.second / maxVal) * chartHeight).toFloat()
-                            androidx.compose.ui.geometry.Offset(x, y)
-                        }
+                    if (isMonthlyView) {
+                        // MONTHLY BAR CHART DRAWING
+                        val count = activeData.size
+                        val barSlotWidth = chartWidth / count
+                        val barWidth = barSlotWidth * 0.48f
 
-                        val linePath = Path()
-                        val fillPath = Path()
+                        activeData.forEachIndexed { index, pair ->
+                            val centerX = paddingLeft + barSlotWidth * index + barSlotWidth / 2f
+                            val barHeight = ((pair.second / maxVal) * chartHeight).toFloat().coerceAtLeast(4.dp.toPx())
+                            val topY = paddingTop + chartHeight - barHeight
+                            val isSelected = selectedIndex == index
+                            val isLatest = index == count - 1
 
-                        if (points.isNotEmpty()) {
-                            val first = points.first()
-                            linePath.moveTo(first.x, first.y)
-                            fillPath.moveTo(first.x, chartHeight + paddingTop)
-                            fillPath.lineTo(first.x, first.y)
-                            
-                            for (i in 1 until points.size) {
-                                val prev = points[i - 1]
-                                val curr = points[i]
-                                val cx = (prev.x + curr.x) / 2f
-                                val cy = (prev.y + curr.y) / 2f
-                                linePath.quadraticTo(prev.x, prev.y, cx, cy)
-                                fillPath.quadraticTo(prev.x, prev.y, cx, cy)
+                            val barBrush = if (isSelected) {
+                                Brush.verticalGradient(listOf(OKGreen, TealPrimary))
+                            } else if (isLatest) {
+                                Brush.verticalGradient(listOf(TealPrimary, TealPrimary.copy(alpha = 0.75f)))
+                            } else {
+                                Brush.verticalGradient(listOf(TealPrimary.copy(alpha = 0.6f), TealPrimary.copy(alpha = 0.35f)))
                             }
-                            
-                            val last = points.last()
-                            linePath.lineTo(last.x, last.y)
-                            fillPath.lineTo(last.x, last.y)
-                            
-                            fillPath.lineTo(last.x, chartHeight + paddingTop)
-                            fillPath.close()
+
+                            // Draw rounded bar
+                            val cornerRadius = androidx.compose.ui.geometry.CornerRadius(4.dp.toPx(), 4.dp.toPx())
+                            drawRoundRect(
+                                brush = barBrush,
+                                topLeft = androidx.compose.ui.geometry.Offset(centerX - barWidth / 2f, topY),
+                                size = androidx.compose.ui.geometry.Size(barWidth, barHeight),
+                                cornerRadius = cornerRadius
+                            )
+
+                            if (isSelected) {
+                                // Draw glowing border around selected bar
+                                drawRoundRect(
+                                    color = OKGreen,
+                                    topLeft = androidx.compose.ui.geometry.Offset(centerX - barWidth / 2f - 1.dp.toPx(), topY - 1.dp.toPx()),
+                                    size = androidx.compose.ui.geometry.Size(barWidth + 2.dp.toPx(), barHeight + 2.dp.toPx()),
+                                    cornerRadius = cornerRadius,
+                                    style = Stroke(width = 1.5.dp.toPx())
+                                )
+                            }
                         }
+                    } else {
+                        // 15-DAY LINE/AREA CHART DRAWING
+                        if (activeData.isNotEmpty()) {
+                            val points = activeData.mapIndexed { index, pair ->
+                                val x = paddingLeft + (chartWidth / (activeData.size - 1)) * index
+                                val y = paddingTop + chartHeight - ((pair.second / maxVal) * chartHeight).toFloat()
+                                androidx.compose.ui.geometry.Offset(x, y)
+                            }
 
-                        // Draw Transparent Fill Gradient
-                        drawPath(
-                            path = fillPath,
-                            brush = Brush.verticalGradient(
-                                colors = listOf(
-                                    TealPrimary.copy(alpha = 0.25f),
-                                    Color.Transparent
+                            val linePath = Path()
+                            val fillPath = Path()
+
+                            if (points.isNotEmpty()) {
+                                val first = points.first()
+                                linePath.moveTo(first.x, first.y)
+                                fillPath.moveTo(first.x, chartHeight + paddingTop)
+                                fillPath.lineTo(first.x, first.y)
+                                
+                                for (i in 1 until points.size) {
+                                    val prev = points[i - 1]
+                                    val curr = points[i]
+                                    val cx = (prev.x + curr.x) / 2f
+                                    val cy = (prev.y + curr.y) / 2f
+                                    linePath.quadraticTo(prev.x, prev.y, cx, cy)
+                                    fillPath.quadraticTo(prev.x, prev.y, cx, cy)
+                                }
+                                
+                                val last = points.last()
+                                linePath.lineTo(last.x, last.y)
+                                fillPath.lineTo(last.x, last.y)
+                                
+                                fillPath.lineTo(last.x, chartHeight + paddingTop)
+                                fillPath.close()
+                            }
+
+                            // Draw Transparent Fill Gradient
+                            drawPath(
+                                path = fillPath,
+                                brush = Brush.verticalGradient(
+                                    colors = listOf(
+                                        TealPrimary.copy(alpha = 0.25f),
+                                        Color.Transparent
+                                    ),
+                                    startY = paddingTop,
+                                    endY = chartHeight + paddingTop
+                                )
+                            )
+
+                            // Draw the Glow Line Outline
+                            drawPath(
+                                path = linePath,
+                                brush = Brush.horizontalGradient(
+                                    colors = listOf(TealPrimary, OKGreen)
                                 ),
-                                startY = paddingTop,
-                                endY = chartHeight + paddingTop
+                                style = Stroke(
+                                    width = 2.5.dp.toPx(),
+                                    cap = StrokeCap.Round
+                                )
                             )
-                        )
 
-                        // Draw the Glow Line Outline
-                        drawPath(
-                            path = linePath,
-                            brush = Brush.horizontalGradient(
-                                colors = listOf(TealPrimary, OKGreen)
-                            ),
-                            style = Stroke(
-                                width = 2.5.dp.toPx(),
-                                cap = StrokeCap.Round
-                            )
-                        )
+                            // Highlight Points (First, Last, Peak)
+                            val maxIdx = activeData.indexOfFirst { it.second == maxAmount }
+                            points.forEachIndexed { idx, pt ->
+                                if (idx == 0 || idx == points.size - 1 || idx == maxIdx) {
+                                    drawCircle(
+                                        color = TealPrimary.copy(alpha = 0.3f),
+                                        radius = 6.dp.toPx(),
+                                        center = pt
+                                    )
+                                    drawCircle(
+                                        color = TealPrimary,
+                                        radius = 3.dp.toPx(),
+                                        center = pt
+                                    )
+                                    drawCircle(
+                                        color = TealSurface,
+                                        radius = 1.dp.toPx(),
+                                        center = pt
+                                    )
+                                }
+                            }
 
-                        // Highlight Points (First, Last, Peak)
-                        val maxIdx = dailyData.indexOfFirst { it.second == maxAmount }
-                        points.forEachIndexed { idx, pt ->
-                            if (idx == 0 || idx == points.size - 1 || idx == maxIdx) {
+                            // Draw Interactive Selected Point Indicator & Vertical Guideline
+                            if (selectedIndex != null && selectedIndex!! in points.indices) {
+                                val selPt = points[selectedIndex!!]
+                                drawLine(
+                                    color = TealPrimary.copy(alpha = 0.65f),
+                                    start = androidx.compose.ui.geometry.Offset(selPt.x, paddingTop),
+                                    end = androidx.compose.ui.geometry.Offset(selPt.x, chartHeight + paddingTop),
+                                    strokeWidth = 1.5.dp.toPx(),
+                                    pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(8f, 8f), 0f)
+                                )
+
                                 drawCircle(
-                                    color = TealPrimary.copy(alpha = 0.3f),
-                                    radius = 6.dp.toPx(),
-                                    center = pt
+                                    color = OKGreen.copy(alpha = 0.35f),
+                                    radius = 10.dp.toPx(),
+                                    center = selPt
                                 )
                                 drawCircle(
-                                    color = TealPrimary,
-                                    radius = 3.dp.toPx(),
-                                    center = pt
+                                    color = OKGreen,
+                                    radius = 5.5.dp.toPx(),
+                                    center = selPt
                                 )
                                 drawCircle(
-                                    color = TealSurface,
-                                    radius = 1.dp.toPx(),
-                                    center = pt
+                                    color = Color.White,
+                                    radius = 2.dp.toPx(),
+                                    center = selPt
                                 )
                             }
                         }
@@ -1579,35 +2026,56 @@ fun CompactRevenueTrendChart(
 
             Spacer(modifier = Modifier.height(10.dp))
 
-            // X-axis text labels (Beginning, middle, end)
+            // X-axis text labels
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                if (dailyData.isNotEmpty()) {
-                    Text(
-                        text = dailyData.first().first,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = SlateTextMedium
-                    )
-                    Text(
-                        text = dailyData[dailyData.size / 2].first,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = SlateTextMedium
-                    )
-                    Text(
-                        text = dailyData.last().first,
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = SlateTextMedium
-                    )
+                if (isMonthlyView) {
+                    monthlyData.forEachIndexed { idx, item ->
+                        val isSelected = selectedIndex == idx
+                        Text(
+                            text = item.first,
+                            fontSize = 9.5.sp,
+                            fontWeight = if (isSelected || idx == monthlyData.size - 1) FontWeight.ExtraBold else FontWeight.Medium,
+                            color = if (isSelected) OKGreenText else if (idx == monthlyData.size - 1) TealPrimary else SlateTextMedium
+                        )
+                    }
+                } else {
+                    if (dailyData.isNotEmpty()) {
+                        Text(
+                            text = dailyData.first().first,
+                            fontSize = 9.sp,
+                            fontWeight = if (selectedIndex == 0) FontWeight.ExtraBold else FontWeight.Bold,
+                            color = if (selectedIndex == 0) TealPrimary else SlateTextMedium
+                        )
+                        Text(
+                            text = dailyData[dailyData.size / 2].first,
+                            fontSize = 9.sp,
+                            fontWeight = if (selectedIndex == dailyData.size / 2) FontWeight.ExtraBold else FontWeight.Bold,
+                            color = if (selectedIndex == dailyData.size / 2) TealPrimary else SlateTextMedium
+                        )
+                        Text(
+                            text = dailyData.last().first,
+                            fontSize = 9.sp,
+                            fontWeight = if (selectedIndex == dailyData.size - 1) FontWeight.ExtraBold else FontWeight.Bold,
+                            color = if (selectedIndex == dailyData.size - 1) TealPrimary else SlateTextMedium
+                        )
+                    }
                 }
             }
         }
     }
+}
+
+@Composable
+fun CompactRevenueTrendChart(
+    receipts: List<Receipt>,
+    formatPrice: (Double) -> String,
+    modifier: Modifier = Modifier
+) {
+    MonthlyMRRComparisonChart(receipts = receipts, formatPrice = formatPrice, modifier = modifier)
 }
 
 @Composable
@@ -1744,5 +2212,463 @@ fun shareCsvFile(context: android.content.Context, content: String, fileName: St
         context.startActivity(chooser)
     } catch (e: Exception) {
         e.printStackTrace()
+    }
+}
+
+// ==========================================
+// ORDER HISTORY & RECEIPTS COMPONENT (ANALYTICS TAB)
+// ==========================================
+
+@Composable
+fun OrderHistorySection(
+    receipts: List<Receipt>,
+    medicationSales: List<MedicationSale>,
+    viewModel: PharmacyViewModel,
+    context: android.content.Context
+) {
+    val sdf = remember { java.text.SimpleDateFormat("MMM dd, yyyy • hh:mm a", java.util.Locale.getDefault()) }
+    var searchQuery by remember { mutableStateOf("") }
+    var selectedStatusFilter by remember { mutableStateOf("All") }
+    var selectedDocTypeFilter by remember { mutableStateOf("All") }
+
+    var receiptToDelete by remember { mutableStateOf<Receipt?>(null) }
+
+    // Delete confirmation dialog
+    if (receiptToDelete != null) {
+        AlertDialog(
+            onDismissRequest = { receiptToDelete = null },
+            title = { Text("Delete Receipt Record", fontWeight = FontWeight.Bold) },
+            text = { Text("Are you sure you want to remove this transaction record? This action cannot be undone.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    receiptToDelete?.let { viewModel.deleteReceipt(it) }
+                    receiptToDelete = null
+                }) {
+                    Text("Delete", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { receiptToDelete = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Filtered receipts
+    val filteredReceipts = remember(receipts, searchQuery, selectedStatusFilter, selectedDocTypeFilter) {
+        receipts.filter { receipt ->
+            val matchesQuery = searchQuery.isBlank() ||
+                    receipt.customerName.contains(searchQuery, ignoreCase = true) ||
+                    receipt.orderId.contains(searchQuery, ignoreCase = true) ||
+                    "#REC-${receipt.id}".contains(searchQuery, ignoreCase = true)
+
+            val matchesStatus = selectedStatusFilter == "All" || receipt.paymentStatus.equals(selectedStatusFilter, ignoreCase = true)
+
+            val matchesDocType = selectedDocTypeFilter == "All" ||
+                    (selectedDocTypeFilter == "Receipts" && !receipt.isInvoice) ||
+                    (selectedDocTypeFilter == "Invoices" && receipt.isInvoice)
+
+            matchesQuery && matchesStatus && matchesDocType
+        }.sortedByDescending { it.timestamp }
+    }
+
+    val totalRevenue = receipts.sumOf { it.totalAmount }
+    val paidCount = receipts.count { it.paymentStatus == "Paid" }
+    val pendingCount = receipts.count { it.paymentStatus == "Pending" }
+
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+        
+        // 1. High Density Summary Bar
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            CompactMetricCard(
+                title = "Total Orders",
+                value = "${receipts.size}",
+                icon = Icons.Filled.ReceiptLong,
+                iconColor = TealPrimary,
+                modifier = Modifier.weight(1f)
+            )
+            CompactMetricCard(
+                title = "Total Revenue",
+                value = "₦%,.2f".format(totalRevenue),
+                icon = Icons.Filled.Payments,
+                iconColor = OKGreenText,
+                modifier = Modifier.weight(1f)
+            )
+            CompactMetricCard(
+                title = "Paid / Pending",
+                value = "$paidCount / $pendingCount",
+                icon = Icons.Filled.AssignmentTurnedIn,
+                iconColor = PendingOrange,
+                modifier = Modifier.weight(1f)
+            )
+        }
+
+        // 2. Automated Daily Shift Rx & Sales Volume Chart (Calculated from transactions)
+        CalculatedDispensingVolumeChart(receipts = receipts)
+
+        // 3. Search & Filter Bar
+        Card(
+            colors = CardDefaults.cardColors(containerColor = TealSurface),
+            shape = RoundedCornerShape(12.dp),
+            border = BorderStroke(1.dp, SlateBorderLight.copy(alpha = 0.5f)),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = { searchQuery = it },
+                    placeholder = {
+                        Text(
+                            text = "Search by customer name or order ID...",
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            fontSize = 12.sp
+                        )
+                    },
+                    leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) },
+                    trailingIcon = {
+                        if (searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { searchQuery = "" }) {
+                                Icon(Icons.Filled.Clear, contentDescription = "Clear search")
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(10.dp),
+                    singleLine = true,
+                    maxLines = 1
+                )
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
+                ) {
+                    Text("Type:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = SlateTextMedium)
+                    listOf("All", "Receipts", "Invoices").forEach { docType ->
+                        FilterChip(
+                            selected = selectedDocTypeFilter == docType,
+                            onClick = { selectedDocTypeFilter = docType },
+                            label = { Text(docType, fontSize = 11.sp) }
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Status:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = SlateTextMedium)
+                    listOf("All", "Paid", "Pending", "Cancelled").forEach { st ->
+                        FilterChip(
+                            selected = selectedStatusFilter == st,
+                            onClick = { selectedStatusFilter = st },
+                            label = { Text(st, fontSize = 11.sp) }
+                        )
+                    }
+                }
+            }
+        }
+
+        // 4. Order History Table Title
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Order History & Receipts (${filteredReceipts.size})",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        if (filteredReceipts.isEmpty()) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)
+            ) {
+                Column(
+                    modifier = Modifier.padding(24.dp).fillMaxWidth(),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.ReceiptLong,
+                        contentDescription = null,
+                        modifier = Modifier.size(48.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "No transactions found",
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.titleSmall
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        if (receipts.isEmpty()) "Completed checkout orders in the Shopping Cart automatically appear here as digital receipts."
+                        else "No orders match your current search and filter criteria.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                    )
+                }
+            }
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                filteredReceipts.forEach { receipt ->
+                    OrderTableRowCard(
+                        receipt = receipt,
+                        sdf = sdf,
+                        context = context,
+                        onDelete = { receiptToDelete = receipt },
+                        onUpdateStatus = { newStatus -> viewModel.updateReceipt(receipt.copy(paymentStatus = newStatus)) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun CalculatedDispensingVolumeChart(receipts: List<Receipt>) {
+    val dayFormat = remember { java.text.SimpleDateFormat("EEE (dd)", java.util.Locale.getDefault()) }
+    val nowMs = System.currentTimeMillis()
+    val dayMs = 24L * 60 * 60 * 1000L
+
+    val dailyVolumes = remember(receipts) {
+        val list = mutableListOf<Pair<String, Int>>()
+        for (i in 6 downTo 0) {
+            val targetMs = nowMs - (i * dayMs)
+            val cal = java.util.Calendar.getInstance()
+            cal.timeInMillis = targetMs
+            cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
+            cal.set(java.util.Calendar.MINUTE, 0)
+            cal.set(java.util.Calendar.SECOND, 0)
+            val dayStart = cal.timeInMillis
+            val dayEnd = dayStart + dayMs
+
+            val count = receipts.count { it.timestamp in dayStart until dayEnd }
+            val label = dayFormat.format(java.util.Date(dayStart))
+            list.add(Pair(label, count))
+        }
+        list
+    }
+
+    val maxVal = remember(dailyVolumes) {
+        val max = dailyVolumes.maxOfOrNull { it.second } ?: 5
+        if (max == 0) 5 else max
+    }
+
+    Card(
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = TealSurface),
+        border = BorderStroke(1.dp, SlateBorderLight.copy(alpha = 0.5f)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(12.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Filled.BarChart, contentDescription = null, tint = TealPrimary, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "Dispensing & Order Volume Trend (Last 7 Days)",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp,
+                    color = TealTertiary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(90.dp),
+                horizontalArrangement = Arrangement.SpaceAround,
+                verticalAlignment = Alignment.Bottom
+            ) {
+                dailyVolumes.forEach { (label, count) ->
+                    val ratio = count.toFloat() / maxVal.toFloat()
+                    val barHeight = (ratio * 55).dp.coerceAtLeast(4.dp)
+
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text(
+                            text = "$count",
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = TealTertiary
+                        )
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Box(
+                            modifier = Modifier
+                                .width(14.dp)
+                                .height(barHeight)
+                                .clip(RoundedCornerShape(topStart = 4.dp, topEnd = 4.dp))
+                                .background(if (count > 0) TealPrimary else SlateBorderLight)
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = label,
+                            fontSize = 8.sp,
+                            color = SlateTextMedium,
+                            maxLines = 1
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun OrderTableRowCard(
+    receipt: Receipt,
+    sdf: java.text.SimpleDateFormat,
+    context: android.content.Context,
+    onDelete: () -> Unit,
+    onUpdateStatus: (String) -> Unit
+) {
+    var statusMenuExpanded by remember { mutableStateOf(false) }
+    val statuses = listOf("Paid", "Pending", "Rejected", "Cancelled")
+
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        shape = RoundedCornerShape(10.dp),
+        border = BorderStroke(1.dp, SlateBorderLight.copy(alpha = 0.5f)),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = receipt.customerName,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+                    Text(
+                        text = "${if (receipt.isInvoice) "Invoice" else "Receipt"} • ${receipt.orderId.ifBlank { "#REC-${receipt.id}" }}",
+                        fontSize = 11.sp,
+                        color = SlateTextMedium
+                    )
+                    Text(
+                        text = sdf.format(java.util.Date(receipt.timestamp)),
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                    )
+                }
+
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        text = "₦%,.2f".format(receipt.totalAmount),
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 15.sp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    Box {
+                        val (bgColor, textColor) = when (receipt.paymentStatus) {
+                            "Paid" -> Pair(Color(0xFFE8F5E9), Color(0xFF2E7D32))
+                            "Pending" -> Pair(Color(0xFFFFF3E0), Color(0xFFE65100))
+                            "Cancelled" -> Pair(Color(0xFFFFEBEE), Color(0xFFC62828))
+                            else -> Pair(MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.colorScheme.onSurface)
+                        }
+
+                        SuggestionChip(
+                            onClick = { statusMenuExpanded = true },
+                            label = { Text(receipt.paymentStatus, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = textColor) },
+                            colors = SuggestionChipDefaults.suggestionChipColors(containerColor = bgColor)
+                        )
+
+                        DropdownMenu(
+                            expanded = statusMenuExpanded,
+                            onDismissRequest = { statusMenuExpanded = false }
+                        ) {
+                            statuses.forEach { st ->
+                                DropdownMenuItem(
+                                    text = { Text(st, fontSize = 12.sp) },
+                                    onClick = {
+                                        onUpdateStatus(st)
+                                        statusMenuExpanded = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            HorizontalDivider(color = SlateBorderLight.copy(alpha = 0.25f), thickness = 0.5.dp)
+
+            // Action Row: View Receipt, Share/Export, Delete
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                TextButton(
+                    onClick = { showReceiptImage(context, receipt.imageFileName) },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                ) {
+                    Icon(Icons.Filled.Visibility, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("View Details", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+
+                TextButton(
+                    onClick = { shareReceiptDetails(context, receipt) },
+                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                ) {
+                    Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(14.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Share", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+
+                IconButton(
+                    onClick = onDelete,
+                    modifier = Modifier.size(28.dp)
+                ) {
+                    Icon(Icons.Filled.Delete, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
+                }
+            }
+        }
+    }
+}
+
+fun shareReceiptDetails(context: android.content.Context, receipt: Receipt) {
+    try {
+        val sdf = java.text.SimpleDateFormat("MMM dd, yyyy - hh:mm a", java.util.Locale.getDefault())
+        val docType = if (receipt.isInvoice) "Invoice" else "Receipt"
+        val shareText = """
+            Careflux Pharmacy $docType
+            Order ID: ${receipt.orderId.ifBlank { "#REC-${receipt.id}" }}
+            Customer: ${receipt.customerName}
+            Date: ${sdf.format(java.util.Date(receipt.timestamp))}
+            Total Amount: ₦${"%,.2f".format(receipt.totalAmount)}
+            Status: ${receipt.paymentStatus}
+        """.trimIndent()
+
+        val intent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(android.content.Intent.EXTRA_SUBJECT, "Careflux $docType #${receipt.id}")
+            putExtra(android.content.Intent.EXTRA_TEXT, shareText)
+        }
+        val chooser = android.content.Intent.createChooser(intent, "Share Order Details")
+        chooser.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(chooser)
+    } catch (e: Exception) {
+        android.widget.Toast.makeText(context, "Could not share receipt details", android.widget.Toast.LENGTH_SHORT).show()
     }
 }

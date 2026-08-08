@@ -1,6 +1,7 @@
 package com.example.ui
 
 import android.content.Context
+import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -38,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import kotlinx.coroutines.*
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -109,9 +111,9 @@ fun AIContentEngineTab(viewModel: AIContentEngineViewModel) {
     var isStoryFormat by remember { mutableStateOf(false) }
     var selectedLayoutTheme by remember { mutableStateOf(SlideLayoutTheme.PHARMA_EDITORIAL) }
 
-    Column(modifier = Modifier.fillMaxSize().padding(vertical = 8.dp)) {
+    Column(modifier = Modifier.fillMaxSize().padding(vertical = 2.dp)) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+            modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -173,7 +175,7 @@ fun AIContentEngineTab(viewModel: AIContentEngineViewModel) {
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(10.dp))
                 .background(SlateBackgroundLight)
-                .padding(4.dp),
+                .padding(3.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp)
         ) {
             listOf(
@@ -187,7 +189,7 @@ fun AIContentEngineTab(viewModel: AIContentEngineViewModel) {
                         .clip(RoundedCornerShape(8.dp))
                         .background(if (isSelected) TealPrimary else Color.Transparent)
                         .clickable { activeSubTab = tabId }
-                        .padding(vertical = 8.dp),
+                        .padding(vertical = 6.dp),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
@@ -200,7 +202,7 @@ fun AIContentEngineTab(viewModel: AIContentEngineViewModel) {
             }
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(8.dp))
 
         if (activeSubTab == "carousel") {
             when (val state = uiState) {
@@ -660,6 +662,25 @@ fun AIContentEngineTab(viewModel: AIContentEngineViewModel) {
                             }
                         }
                     }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    val carouselCoroutineScope = rememberCoroutineScope()
+
+                    MusicAndVideoExportSection(
+                        viewModel = viewModel,
+                        promoState = promoState,
+                        context = context,
+                        coroutineScope = carouselCoroutineScope,
+                        getFrames = {
+                            val frames = mutableListOf<android.graphics.Bitmap>()
+                            carousel.slides.forEachIndexed { idx, slide ->
+                                val bmp = renderSlideToBitmap(context, slide, idx, carousel.slides.size, theme)
+                                frames.add(bmp)
+                            }
+                            frames
+                        }
+                    )
                 }
             }
         }
@@ -1504,7 +1525,7 @@ fun PromoStudioContent(
             )
         }
         PromoUiMode.Configuration -> {
-            PromoConfigurationScreen(
+            CarefluxLiveStudioEditor(
                 viewModel = viewModel,
                 state = state,
                 context = context,
@@ -1552,20 +1573,17 @@ fun PromoSelectionScreen(
     inventory: List<com.example.data.InventoryItem>
 ) {
     var searchQuery by remember { mutableStateOf("") }
-    var selectedCategory by remember { mutableStateOf("All") }
     var showHelpInfo by remember { mutableStateOf(false) }
     
-    val categories = remember(inventory) {
-        listOf("All") + inventory.map { it.category }.distinct().sorted()
-    }
-    
-    val filteredItems = remember(inventory, searchQuery, selectedCategory) {
-        inventory.filter { item ->
-            val matchesSearch = item.name.contains(searchQuery, ignoreCase = true) ||
-                    item.category.contains(searchQuery, ignoreCase = true) ||
-                    item.brand.contains(searchQuery, ignoreCase = true)
-            val matchesCategory = selectedCategory == "All" || item.category == selectedCategory
-            matchesSearch && matchesCategory
+    val filteredItems = remember(inventory, searchQuery) {
+        if (searchQuery.isBlank()) {
+            inventory
+        } else {
+            inventory.filter { item ->
+                item.name.contains(searchQuery, ignoreCase = true) ||
+                        item.category.contains(searchQuery, ignoreCase = true) ||
+                        item.brand.contains(searchQuery, ignoreCase = true)
+            }
         }
     }
 
@@ -1573,7 +1591,7 @@ fun PromoSelectionScreen(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 12.dp)
+                .padding(bottom = 6.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -1585,9 +1603,9 @@ fun PromoSelectionScreen(
                         imageVector = Icons.Filled.PhotoLibrary,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(24.dp)
+                        modifier = Modifier.size(22.dp)
                     )
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
                     Text(
                         text = "Promo Grid Selection",
                         style = MaterialTheme.typography.titleMedium,
@@ -1595,7 +1613,7 @@ fun PromoSelectionScreen(
                     )
                     IconButton(
                         onClick = { showHelpInfo = !showHelpInfo },
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(28.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Filled.Info,
@@ -1616,7 +1634,7 @@ fun PromoSelectionScreen(
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
                         color = if (state.selectedItems.size == 4) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                     )
                 }
             }
@@ -1632,15 +1650,15 @@ fun PromoSelectionScreen(
                         text = "Select 1 to 4 products from your inventory to compose a beautiful promotional grid graphic with custom discount prices.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.padding(10.dp)
+                        modifier = Modifier.padding(8.dp)
                     )
                 }
             }
 
             if (state.selectedItems.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(4.dp))
                 Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                     modifier = Modifier
                         .fillMaxWidth()
                         .horizontalScroll(rememberScrollState())
@@ -1671,7 +1689,7 @@ fun PromoSelectionScreen(
             }
         }
 
-        // Search and category selectors (Using BasicTextField to prevent vertical clipping/tucking)
+        // Search bar (Using BasicTextField to prevent vertical clipping)
         androidx.compose.foundation.text.BasicTextField(
             value = searchQuery,
             onValueChange = { searchQuery = it },
@@ -1683,7 +1701,7 @@ fun PromoSelectionScreen(
             cursorBrush = androidx.compose.ui.graphics.SolidColor(TealPrimary),
             modifier = Modifier
                 .fillMaxWidth()
-                .height(44.dp),
+                .height(40.dp),
             decorationBox = { innerTextField ->
                 Row(
                     modifier = Modifier
@@ -1697,7 +1715,7 @@ fun PromoSelectionScreen(
                             color = SlateBorderLight.copy(alpha = 0.4f),
                             shape = RoundedCornerShape(10.dp)
                         )
-                        .padding(horizontal = 12.dp),
+                        .padding(horizontal = 10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Icon(
@@ -1738,31 +1756,16 @@ fun PromoSelectionScreen(
             }
         )
         
-        Spacer(modifier = Modifier.height(8.dp))
-        
-        Row(
-            modifier = Modifier.horizontalScroll(rememberScrollState()).fillMaxWidth().padding(vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            categories.forEach { cat ->
-                FilterChip(
-                    selected = selectedCategory == cat,
-                    onClick = { selectedCategory = cat },
-                    label = { Text(cat) }
-                )
-            }
-        }
-        
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(6.dp))
         
         // List of items
         LazyColumn(
             modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             if (filteredItems.isEmpty()) {
                 item {
-                    Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                    Box(modifier = Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
                         Text("No matching items found.", color = Color.Gray)
                     }
                 }
@@ -1776,21 +1779,21 @@ fun PromoSelectionScreen(
                         colors = CardDefaults.elevatedCardColors(
                             containerColor = if (isChecked) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
                         ),
-                        shape = RoundedCornerShape(12.dp)
+                        shape = RoundedCornerShape(10.dp)
                     ) {
                         Row(
-                            modifier = Modifier.padding(12.dp).fillMaxWidth(),
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp).fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Checkbox(
                                 checked = isChecked,
                                 onCheckedChange = { viewModel.togglePromoProductSelection(item) }
                             )
-                            Spacer(modifier = Modifier.width(8.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
                             // Small Thumbnail representation or Initials
                             Box(
                                 modifier = Modifier
-                                    .size(48.dp)
+                                    .size(40.dp)
                                     .clip(RoundedCornerShape(8.dp))
                                     .background(MaterialTheme.colorScheme.surfaceVariant),
                                 contentAlignment = Alignment.Center
@@ -1806,7 +1809,7 @@ fun PromoSelectionScreen(
                                     Text(item.name.firstOrNull()?.toString()?.uppercase() ?: "P", fontWeight = FontWeight.Bold)
                                 }
                             }
-                            Spacer(modifier = Modifier.width(12.dp))
+                            Spacer(modifier = Modifier.width(10.dp))
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(item.name, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
                                 Text("${item.brand.ifEmpty { "Generic" }} • ₦${String.format("%,.2f", item.price)}", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
@@ -1817,11 +1820,11 @@ fun PromoSelectionScreen(
             }
         }
         
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(8.dp))
         
         Button(
             onClick = { viewModel.setPromoUiMode(PromoUiMode.Configuration) },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().height(44.dp),
             enabled = state.selectedItems.isNotEmpty(),
             shape = RoundedCornerShape(12.dp)
         ) {
@@ -1858,9 +1861,115 @@ fun PromoConfigurationScreen(
             modifier = Modifier.padding(bottom = 16.dp)
         )
 
+        Text(
+            text = "Select Professional Graphic Design Template:",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+
+        androidx.compose.foundation.lazy.LazyRow(
+            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            contentPadding = PaddingValues(horizontal = 2.dp)
+        ) {
+            items(FlyerTemplateStyle.values()) { tStyle ->
+                val isSelected = tStyle == state.templateStyle
+                Card(
+                    onClick = { viewModel.updateFlyerTemplateStyle(tStyle) },
+                    colors = CardDefaults.cardColors(
+                        containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                    ),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .width(160.dp)
+                        .border(
+                            width = if (isSelected) 2.dp else 1.dp,
+                            color = if (isSelected) MaterialTheme.colorScheme.primary else Color.LightGray,
+                            shape = RoundedCornerShape(12.dp)
+                        )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(12.dp).fillMaxWidth(),
+                        horizontalAlignment = Alignment.Start
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = tStyle.displayName,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                maxLines = 1,
+                                modifier = Modifier.weight(1f)
+                            )
+                            if (isSelected) {
+                                Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = tStyle.subtitle,
+                            fontSize = 10.sp,
+                            color = Color.Gray,
+                            maxLines = 2,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                        )
+                    }
+                }
+            }
+        }
+
+        Text(
+            text = "Pharmacy & Branding Header (Editable):",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp)),
+            shape = RoundedCornerShape(14.dp),
+            modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                OutlinedTextField(
+                    value = state.pharmacyName,
+                    onValueChange = { viewModel.updateFlyerHeaderDetails(pharmacyName = it) },
+                    label = { Text("Pharmacy Name") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = state.pharmacySlogan,
+                    onValueChange = { viewModel.updateFlyerHeaderDetails(pharmacySlogan = it) },
+                    label = { Text("Pharmacy Slogan / Slogan Line") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                OutlinedTextField(
+                    value = state.badgeEmblemText,
+                    onValueChange = { viewModel.updateFlyerHeaderDetails(badgeEmblemText = it) },
+                    label = { Text("3D Starburst Emblem Text") },
+                    singleLine = true,
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        }
+
         state.selectedItems.forEachIndexed { index, item ->
             val customPriceStr = state.priceOverrides[item.id] ?: ""
             val customNameStr = state.nameOverrides[item.id] ?: ""
+            val customDosageStr = state.dosageOverrides[item.id] ?: item.dosage
+            val customBullet1 = state.featureBullet1Overrides[item.id] ?: "Accurate & Reliable"
+            val customBullet2 = state.featureBullet2Overrides[item.id] ?: "Easy Self-Testing"
 
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp)),
@@ -1924,98 +2033,132 @@ fun PromoConfigurationScreen(
                         shape = RoundedCornerShape(10.dp),
                         modifier = Modifier.fillMaxWidth()
                     )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    OutlinedTextField(
+                        value = customDosageStr,
+                        onValueChange = { viewModel.updatePromoDosageOverride(item.id, it) },
+                        label = { Text("Dosage / Size Specs") },
+                        placeholder = { Text(item.dosage) },
+                        singleLine = true,
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    if (state.templateStyle == FlyerTemplateStyle.PRO_MEDICAL_GRID) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = customBullet1,
+                            onValueChange = { viewModel.updatePromoFeatureBullet1(item.id, it) },
+                            label = { Text("Feature Bullet #1") },
+                            singleLine = true,
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = customBullet2,
+                            onValueChange = { viewModel.updatePromoFeatureBullet2(item.id, it) },
+                            label = { Text("Feature Bullet #2") },
+                            singleLine = true,
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
                 }
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        if (state.templateStyle == FlyerTemplateStyle.MEDICAL_OUTREACH) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Medical Outreach Event Details (Editable):",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
+
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp)),
+                shape = RoundedCornerShape(14.dp),
+                modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    OutlinedTextField(
+                        value = state.outreachOccasion,
+                        onValueChange = { viewModel.updateOutreachDetails(occasion = it) },
+                        label = { Text("Occasion / Ribbon Badge") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = state.outreachTitle,
+                        onValueChange = { viewModel.updateOutreachDetails(title = it) },
+                        label = { Text("Main Outreach Title") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = state.outreachMessage,
+                        onValueChange = { viewModel.updateOutreachDetails(message = it) },
+                        label = { Text("Thank You Message Text") },
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = state.outreachDate,
+                        onValueChange = { viewModel.updateOutreachDetails(date = it) },
+                        label = { Text("Event Date") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = state.outreachTime,
+                        onValueChange = { viewModel.updateOutreachDetails(time = it) },
+                        label = { Text("Event Time") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(
+                        value = state.outreachLocation,
+                        onValueChange = { viewModel.updateOutreachDetails(location = it) },
+                        label = { Text("Event Location Address") },
+                        singleLine = true,
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
 
         Text(
-            text = "Promo Graphic Sub-header Text:",
+            text = "Footer Tagline & Sign-off:",
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(bottom = 8.dp)
         )
 
         OutlinedTextField(
-            value = state.subheader,
-            onValueChange = { viewModel.updatePromoSubheader(it) },
-            label = { Text("Sub-header Promotions Banner Text") },
-            placeholder = { Text("TODAY'S SPECIAL OFFERS & PROMOTIONS") },
+            value = state.footerTagline,
+            onValueChange = { viewModel.updateFlyerHeaderDetails(footerTagline = it) },
+            label = { Text("Footer Signature / Slogan Line") },
+            placeholder = { Text("Your health, our priority. ♡") },
             singleLine = true,
             shape = RoundedCornerShape(10.dp),
             modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
         )
-
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Text(
-            text = "Choose Graphic Template Style:",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(bottom = 8.dp)
-        )
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            Card(
-                onClick = { viewModel.setPromoTemplateMode(false) },
-                colors = CardDefaults.cardColors(
-                    containerColor = if (!state.isOfferBanner) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                ),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.weight(1f).border(
-                    width = if (!state.isOfferBanner) 2.dp else 0.dp,
-                    color = if (!state.isOfferBanner) MaterialTheme.colorScheme.primary else Color.Transparent,
-                    shape = RoundedCornerShape(12.dp)
-                )
-            ) {
-                Column(
-                    modifier = Modifier.padding(12.dp).fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.PhotoLibrary,
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                        tint = if (!state.isOfferBanner) MaterialTheme.colorScheme.primary else Color.Gray
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text("Plain Grid", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    Text("Clean edge-to-edge layout", fontSize = 10.sp, color = Color.Gray, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                }
-            }
-
-            Card(
-                onClick = { viewModel.setPromoTemplateMode(true) },
-                colors = CardDefaults.cardColors(
-                    containerColor = if (state.isOfferBanner) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                ),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.weight(1f).border(
-                    width = if (state.isOfferBanner) 2.dp else 0.dp,
-                    color = if (state.isOfferBanner) MaterialTheme.colorScheme.primary else Color.Transparent,
-                    shape = RoundedCornerShape(12.dp)
-                )
-            ) {
-                Column(
-                    modifier = Modifier.padding(12.dp).fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Campaign,
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp),
-                        tint = if (state.isOfferBanner) MaterialTheme.colorScheme.primary else Color.Gray
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text("Offer Banner", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                    Text("Brand badge + trust seals", fontSize = 10.sp, color = Color.Gray, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                }
-            }
-        }
 
         Spacer(modifier = Modifier.height(16.dp))
 
@@ -2131,7 +2274,8 @@ fun PromoConfigurationScreen(
                             isOfferBanner = state.isOfferBanner,
                             resolvedBitmaps = resolvedBitmaps,
                             subheader = state.subheader,
-                            promoTheme = state.promoTheme
+                            promoTheme = state.promoTheme,
+                            state = state
                         )
 
                         if (result.first != null) {
@@ -2157,6 +2301,1023 @@ fun PromoConfigurationScreen(
         }
         
         Spacer(modifier = Modifier.height(16.dp))
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun CarefluxLiveStudioEditor(
+    viewModel: AIContentEngineViewModel,
+    state: PromoStudioState,
+    context: android.content.Context,
+    coroutineScope: kotlinx.coroutines.CoroutineScope
+) {
+    val productImagePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            val savedPath = copyUriToInternalStorage(context, uri)
+            val finalUriStr = savedPath ?: uri.toString()
+            val activeIdx = when (state.activeEditSection) {
+                "product_0" -> 0
+                "product_1" -> 1
+                "product_2" -> 2
+                "product_3" -> 3
+                else -> 0
+            }
+            viewModel.updateMasterProductImageUri(activeIdx, finalUriStr)
+            Toast.makeText(context, "Product image updated!", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+    ) {
+        // Top Header Row
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 8.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.weight(1f)
+            ) {
+                IconButton(
+                    onClick = { viewModel.setPromoUiMode(PromoUiMode.Selection) },
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
+                }
+                Spacer(modifier = Modifier.width(4.dp))
+                Column(modifier = Modifier.padding(end = 6.dp)) {
+                    Text(
+                        "Pixel-Perfect Live Editor",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    )
+                    Text(
+                        "Tap elements on flyer preview below to edit live",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.Gray,
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            // Export PNG Button
+            Button(
+                onClick = {
+                    coroutineScope.launch {
+                        try {
+                            viewModel.setPromoUiMode(PromoUiMode.Generating)
+                            val resolvedBitmaps = withContext(Dispatchers.IO) {
+                                val map = mutableMapOf<Int, android.graphics.Bitmap>()
+                                val deferreds = state.selectedItems.map { item ->
+                                    item to async {
+                                        PromoImageGenerator.loadUriAsBitmap(context, item.imageUri)
+                                    }
+                                }
+                                deferreds.forEach { (item, deferred) ->
+                                    try {
+                                        val bmp = deferred.await()
+                                        if (bmp != null) {
+                                            map[item.id] = bmp
+                                        }
+                                    } catch (e: Exception) {
+                                        e.printStackTrace()
+                                    }
+                                }
+                                map
+                            }
+
+                            val result = PromoImageGenerator.generatePromoGrid(
+                                context = context,
+                                selectedItems = state.selectedItems,
+                                priceOverrides = state.priceOverrides,
+                                nameOverrides = state.nameOverrides,
+                                isOfferBanner = state.isOfferBanner,
+                                resolvedBitmaps = resolvedBitmaps,
+                                subheader = state.subheader,
+                                promoTheme = state.promoTheme,
+                                state = state
+                            )
+                            if (result.first != null) {
+                                viewModel.setPromoGeneratedUri(result.first)
+                                viewModel.setPromoUiMode(PromoUiMode.Success)
+                            } else {
+                                viewModel.setPromoUiMode(PromoUiMode.Configuration)
+                                Toast.makeText(context, "Error rendering flyer.", Toast.LENGTH_SHORT).show()
+                            }
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                            viewModel.setPromoUiMode(PromoUiMode.Configuration)
+                            Toast.makeText(context, "Rendering error: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                },
+                shape = RoundedCornerShape(12.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = TealPrimary),
+                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp)
+            ) {
+                Icon(Icons.Filled.Download, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(6.dp))
+                Text("Export PNG", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+
+        // Live Canvas Interactive Preview
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(1f),
+                contentAlignment = Alignment.Center
+            ) {
+                CarefluxMasterTemplateLayout(
+                    state = state,
+                    modifier = Modifier.fillMaxSize(),
+                    onSectionClick = { section ->
+                        viewModel.updateActiveEditSection(section)
+                    }
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Section Selector Tabs
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            val sections = listOf(
+                "product_0" to "Prod #1",
+                "product_1" to "Prod #2",
+                "product_2" to "Prod #3",
+                "product_3" to "Prod #4",
+                "header" to "Header",
+                "features" to "Features",
+                "background" to "Canvas"
+            )
+
+            sections.forEach { (secKey, secLabel) ->
+                val isSelected = state.activeEditSection == secKey
+                FilterChip(
+                    selected = isSelected,
+                    onClick = { viewModel.updateActiveEditSection(secKey) },
+                    label = { Text(secLabel, fontSize = 11.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = TealPrimary,
+                        selectedLabelColor = Color.White
+                    ),
+                    shape = RoundedCornerShape(10.dp)
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        // Editor Form Panel based on activeEditSection
+        Card(
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp)),
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                when {
+                    state.activeEditSection.startsWith("product_") -> {
+                        val pIdx = state.activeEditSection.removePrefix("product_").toIntOrNull() ?: 0
+                        val prod = state.products.getOrElse(pIdx) { state.products[0] }
+
+                        Text(
+                            text = "Editing Product #${pIdx + 1}: ${prod.name.replace("\n", " ")}",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Custom Image Upload Row
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Product Image:", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                            Button(
+                                onClick = { productImagePickerLauncher.launch("image/*") },
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer)
+                            ) {
+                                Icon(Icons.Filled.AddPhotoAlternate, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("Upload Custom Image", fontSize = 11.sp)
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        OutlinedTextField(
+                            value = prod.name,
+                            onValueChange = { viewModel.updateMasterProductName(pIdx, it) },
+                            label = { Text("Product Display Name") },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = false,
+                            maxLines = 2
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        OutlinedTextField(
+                            value = prod.subtitle,
+                            onValueChange = { viewModel.updateMasterProductSubtitle(pIdx, it) },
+                            label = { Text("Product Subtitle / Size / Specs") },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = false,
+                            maxLines = 3
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        OutlinedTextField(
+                            value = prod.price,
+                            onValueChange = { viewModel.updateMasterProductPrice(pIdx, it) },
+                            label = { Text("Promotional Price (₦)") },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Card Background Tint Selector
+                        Text("Card Container Tint Color:", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                        Spacer(modifier = Modifier.height(6.dp))
+                        val bgTints = listOf(
+                            "#E8ECE0" to "Olive",
+                            "#E3EAF7" to "Periwinkle",
+                            "#FAF2D8" to "Soft Yellow",
+                            "#E3EDE2" to "Mint",
+                            "#FFFFFF" to "Pure White",
+                            "#FFEEEA" to "Coral",
+                            "#FAF8F2" to "Cream"
+                        )
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(bgTints) { (hex, name) ->
+                                val color = parseHexColor(hex, Color.White)
+                                val isSel = prod.bgTintHex.equals(hex, ignoreCase = true)
+                                FilterChip(
+                                    selected = isSel,
+                                    onClick = { viewModel.updateMasterProductBgTint(pIdx, hex) },
+                                    label = { Text(name, fontSize = 10.sp) },
+                                    leadingIcon = {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(14.dp)
+                                                .clip(CircleShape)
+                                                .background(color)
+                                                .border(1.dp, Color.Gray, CircleShape)
+                                        )
+                                    },
+                                    shape = RoundedCornerShape(8.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Badge Icon Selector
+                        Text("Badge Emblem Icon:", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                        Spacer(modifier = Modifier.height(6.dp))
+                        val badgeIcons = listOf(
+                            "droplet" to "Droplet 💧",
+                            "moon" to "Moon 🌙",
+                            "lightning" to "Lightning ⚡",
+                            "leaf" to "Leaf 🍃",
+                            "shield" to "Shield 🛡️",
+                            "medical" to "Medical 🏥"
+                        )
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(badgeIcons) { (iconKey, label) ->
+                                val isSel = prod.badgeIcon == iconKey
+                                FilterChip(
+                                    selected = isSel,
+                                    onClick = { viewModel.updateMasterProductBadgeIcon(pIdx, iconKey) },
+                                    label = { Text(label, fontSize = 10.sp) },
+                                    shape = RoundedCornerShape(8.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    state.activeEditSection == "header" -> {
+                        Text(
+                            text = "Editing Business Header & Signature",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        OutlinedTextField(
+                            value = state.pharmacyName,
+                            onValueChange = { viewModel.updatePharmacyHeader(it, state.pharmacySubtitle, state.pharmacySlogan) },
+                            label = { Text("Business Name") },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        OutlinedTextField(
+                            value = state.pharmacySubtitle,
+                            onValueChange = { viewModel.updatePharmacyHeader(state.pharmacyName, it, state.pharmacySlogan) },
+                            label = { Text("Business Subtitle") },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        OutlinedTextField(
+                            value = state.pharmacySlogan,
+                            onValueChange = { viewModel.updatePharmacyHeader(state.pharmacyName, state.pharmacySubtitle, it) },
+                            label = { Text("Tagline / Slogan Line") },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        OutlinedTextField(
+                            value = state.footerTagline,
+                            onValueChange = { viewModel.updateFlyerHeaderDetails(footerTagline = it) },
+                            label = { Text("Bottom Cursive Signature Text") },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+                    }
+
+                    state.activeEditSection == "features" -> {
+                        Text(
+                            text = "Editing Bottom Feature Trust Bar (4 Items)",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        OutlinedTextField(
+                            value = state.trustBadge1Title,
+                            onValueChange = { viewModel.updateTrustBadges(it, state.trustBadge1Sub, state.trustBadge2Title, state.trustBadge2Sub, state.trustBadge3Title, state.trustBadge3Sub, state.trustBadge4Title, state.trustBadge4Sub) },
+                            label = { Text("Feature 1 Title") },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        OutlinedTextField(
+                            value = state.trustBadge1Sub,
+                            onValueChange = { viewModel.updateTrustBadges(state.trustBadge1Title, it, state.trustBadge2Title, state.trustBadge2Sub, state.trustBadge3Title, state.trustBadge3Sub, state.trustBadge4Title, state.trustBadge4Sub) },
+                            label = { Text("Feature 1 Subtitle") },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        OutlinedTextField(
+                            value = state.trustBadge2Title,
+                            onValueChange = { viewModel.updateTrustBadges(state.trustBadge1Title, state.trustBadge1Sub, it, state.trustBadge2Sub, state.trustBadge3Title, state.trustBadge3Sub, state.trustBadge4Title, state.trustBadge4Sub) },
+                            label = { Text("Feature 2 Title") },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        OutlinedTextField(
+                            value = state.trustBadge2Sub,
+                            onValueChange = { viewModel.updateTrustBadges(state.trustBadge1Title, state.trustBadge1Sub, state.trustBadge2Title, it, state.trustBadge3Title, state.trustBadge3Sub, state.trustBadge4Title, state.trustBadge4Sub) },
+                            label = { Text("Feature 2 Subtitle") },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        OutlinedTextField(
+                            value = state.trustBadge3Title,
+                            onValueChange = { viewModel.updateTrustBadges(state.trustBadge1Title, state.trustBadge1Sub, state.trustBadge2Title, state.trustBadge2Sub, it, state.trustBadge3Sub, state.trustBadge4Title, state.trustBadge4Sub) },
+                            label = { Text("Feature 3 Title") },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        OutlinedTextField(
+                            value = state.trustBadge3Sub,
+                            onValueChange = { viewModel.updateTrustBadges(state.trustBadge1Title, state.trustBadge1Sub, state.trustBadge2Title, state.trustBadge2Sub, state.trustBadge3Title, it, state.trustBadge4Title, state.trustBadge4Sub) },
+                            label = { Text("Feature 3 Subtitle") },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+
+                        Spacer(modifier = Modifier.height(10.dp))
+
+                        OutlinedTextField(
+                            value = state.trustBadge4Title,
+                            onValueChange = { viewModel.updateTrustBadges(state.trustBadge1Title, state.trustBadge1Sub, state.trustBadge2Title, state.trustBadge2Sub, state.trustBadge3Title, state.trustBadge3Sub, it, state.trustBadge4Sub) },
+                            label = { Text("Feature 4 Title") },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        OutlinedTextField(
+                            value = state.trustBadge4Sub,
+                            onValueChange = { viewModel.updateTrustBadges(state.trustBadge1Title, state.trustBadge1Sub, state.trustBadge2Title, state.trustBadge2Sub, state.trustBadge3Title, state.trustBadge3Sub, state.trustBadge4Title, it) },
+                            label = { Text("Feature 4 Subtitle") },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+                    }
+
+                    state.activeEditSection == "background" -> {
+                        Text(
+                            text = "Editing Canvas Background & Leaf Accents",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        // Background Color Options
+                        Text("Canvas Background Tone:", fontWeight = FontWeight.SemiBold, fontSize = 12.sp)
+                        Spacer(modifier = Modifier.height(6.dp))
+                        val bgColors = listOf(
+                            "#F8F7F0" to "Warm Cream",
+                            "#FFFFFF" to "Pure White",
+                            "#F0FDF4" to "Soft Sage",
+                            "#F0F9FF" to "Soft Ice Blue",
+                            "#FEFCE8" to "Pastel Yellow"
+                        )
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            items(bgColors) { (hex, label) ->
+                                val isSel = state.bgColorHex.equals(hex, ignoreCase = true)
+                                FilterChip(
+                                    selected = isSel,
+                                    onClick = { viewModel.updateBackgroundConfig(hex, state.showLeaves, state.leavesOpacity) },
+                                    label = { Text(label, fontSize = 11.sp) },
+                                    shape = RoundedCornerShape(8.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Show Corner Decorative Leaves", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                            Switch(
+                                checked = state.showLeaves,
+                                onCheckedChange = { viewModel.updateBackgroundConfig(state.bgColorHex, it, state.leavesOpacity) }
+                            )
+                        }
+
+                        if (state.showLeaves) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text("Leaves Opacity: ${(state.leavesOpacity * 100).toInt()}%", fontSize = 12.sp)
+                            Slider(
+                                value = state.leavesOpacity,
+                                onValueChange = { viewModel.updateBackgroundConfig(state.bgColorHex, state.showLeaves, it) },
+                                valueRange = 0.1f..1.0f
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Music & Video Export Section
+        MusicAndVideoExportSection(
+            viewModel = viewModel,
+            promoState = state,
+            context = context,
+            coroutineScope = coroutineScope,
+            getFrames = {
+                val resolvedBitmaps = withContext(Dispatchers.IO) {
+                    val map = mutableMapOf<Int, android.graphics.Bitmap>()
+                    val deferreds = state.selectedItems.map { item ->
+                        item to async {
+                            PromoImageGenerator.loadUriAsBitmap(context, item.imageUri)
+                        }
+                    }
+                    deferreds.forEach { (item, deferred) ->
+                        try {
+                            val bmp = deferred.await()
+                            if (bmp != null) {
+                                map[item.id] = bmp
+                            }
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
+                    map
+                }
+                val framePair = PromoImageGenerator.generatePromoGrid(
+                    context = context,
+                    selectedItems = state.selectedItems,
+                    priceOverrides = state.priceOverrides,
+                    nameOverrides = state.nameOverrides,
+                    isOfferBanner = state.isOfferBanner,
+                    resolvedBitmaps = resolvedBitmaps,
+                    subheader = state.subheader,
+                    promoTheme = state.promoTheme,
+                    state = state
+                )
+                val frameBitmap = framePair.second
+                if (frameBitmap != null) listOf(frameBitmap) else emptyList()
+            }
+        )
+
+        Spacer(modifier = Modifier.height(24.dp))
+    }
+}
+
+fun getUriFileName(context: Context, uri: Uri?): String {
+    if (uri == null) return "Custom Audio Track"
+    var name = "Custom Audio Track"
+    try {
+        context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+            val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+            if (nameIndex != -1 && cursor.moveToFirst()) {
+                name = cursor.getString(nameIndex)
+            }
+        }
+    } catch (e: Exception) {
+        e.printStackTrace()
+    }
+    return name
+}
+
+fun renderSlideToBitmap(
+    context: Context,
+    slide: CarouselSlide,
+    index: Int,
+    total: Int,
+    theme: SlideTheme
+): android.graphics.Bitmap {
+    val bitmap = android.graphics.Bitmap.createBitmap(1080, 1080, android.graphics.Bitmap.Config.ARGB_8888)
+    val canvas = android.graphics.Canvas(bitmap)
+
+    // Fill background
+    val bgPaint = android.graphics.Paint().apply {
+        color = theme.cardBg.toArgb()
+    }
+    canvas.drawRect(0f, 0f, 1080f, 1080f, bgPaint)
+
+    // Draw header banner / title
+    val textPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        color = theme.textColor.toArgb()
+        textSize = 44f
+        isFakeBoldText = true
+    }
+    canvas.drawText("SLIDE ${index + 1} OF $total", 70f, 120f, textPaint)
+
+    val headingPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        color = theme.accentColor.toArgb()
+        textSize = 58f
+        isFakeBoldText = true
+    }
+    
+    var headY = 220f
+    slide.heading.chunked(25).forEach { hLine ->
+        canvas.drawText(hLine, 70f, headY, headingPaint)
+        headY += 68f
+    }
+
+    val bodyPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        color = theme.textColor.toArgb()
+        textSize = 36f
+    }
+    
+    var y = headY + 30f
+    slide.text.chunked(38).forEach { line ->
+        canvas.drawText(line, 70f, y, bodyPaint)
+        y += 48f
+    }
+
+    y += 30f
+    val bulletPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        color = theme.accentColor.toArgb()
+        textSize = 32f
+    }
+    slide.keyPoints.take(4).forEach { point ->
+        canvas.drawText("• $point", 90f, y, bulletPaint)
+        y += 44f
+    }
+
+    // Footer brand sign-off
+    val footerPaint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+        color = android.graphics.Color.GRAY
+        textSize = 28f
+    }
+    canvas.drawText("CAREFLUX PHARMACY • HEALTH EDUCATION", 70f, 1000f, footerPaint)
+
+    return bitmap
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MusicAndVideoExportSection(
+    viewModel: AIContentEngineViewModel,
+    promoState: PromoStudioState,
+    context: Context,
+    coroutineScope: CoroutineScope,
+    getFrames: suspend () -> List<android.graphics.Bitmap>
+) {
+    var isPlayingPreview by remember { mutableStateOf(false) }
+    var activePreviewOption by remember { mutableStateOf<AudioTrackOption?>(null) }
+
+    val audioPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: android.net.Uri? ->
+        if (uri != null) {
+            viewModel.updateCustomAudioUri(uri)
+            Toast.makeText(context, "Custom audio file added!", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(2.dp)),
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f)),
+        modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Filled.MusicNote, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text("Add Music & Export MP4 Video", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                        Text("Create animated MP4 slideshow with audio track", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Text("1. Select Royalty-Free Background Music:", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+            Spacer(modifier = Modifier.height(8.dp))
+
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                items(AudioTrackOption.values()) { track ->
+                    val isSelected = track == promoState.musicTrack
+                    val isTrackPlaying = isPlayingPreview && activePreviewOption == track
+
+                    Card(
+                        onClick = {
+                            viewModel.updateMusicTrack(track)
+                            if (track == AudioTrackOption.CUSTOM_FILE && promoState.customAudioUri == null) {
+                                audioPickerLauncher.launch("audio/*")
+                            }
+                        },
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .width(155.dp)
+                            .border(
+                                width = if (isSelected) 2.dp else 1.dp,
+                                color = if (isSelected) MaterialTheme.colorScheme.primary else Color.LightGray,
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Row(
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    track.title,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp,
+                                    maxLines = 1,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                if (track != AudioTrackOption.NONE) {
+                                    val canPlay = track != AudioTrackOption.CUSTOM_FILE || promoState.customAudioUri != null
+                                    if (canPlay) {
+                                        IconButton(
+                                            onClick = {
+                                                if (isTrackPlaying) {
+                                                    AudioEngine.stopPreview()
+                                                    isPlayingPreview = false
+                                                    activePreviewOption = null
+                                                } else {
+                                                    AudioEngine.playPreview(context, track, promoState.customAudioUri)
+                                                    isPlayingPreview = true
+                                                    activePreviewOption = track
+                                                }
+                                            },
+                                            modifier = Modifier.size(26.dp)
+                                        ) {
+                                            Icon(
+                                                if (isTrackPlaying) Icons.Filled.PauseCircle else Icons.Filled.PlayCircle,
+                                                contentDescription = "Preview Audio",
+                                                tint = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                if (track == AudioTrackOption.CUSTOM_FILE && promoState.customAudioUri != null)
+                                    getUriFileName(context, promoState.customAudioUri)
+                                else track.subtitle,
+                                fontSize = 9.sp,
+                                color = Color.Gray,
+                                maxLines = 2
+                            )
+                        }
+                    }
+                }
+            }
+
+            if (promoState.musicTrack == AudioTrackOption.CUSTOM_FILE) {
+                Spacer(modifier = Modifier.height(12.dp))
+                if (promoState.customAudioUri != null) {
+                    val isCustomPlaying = isPlayingPreview && activePreviewOption == AudioTrackOption.CUSTOM_FILE
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)),
+                        shape = RoundedCornerShape(12.dp),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.secondary),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                    Icon(
+                                        Icons.Filled.AudioFile,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.secondary,
+                                        modifier = Modifier.size(28.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(10.dp))
+                                    Column {
+                                        Text(
+                                            getUriFileName(context, promoState.customAudioUri),
+                                            fontWeight = FontWeight.Bold,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            maxLines = 1
+                                        )
+                                        Text("Custom Audio Loaded", fontSize = 11.sp, color = Color.Gray)
+                                    }
+                                }
+
+                                IconButton(
+                                    onClick = {
+                                        if (isCustomPlaying) {
+                                            AudioEngine.stopPreview()
+                                            isPlayingPreview = false
+                                            activePreviewOption = null
+                                        } else {
+                                            AudioEngine.playPreview(context, AudioTrackOption.CUSTOM_FILE, promoState.customAudioUri)
+                                            isPlayingPreview = true
+                                            activePreviewOption = AudioTrackOption.CUSTOM_FILE
+                                        }
+                                    }
+                                ) {
+                                    Icon(
+                                        if (isCustomPlaying) Icons.Filled.PauseCircle else Icons.Filled.PlayCircle,
+                                        contentDescription = "Preview Custom Track",
+                                        tint = MaterialTheme.colorScheme.secondary,
+                                        modifier = Modifier.size(36.dp)
+                                    )
+                                }
+                            }
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                OutlinedButton(
+                                    onClick = { audioPickerLauncher.launch("audio/*") },
+                                    modifier = Modifier.weight(1f).height(38.dp),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Icon(Icons.Filled.UploadFile, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Replace Audio", fontSize = 12.sp)
+                                }
+
+                                OutlinedButton(
+                                    onClick = {
+                                        AudioEngine.stopPreview()
+                                        isPlayingPreview = false
+                                        activePreviewOption = null
+                                        viewModel.updateCustomAudioUri(null)
+                                        viewModel.updateMusicTrack(AudioTrackOption.UPBEAT_RETAIL)
+                                    },
+                                    modifier = Modifier.weight(1f).height(38.dp),
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                                ) {
+                                    Icon(Icons.Filled.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Remove Audio", fontSize = 12.sp)
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    OutlinedButton(
+                        onClick = { audioPickerLauncher.launch("audio/*") },
+                        modifier = Modifier.fillMaxWidth().height(48.dp),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Filled.UploadFile, contentDescription = null)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Select Audio File (MP3, WAV, AAC, M4A)", fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Text("2. Video Format & Aspect Ratio:", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                VideoAspectRatio.values().forEach { aspect ->
+                    val isSel = aspect == promoState.videoAspectRatio
+                    FilterChip(
+                        selected = isSel,
+                        onClick = { viewModel.updateVideoAspectRatio(aspect) },
+                        label = { Text(aspect.label, fontSize = 11.sp, fontWeight = if (isSel) FontWeight.Bold else FontWeight.Normal) },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            if (promoState.isVideoEncoding) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)
+                ) {
+                    LinearProgressIndicator(
+                        progress = { promoState.videoEncodingProgress },
+                        modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp))
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "Encoding HD MP4 Video... ${(promoState.videoEncodingProgress * 100).toInt()}%",
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            } else {
+                Button(
+                    onClick = {
+                        coroutineScope.launch {
+                            viewModel.setVideoEncodingState(true, 0.05f)
+                            try {
+                                val frames = getFrames()
+                                if (frames.isNotEmpty()) {
+                                    val videoFile = Mp4VideoEncoder.encodeBitmapsToMp4(
+                                        context = context,
+                                        bitmaps = frames,
+                                        aspectRatio = promoState.videoAspectRatio,
+                                        durationPerSlideSeconds = promoState.slideDurationSeconds,
+                                        musicOption = promoState.musicTrack,
+                                        customAudioUri = promoState.customAudioUri,
+                                        onProgress = { p ->
+                                            viewModel.setVideoEncodingState(true, p)
+                                        }
+                                    )
+                                    if (videoFile != null) {
+                                        val uri = Mp4VideoEncoder.getFileProviderUri(context, videoFile)
+                                        viewModel.setVideoEncodingState(false, 1.0f, uri)
+                                        Toast.makeText(context, "MP4 Video Created Successfully!", Toast.LENGTH_LONG).show()
+                                    } else {
+                                        viewModel.setVideoEncodingState(false)
+                                        Toast.makeText(context, "Video encoding failed.", Toast.LENGTH_SHORT).show()
+                                    }
+                                } else {
+                                    viewModel.setVideoEncodingState(false)
+                                    Toast.makeText(context, "No bitmap frames ready to encode.", Toast.LENGTH_SHORT).show()
+                                }
+                            } catch (e: Exception) {
+                                e.printStackTrace()
+                                viewModel.setVideoEncodingState(false)
+                                Toast.makeText(context, "Error: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                ) {
+                    Icon(Icons.Filled.Movie, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Export MP4 Video with Music", fontWeight = FontWeight.Bold)
+                }
+            }
+
+            if (promoState.generatedVideoUri != null) {
+                Spacer(modifier = Modifier.height(16.dp))
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("MP4 Video Animated Post Ready!", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        }
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Button(
+                            onClick = {
+                                val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                    type = "video/mp4"
+                                    putExtra(android.content.Intent.EXTRA_STREAM, promoState.generatedVideoUri)
+                                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                                context.startActivity(android.content.Intent.createChooser(shareIntent, "Share MP4 Video Post"))
+                            },
+                            modifier = Modifier.fillMaxWidth().height(44.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                        ) {
+                            Icon(Icons.Filled.Share, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Share MP4 Video", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -2206,7 +3367,26 @@ fun PromoSuccessScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        val coroutineScope = rememberCoroutineScope()
+
+        MusicAndVideoExportSection(
+            viewModel = viewModel,
+            promoState = state,
+            context = context,
+            coroutineScope = coroutineScope,
+            getFrames = {
+                val frames = mutableListOf<android.graphics.Bitmap>()
+                if (state.generatedUri != null) {
+                    val mainBmp = PromoImageGenerator.loadUriAsBitmap(context, state.generatedUri?.toString())
+                    if (mainBmp != null) {
+                        frames.add(mainBmp)
+                    }
+                }
+                frames
+            }
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
 
         Button(
             onClick = {
@@ -2217,7 +3397,7 @@ fun PromoSuccessScreen(
                             putExtra(android.content.Intent.EXTRA_STREAM, state.generatedUri)
                             addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
                         }
-                        context.startActivity(android.content.Intent.createChooser(shareIntent, "Share Promo Grid"))
+                        context.startActivity(android.content.Intent.createChooser(shareIntent, "Share Promo Grid Image"))
                     } catch (e: Exception) {
                         e.printStackTrace()
                         Toast.makeText(context, "Error opening Share sheet: ${e.localizedMessage}", Toast.LENGTH_LONG).show()
@@ -2231,7 +3411,7 @@ fun PromoSuccessScreen(
         ) {
             Icon(Icons.Filled.Share, contentDescription = null)
             Spacer(modifier = Modifier.width(8.dp))
-            Text("Share Grid to WhatsApp", fontWeight = FontWeight.Bold)
+            Text("Share PNG Image Grid to WhatsApp", fontWeight = FontWeight.Bold)
         }
 
         Spacer(modifier = Modifier.height(10.dp))

@@ -284,6 +284,19 @@ interface PharmacyDao {
     @Query("DELETE FROM outbound_sms_logs")
     suspend fun clearSmsLogs()
 
+    // --- Expiry Alert Claims Opers ---
+    @Query("SELECT * FROM expiry_alert_claims")
+    fun getAllExpiryAlertClaims(): Flow<List<ExpiryAlertClaim>>
+
+    @Query("SELECT * FROM expiry_alert_claims WHERE inventoryItemId = :itemId LIMIT 1")
+    suspend fun getExpiryAlertClaimByItemId(itemId: Int): ExpiryAlertClaim?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertExpiryAlertClaim(claim: ExpiryAlertClaim)
+
+    @Query("DELETE FROM expiry_alert_claims")
+    suspend fun clearExpiryAlertClaims()
+
     @Transaction
     suspend fun clearAllData() {
         clearOperationTasks()
@@ -301,5 +314,6 @@ interface PharmacyDao {
         clearAdminAuditLogs()
         clearInventoryBatches()
         clearSmsLogs()
+        clearExpiryAlertClaims()
     }
 }
