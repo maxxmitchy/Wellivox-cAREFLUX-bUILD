@@ -3388,7 +3388,7 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                                 value = formGeminiKey,
                                 onValueChange = { formGeminiKey = it },
                                 label = { Text("Gemini API Key") },
-                                placeholder = { Text("AIzaSy...") },
+                                placeholder = { Text("Enter Gemini API key...") },
                                 singleLine = true,
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(10.dp)
