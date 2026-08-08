@@ -11,19 +11,19 @@ import java.util.concurrent.TimeUnit
 object TwilioConstants {
     val ACCOUNT_SID: String
         get() = runCatching { BuildConfig.TWILIO_ACCOUNT_SID }.getOrNull()?.ifBlank { null }
-            ?: "AC787d731c2cc724a7886ee2ad8fdef304"
+            ?: ""
 
     val AUTH_TOKEN: String
         get() = runCatching { BuildConfig.TWILIO_AUTH_TOKEN }.getOrNull()?.ifBlank { null }
-            ?: "a93aa1a826af28c5608148c00a5bbae1"
+            ?: ""
 
     val API_KEY_SID: String
         get() = runCatching { BuildConfig.TWILIO_API_KEY_SID }.getOrNull()?.ifBlank { null }
-            ?: "SK8ef11091s88ff4f681705ea5f330c295"
+            ?: ""
 
     val API_KEY_SECRET: String
         get() = runCatching { BuildConfig.TWILIO_API_KEY_SECRET }.getOrNull()?.ifBlank { null }
-            ?: "we5EFmfdowCUK59fK4mvgxmRv2BKWiyR"
+            ?: ""
 
     val SMS_NUMBER: String
         get() = runCatching { BuildConfig.TWILIO_SMS_NUMBER }.getOrNull()?.ifBlank { null }
