@@ -302,38 +302,53 @@ service cloud.firestore {
     // 5. BRANCH-SPECIFIC REAL-TIME COLLECTIONS
     // ============================================================
 
-    match /{collectionName}/{docId} {
+    match /branch_inventory/{docId} {
+      allow read: if isAuth() && (isAdmin() || (getBranchId() != null && (resource.data.branchId == getBranchId() || docId.startsWith(getBranchId()))));
+      allow create: if isAuth() && (isAdmin() || (getBranchId() != null && request.resource.data.branchId == getBranchId()));
+      allow update: if isAuth() && (isAdmin() || (getBranchId() != null && resource.data.branchId == getBranchId() && request.resource.data.branchId == resource.data.branchId));
+      allow delete: if isAuth() && (isAdmin() || (getBranchId() != null && resource.data.branchId == getBranchId()));
+    }
 
-      allow read, write: if isAuth() &&
-        (
-          collectionName in [
-            'branch_inventory',
-            'branch_customers',
-            'branch_customer_medications',
-            'branch_interventions',
-            'branch_operation_tasks',
-            'branch_receipts',
-            'branch_outbound_logs'
-          ]
-        ) &&
-        (
-          (
-            getBranchId() != null &&
-            docId.startsWith(getBranchId())
-          ) ||
+    match /branch_customers/{docId} {
+      allow read: if isAuth() && (isAdmin() || (getBranchId() != null && (resource.data.branchId == getBranchId() || docId.startsWith(getBranchId()))));
+      allow create: if isAuth() && (isAdmin() || (getBranchId() != null && request.resource.data.branchId == getBranchId()));
+      allow update: if isAuth() && (isAdmin() || (getBranchId() != null && resource.data.branchId == getBranchId() && request.resource.data.branchId == resource.data.branchId));
+      allow delete: if isAuth() && (isAdmin() || (getBranchId() != null && resource.data.branchId == getBranchId()));
+    }
 
-          (
-            resource != null &&
-            getBranchId() != null &&
-            resource.data.branchId == getBranchId()
-          ) ||
+    match /branch_customer_medications/{docId} {
+      allow read: if isAuth() && (isAdmin() || (getBranchId() != null && (resource.data.branchId == getBranchId() || docId.startsWith(getBranchId()))));
+      allow create: if isAuth() && (isAdmin() || (getBranchId() != null && request.resource.data.branchId == getBranchId()));
+      allow update: if isAuth() && (isAdmin() || (getBranchId() != null && resource.data.branchId == getBranchId() && request.resource.data.branchId == resource.data.branchId));
+      allow delete: if isAuth() && (isAdmin() || (getBranchId() != null && resource.data.branchId == getBranchId()));
+    }
 
-          (
-            request.resource != null &&
-            getBranchId() != null &&
-            request.resource.data.branchId == getBranchId()
-          )
-        );
+    match /branch_interventions/{docId} {
+      allow read: if isAuth() && (isAdmin() || (getBranchId() != null && (resource.data.branchId == getBranchId() || docId.startsWith(getBranchId()))));
+      allow create: if isAuth() && (isAdmin() || (getBranchId() != null && request.resource.data.branchId == getBranchId()));
+      allow update: if isAuth() && (isAdmin() || (getBranchId() != null && resource.data.branchId == getBranchId() && request.resource.data.branchId == resource.data.branchId));
+      allow delete: if isAuth() && (isAdmin() || (getBranchId() != null && resource.data.branchId == getBranchId()));
+    }
+
+    match /branch_operation_tasks/{docId} {
+      allow read: if isAuth() && (isAdmin() || (getBranchId() != null && (resource.data.branchId == getBranchId() || docId.startsWith(getBranchId()))));
+      allow create: if isAuth() && (isAdmin() || (getBranchId() != null && request.resource.data.branchId == getBranchId()));
+      allow update: if isAuth() && (isAdmin() || (getBranchId() != null && resource.data.branchId == getBranchId() && request.resource.data.branchId == resource.data.branchId));
+      allow delete: if isAuth() && (isAdmin() || (getBranchId() != null && resource.data.branchId == getBranchId()));
+    }
+
+    match /branch_receipts/{docId} {
+      allow read: if isAuth() && (isAdmin() || (getBranchId() != null && (resource.data.branchId == getBranchId() || docId.startsWith(getBranchId()))));
+      allow create: if isAuth() && (isAdmin() || (getBranchId() != null && request.resource.data.branchId == getBranchId()));
+      allow update: if isAuth() && (isAdmin() || (getBranchId() != null && resource.data.branchId == getBranchId() && request.resource.data.branchId == resource.data.branchId));
+      allow delete: if isAuth() && (isAdmin() || (getBranchId() != null && resource.data.branchId == getBranchId()));
+    }
+
+    match /branch_outbound_logs/{docId} {
+      allow read: if isAuth() && (isAdmin() || (getBranchId() != null && (resource.data.branchId == getBranchId() || docId.startsWith(getBranchId()))));
+      allow create: if isAuth() && (isAdmin() || (getBranchId() != null && request.resource.data.branchId == getBranchId()));
+      allow update: if isAuth() && (isAdmin() || (getBranchId() != null && resource.data.branchId == getBranchId() && request.resource.data.branchId == resource.data.branchId));
+      allow delete: if isAuth() && (isAdmin() || (getBranchId() != null && resource.data.branchId == getBranchId()));
     }
 
 
@@ -350,17 +365,8 @@ service cloud.firestore {
       allow create: if isAuth() &&
         getBranchId() != null &&
         request.resource.data.branchId == getBranchId();
-      allow update: if isAuth() && (
-        isAdmin() || (
-          getBranchId() != null &&
-          resource.data.branchId == getBranchId() &&
-          request.resource.data.branchId == resource.data.branchId &&
-          request.resource.data.clientTransactionId == resource.data.clientTransactionId &&
-          request.resource.data.salePrice == resource.data.salePrice &&
-          request.resource.data.quantitySold == resource.data.quantitySold &&
-          request.resource.data.productName == resource.data.productName
-        )
-      );
+      // Non-admins cannot modify existing sales after creation (append-only ledger)
+      allow update: if isAdmin();
       allow delete: if isAdmin();
     }
 
@@ -380,7 +386,12 @@ service cloud.firestore {
 
     // Device Hardware Node Configurations
     match /device_configs/{nodeId} {
-      allow read: if isAuth();
+      allow read: if isAuth() && (
+        isAdmin() ||
+        (getBranchId() != null && resource.data.branchId == getBranchId()) ||
+        resource.data.ownerUid == request.auth.uid ||
+        nodeId.startsWith(getBranchId())
+      );
 
       allow create: if isAuth() &&
         request.resource.data.deviceId == nodeId &&
@@ -417,17 +428,26 @@ service cloud.firestore {
       allow create: if isAuth() && getBranchId() != null && request.resource.data.branchId == getBranchId();
       allow update: if isAuth() && (
         isAdmin() ||
-        (resource.data.branchId == getBranchId() && isManager()) ||
-        (resource.data.ownerUid == request.auth.uid) ||
+        (
+          resource.data.branchId == getBranchId() && isManager() &&
+          request.resource.data.branchId == resource.data.branchId
+        ) ||
+        (
+          resource.data.ownerUid == request.auth.uid &&
+          request.resource.data.ownerUid == resource.data.ownerUid &&
+          request.resource.data.branchId == resource.data.branchId
+        ) ||
         (
           resource.data.status == 'Available' &&
-          request.resource.data.status == 'Claimed' &&
-          request.resource.data.claimedByUid == request.auth.uid
+          request.resource.data.status in ['Claimed', 'Accepted'] &&
+          request.resource.data.branchId == resource.data.branchId &&
+          request.resource.data.ownerUid == resource.data.ownerUid
         )
       );
       allow delete: if isAuth() && (
         isAdmin() ||
-        (resource.data.branchId == getBranchId() && isManager())
+        (resource.data.branchId == getBranchId() && isManager()) ||
+        (resource.data.ownerUid == request.auth.uid)
       );
     }
 

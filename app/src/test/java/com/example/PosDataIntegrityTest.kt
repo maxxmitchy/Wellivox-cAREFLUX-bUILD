@@ -116,4 +116,60 @@ class PosDataIntegrityTest {
         val shouldPushStock = localLastUpdated > remoteLastUpdated
         assertFalse(shouldPushStock)
     }
+
+    private fun getRulesFileContent(): String {
+        val candidates = listOf(
+            java.io.File("firestore.rules"),
+            java.io.File("../firestore.rules"),
+            java.io.File("../../firestore.rules"),
+            java.io.File("/firestore.rules")
+        )
+        val file = candidates.firstOrNull { it.exists() } ?: throw IllegalStateException("firestore.rules not found")
+        return file.readText()
+    }
+
+    @Test
+    fun testRoomMigration30To31SqlStatements() {
+        val sql1 = "ALTER TABLE medication_sales ADD COLUMN clientTransactionId TEXT NOT NULL DEFAULT ''"
+        val sql2 = "ALTER TABLE medication_sales ADD COLUMN branchId TEXT NOT NULL DEFAULT ''"
+
+        assertTrue(sql1.contains("clientTransactionId"))
+        assertTrue(sql2.contains("branchId"))
+    }
+
+    @Test
+    fun testMedicationSalesImmutabilityNonAdminRuleContract() {
+        val content = getRulesFileContent()
+
+        val salesBlockStartIndex = content.indexOf("match /medication_sales/{saleId}")
+        assertTrue("medication_sales match block must exist", salesBlockStartIndex >= 0)
+        
+        val salesBlock = content.substring(salesBlockStartIndex, (salesBlockStartIndex + 500).coerceAtMost(content.length))
+        assertTrue("medication_sales update must restrict non-admins", salesBlock.contains("allow update: if isAdmin();"))
+        assertTrue("medication_sales delete must restrict non-admins", salesBlock.contains("allow delete: if isAdmin();"))
+    }
+
+    @Test
+    fun testDeviceConfigsLeastPrivilegeRuleContract() {
+        val content = getRulesFileContent()
+
+        val deviceBlockStartIndex = content.indexOf("match /device_configs/{nodeId}")
+        assertTrue("device_configs match block must exist", deviceBlockStartIndex >= 0)
+
+        val deviceBlock = content.substring(deviceBlockStartIndex, (deviceBlockStartIndex + 500).coerceAtMost(content.length))
+        assertFalse("device_configs must not allow universal read", deviceBlock.contains("allow read: if isAuth();\n"))
+        assertTrue("device_configs must check branchId or ownerUid", deviceBlock.contains("resource.data.branchId == getBranchId()") || deviceBlock.contains("resource.data.ownerUid == request.auth.uid"))
+    }
+
+    @Test
+    fun testRescueListingsClaimRulesContract() {
+        val content = getRulesFileContent()
+
+        val rescueBlockStartIndex = content.indexOf("match /expiry_rescue_listings/{listingId}")
+        assertTrue("expiry_rescue_listings match block must exist", rescueBlockStartIndex >= 0)
+
+        val rescueBlock = content.substring(rescueBlockStartIndex, (rescueBlockStartIndex + 1200).coerceAtMost(content.length))
+        assertTrue("expiry_rescue_listings must support status transition during claim", rescueBlock.contains("request.resource.data.status in ['Claimed', 'Accepted']"))
+        assertTrue("expiry_rescue_listings update must preserve branchId", rescueBlock.contains("request.resource.data.branchId == resource.data.branchId"))
+    }
 }

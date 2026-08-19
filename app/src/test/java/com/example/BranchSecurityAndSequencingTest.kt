@@ -52,7 +52,17 @@ class BranchSecurityAndSequencingTest {
         assertTrue(content.contains("isBranchManager"))
         assertTrue(content.contains("maduemeziachinedu6@gmail.com"))
         assertTrue(content.contains("allow list: if false;"))
-        assertTrue(content.contains("match /{collectionName}/{docId}"))
+        
+        // Explicit branch collection matches verification
+        assertTrue(content.contains("match /branch_inventory/{docId}"))
+        assertTrue(content.contains("match /branch_customers/{docId}"))
+        assertTrue(content.contains("match /branch_customer_medications/{docId}"))
+        assertTrue(content.contains("match /branch_interventions/{docId}"))
+        assertTrue(content.contains("match /branch_operation_tasks/{docId}"))
+        assertTrue(content.contains("match /branch_receipts/{docId}"))
+        assertTrue(content.contains("match /branch_outbound_logs/{docId}"))
+
+        assertFalse("Generic collection wildcard must be removed", content.contains("match /{collectionName}/{docId}"))
         assertFalse("Broad wildcard must be removed", content.contains("match /{col}/{doc}"))
         assertFalse("docId == '0' bypass must be eliminated", content.contains("docId == '0'"))
         assertTrue("medication_sales must enforce branchId tenant isolation", content.contains("resource.data.branchId == getBranchId()"))
