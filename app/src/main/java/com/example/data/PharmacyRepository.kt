@@ -35,7 +35,7 @@ class PharmacyRepository(
     fun observeKeyCreationRequests(): Flow<List<Map<String, Any>>> = remoteDataSource.observeKeyCreationRequests()
     fun observeCanonicalProducts(): Flow<List<Map<String, Any>>> = remoteDataSource.observeCanonicalProducts()
     fun observeAdminAuditLogs(): Flow<List<Map<String, Any>>> = remoteDataSource.observeAdminAuditLogs()
-    fun observeMedicationSales(): Flow<List<Map<String, Any>>> = remoteDataSource.observeMedicationSales()
+    fun observeMedicationSales(branchId: String = ""): Flow<List<Map<String, Any>>> = remoteDataSource.observeMedicationSales(branchId)
 
     suspend fun getRemoteDocument(collection: String, documentId: String): Result<Map<String, Any>?> =
         remoteDataSource.getDocument(collection, documentId)

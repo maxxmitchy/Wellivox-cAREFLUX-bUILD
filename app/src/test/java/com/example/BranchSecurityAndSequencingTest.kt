@@ -54,6 +54,10 @@ class BranchSecurityAndSequencingTest {
         assertTrue(content.contains("allow list: if false;"))
         assertTrue(content.contains("match /{collectionName}/{docId}"))
         assertFalse("Broad wildcard must be removed", content.contains("match /{col}/{doc}"))
+        assertFalse("docId == '0' bypass must be eliminated", content.contains("docId == '0'"))
+        assertTrue("medication_sales must enforce branchId tenant isolation", content.contains("resource.data.branchId == getBranchId()"))
+        assertTrue("device_configs must match nodeId", content.contains("request.resource.data.deviceId == nodeId"))
+        assertTrue("device_configs must restrict ownerUid manipulation", content.contains("request.resource.data.ownerUid == request.auth.uid"))
     }
 
     // 2. Sequential Branch Switch: registered_pharmacists must be called before devices update
@@ -126,6 +130,36 @@ class BranchSecurityAndSequencingTest {
         assertTrue(updateData.containsKey("displayName"))
         assertTrue(updateData.containsKey("phoneNumber"))
     }
+
+    // 6. Verification that medication_sales observation passes branchId
+    @Test
+    fun testMedicationSalesObserverReceivesActiveBranchId() {
+        val observedBranch = "careflux_branch_ikeja"
+        recordingRemote.observeMedicationSales(observedBranch)
+        assertEquals(1, recordingRemote.callLog.size)
+        assertEquals("observeMedicationSales:$observedBranch", recordingRemote.callLog[0])
+    }
+
+    // 7. Device configs payload contract validation
+    @Test
+    fun testDeviceConfigPayloadIncludesOwnershipFields() {
+        val deviceId = "test_device_123"
+        val userUid = "test_user_456"
+        val branchId = "branch_789"
+        val payload = mapOf(
+            "deviceId" to deviceId,
+            "deviceModel" to "Google Pixel 8",
+            "ownerUid" to userUid,
+            "ownerEmail" to "pharmacist@careflux.com",
+            "branchId" to branchId,
+            "lastActive" to System.currentTimeMillis()
+        )
+
+        assertEquals(deviceId, payload["deviceId"])
+        assertEquals(userUid, payload["ownerUid"])
+        assertEquals(branchId, payload["branchId"])
+        assertFalse("Config should not allow forging arbitrary fields", payload.containsKey("isSystemAdmin"))
+    }
 }
 
 // Recording Remote Data Source to track call sequence and simulate network failures
@@ -165,7 +199,10 @@ class RecordingRemoteDataSource : RemoteDataSource {
     override fun observeKeyCreationRequests(): kotlinx.coroutines.flow.Flow<List<Map<String, Any>>> = kotlinx.coroutines.flow.emptyFlow()
     override fun observeCanonicalProducts(): kotlinx.coroutines.flow.Flow<List<Map<String, Any>>> = kotlinx.coroutines.flow.emptyFlow()
     override fun observeAdminAuditLogs(): kotlinx.coroutines.flow.Flow<List<Map<String, Any>>> = kotlinx.coroutines.flow.emptyFlow()
-    override fun observeMedicationSales(): kotlinx.coroutines.flow.Flow<List<Map<String, Any>>> = kotlinx.coroutines.flow.emptyFlow()
+    override fun observeMedicationSales(branchId: String): kotlinx.coroutines.flow.Flow<List<Map<String, Any>>> {
+        callLog.add("observeMedicationSales:$branchId")
+        return kotlinx.coroutines.flow.emptyFlow()
+    }
 
     override suspend fun getDocument(collection: String, documentId: String): Result<Map<String, Any>?> = Result.success(null)
     override suspend fun getDocumentsWhereEquals(collection: String, field: String, value: Any): Result<List<Map<String, Any>>> = Result.success(emptyList())

@@ -361,7 +361,7 @@ class FakeDeviceRemoteDataSource : RemoteDataSource {
     override fun observeKeyCreationRequests(): Flow<List<Map<String, Any>>> = emptyFlow()
     override fun observeCanonicalProducts(): Flow<List<Map<String, Any>>> = emptyFlow()
     override fun observeAdminAuditLogs(): Flow<List<Map<String, Any>>> = emptyFlow()
-    override fun observeMedicationSales(): Flow<List<Map<String, Any>>> = emptyFlow()
+    override fun observeMedicationSales(branchId: String): Flow<List<Map<String, Any>>> = emptyFlow()
 
     override suspend fun getDocument(collection: String, documentId: String): Result<Map<String, Any>?> = Result.success(null)
     override suspend fun getDocumentsWhereEquals(collection: String, field: String, value: Any): Result<List<Map<String, Any>>> = Result.success(emptyList())

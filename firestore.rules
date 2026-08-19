@@ -165,7 +165,9 @@ service cloud.firestore {
         (
           isManager() &&
           getBranchId() == branchId &&
-          (resource.data.createdBy == request.auth.uid || resource.data.managerId == request.auth.uid)
+          (resource.data.createdBy == request.auth.uid || resource.data.managerId == request.auth.uid) &&
+          request.resource.data.id == resource.data.id &&
+          request.resource.data.createdBy == resource.data.createdBy
         )
       );
 
@@ -320,8 +322,6 @@ service cloud.firestore {
             docId.startsWith(getBranchId())
           ) ||
 
-          docId == '0' ||
-
           (
             resource != null &&
             getBranchId() != null &&
@@ -370,11 +370,28 @@ service cloud.firestore {
     // Device Hardware Node Configurations
     match /device_configs/{nodeId} {
       allow read: if isAuth();
-      allow create, update: if isAuth() && (
+
+      allow create: if isAuth() &&
+        request.resource.data.deviceId == nodeId &&
+        (
+          isAdmin() ||
+          !('ownerUid' in request.resource.data) ||
+          request.resource.data.ownerUid == request.auth.uid
+        );
+
+      allow update: if isAuth() &&
+        request.resource.data.deviceId == nodeId &&
+        (
+          isAdmin() ||
+          (resource.data.ownerUid == request.auth.uid && request.resource.data.ownerUid == request.auth.uid) ||
+          (!('ownerUid' in resource.data) && request.resource.data.ownerUid == request.auth.uid) ||
+          (isManager() && getBranchId() != null && resource.data.branchId == getBranchId())
+        );
+
+      allow delete: if isAuth() && (
         isAdmin() ||
-        (isManager() && getBranchId() != null)
+        (isManager() && getBranchId() != null && resource.data.branchId == getBranchId())
       );
-      allow delete: if isAdmin();
     }
 
     // Canonical Drug Formulary Catalog
@@ -387,7 +404,16 @@ service cloud.firestore {
     match /expiry_rescue_listings/{listingId} {
       allow read: if isAuth();
       allow create: if isAuth() && getBranchId() != null && request.resource.data.branchId == getBranchId();
-      allow update: if isAuth();
+      allow update: if isAuth() && (
+        isAdmin() ||
+        (resource.data.branchId == getBranchId() && isManager()) ||
+        (resource.data.ownerUid == request.auth.uid) ||
+        (
+          resource.data.status == 'Available' &&
+          request.resource.data.status == 'Claimed' &&
+          request.resource.data.claimedByUid == request.auth.uid
+        )
+      );
       allow delete: if isAuth() && (
         isAdmin() ||
         (resource.data.branchId == getBranchId() && isManager())

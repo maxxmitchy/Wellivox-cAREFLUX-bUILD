@@ -1143,51 +1143,6 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
             }
         }
 
-        viewModelScope.launch {
-            repository.observeMedicationSales()
-                .catch { e -> android.util.Log.w("PharmacyViewModel", "observeMedicationSales failed: ${e.localizedMessage}") }
-                .collect { list ->
-                for (data in list) {
-                    val name = data["productName"] as? String ?: ""
-                    val brand = data["brand"] as? String ?: ""
-                    val gen = data["genericName"] as? String ?: ""
-                    val cat = data["category"] as? String ?: ""
-                    val qty = (data["quantitySold"] as? Number)?.toInt() ?: 0
-                    val dSold = (data["dateSold"] as? Number)?.toLong() ?: System.currentTimeMillis()
-                    val node = data["pharmacyNode"] as? String ?: ""
-                    val age = (data["patientAge"] as? Number)?.toInt() ?: 30
-                    val genGender = data["patientGender"] as? String ?: "Male"
-                    val st = data["patientState"] as? String ?: "Lagos"
-                    val lgaName = data["patientLga"] as? String ?: "Ikeja"
-                    val city = data["patientCity"] as? String ?: "Ikeja"
-                    val price = (data["salePrice"] as? Number)?.toDouble() ?: 0.0
-                    val batchNum = data["batchNumber"] as? String ?: ""
-
-                    val matches = medicationSales.value.any { it.productName == name && it.dateSold == dSold && it.quantitySold == qty }
-                    if (!matches) {
-                        repository.insertMedicationSale(
-                            MedicationSale(
-                                productName = name,
-                                brand = brand,
-                                genericName = gen,
-                                category = cat,
-                                quantitySold = qty,
-                                dateSold = dSold,
-                                pharmacyNode = node,
-                                patientAge = age,
-                                patientGender = genGender,
-                                patientState = st,
-                                patientLga = lgaName,
-                                patientCity = city,
-                                salePrice = price,
-                                batchNumber = batchNum
-                            )
-                        )
-                    }
-                }
-            }
-        }
-
         // Seed baseline product registry if database is launched empty
         viewModelScope.launch {
             repository.allInventoryItems.collect { items ->
@@ -2985,6 +2940,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
             val currentTime = System.currentTimeMillis()
             
             val currentUser = authRepository.getCurrentUser()
+            val currentBranchId = _currentPharmacistBranchId.value
             
             viewModelScope.launch {
                 try {
@@ -2992,13 +2948,22 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                     kotlinx.coroutines.withTimeoutOrNull(3000) {
                         try {
                             val devModel = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
-                            repository.upsertRemoteDocument("device_configs", deviceId, mapOf(
+                            val payload = mutableMapOf<String, Any>(
                                 "deviceId" to deviceId,
                                 "deviceModel" to devModel,
                                 "aiContentEnabled" to true,
                                 "carefluxAiEnabled" to true,
                                 "lastActive" to currentTime
-                            ))
+                            )
+                            if (currentUser != null) {
+                                payload["ownerUid"] = currentUser.uid
+                                payload["ownerEmail"] = currentUser.email.orEmpty()
+                                payload["ownerName"] = (currentUser.displayName ?: currentUser.email?.substringBefore("@") ?: "Staff Pharmacist")
+                            }
+                            if (!currentBranchId.isNullOrBlank()) {
+                                payload["branchId"] = currentBranchId
+                            }
+                            repository.upsertRemoteDocument("device_configs", deviceId, payload)
                         } catch (e: Exception) {
                             // ignore and proceed
                         }
@@ -4149,6 +4114,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             try {
                 val user = authRepository.getCurrentUser()
+                val currentBranchId = _currentPharmacistBranchId.value
                 val deviceModel = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
 
                 val dataMap = hashMapOf<String, Any>(
@@ -4161,6 +4127,9 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                     "lga" to getPharmacyLga(),
                     "state" to getPharmacyState()
                 )
+                if (!currentBranchId.isNullOrBlank()) {
+                    dataMap["branchId"] = currentBranchId
+                }
                 if (user != null) {
                     dataMap["ownerEmail"] = user.email.orEmpty()
                     dataMap["ownerName"] = user.displayName.orEmpty()
@@ -4972,6 +4941,54 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 }
             }
             activeSyncJobs.add(job6)
+
+            // Job 7: Realtime Branch Medication Sales Sync (Tenant-Isolated)
+            val salesBranch = if (isCurrentUserAdmin()) "" else userBranchId
+            val job7 = viewModelScope.launch {
+                repository.observeMedicationSales(salesBranch)
+                    .catch { e -> android.util.Log.w("PharmacyViewModel", "observeMedicationSales failed: ${e.localizedMessage}") }
+                    .collect { list ->
+                        for (data in list) {
+                            val name = data["productName"] as? String ?: ""
+                            val brand = data["brand"] as? String ?: ""
+                            val gen = data["genericName"] as? String ?: ""
+                            val cat = data["category"] as? String ?: ""
+                            val qty = (data["quantitySold"] as? Number)?.toInt() ?: 0
+                            val dSold = (data["dateSold"] as? Number)?.toLong() ?: System.currentTimeMillis()
+                            val node = data["pharmacyNode"] as? String ?: ""
+                            val age = (data["patientAge"] as? Number)?.toInt() ?: 30
+                            val genGender = data["patientGender"] as? String ?: "Male"
+                            val st = data["patientState"] as? String ?: "Lagos"
+                            val lgaName = data["patientLga"] as? String ?: "Ikeja"
+                            val city = data["patientCity"] as? String ?: "Ikeja"
+                            val price = (data["salePrice"] as? Number)?.toDouble() ?: 0.0
+                            val batchNum = data["batchNumber"] as? String ?: ""
+
+                            val matches = medicationSales.value.any { it.productName == name && it.dateSold == dSold && it.quantitySold == qty }
+                            if (!matches) {
+                                repository.insertMedicationSale(
+                                    MedicationSale(
+                                        productName = name,
+                                        brand = brand,
+                                        genericName = gen,
+                                        category = cat,
+                                        quantitySold = qty,
+                                        dateSold = dSold,
+                                        pharmacyNode = node,
+                                        patientAge = age,
+                                        patientGender = genGender,
+                                        patientState = st,
+                                        patientLga = lgaName,
+                                        patientCity = city,
+                                        salePrice = price,
+                                        batchNumber = batchNum
+                                    )
+                                )
+                            }
+                        }
+                    }
+            }
+            activeSyncJobs.add(job7)
         } catch (e: Exception) {
             e.printStackTrace()
         }

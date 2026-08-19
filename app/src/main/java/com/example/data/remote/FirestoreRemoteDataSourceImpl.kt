@@ -461,27 +461,31 @@ class FirestoreRemoteDataSourceImpl(
         awaitClose { listener?.remove() }
     }
 
-    override fun observeMedicationSales(): Flow<List<Map<String, Any>>> = callbackFlow {
+    override fun observeMedicationSales(branchId: String): Flow<List<Map<String, Any>>> = callbackFlow {
         val fs = firestore
         if (fs == null) {
             trySend(emptyList())
             awaitClose { }
             return@callbackFlow
         }
-        val listener = try {
+        val query = if (branchId.isBlank()) {
             fs.collection("medication_sales")
-                .addSnapshotListener { snapshot, error ->
-                    if (error != null) {
-                        android.util.Log.w("FirestoreRemote", "observeMedicationSales listen error: ${error.localizedMessage}")
-                        return@addSnapshotListener
-                    }
-                    val list = snapshot?.documents?.map { doc ->
-                        val data = doc.data?.toMutableMap() ?: mutableMapOf()
-                        data["id"] = doc.id
-                        data
-                    } ?: emptyList()
-                    trySend(list)
+        } else {
+            fs.collection("medication_sales").whereEqualTo("branchId", branchId)
+        }
+        val listener = try {
+            query.addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    android.util.Log.w("FirestoreRemote", "observeMedicationSales listen error: ${error.localizedMessage}")
+                    return@addSnapshotListener
                 }
+                val list = snapshot?.documents?.map { doc ->
+                    val data = doc.data?.toMutableMap() ?: mutableMapOf()
+                    data["id"] = doc.id
+                    data
+                } ?: emptyList()
+                trySend(list)
+            }
         } catch (e: Exception) {
             android.util.Log.w("FirestoreRemote", "observeMedicationSales registration error: ${e.localizedMessage}")
             null

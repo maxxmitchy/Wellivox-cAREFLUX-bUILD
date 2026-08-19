@@ -29,7 +29,7 @@ interface RemoteDataSource {
     fun observeKeyCreationRequests(): Flow<List<Map<String, Any>>>
     fun observeCanonicalProducts(): Flow<List<Map<String, Any>>>
     fun observeAdminAuditLogs(): Flow<List<Map<String, Any>>>
-    fun observeMedicationSales(): Flow<List<Map<String, Any>>>
+    fun observeMedicationSales(branchId: String = ""): Flow<List<Map<String, Any>>>
 
     // Explicit Document Operations
     suspend fun getDocument(collection: String, documentId: String): Result<Map<String, Any>?>
