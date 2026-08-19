@@ -47,6 +47,31 @@ object SmartNotificationDispatcher {
         // 1. Check Global Notification Toggle
         if (!prefs.getBoolean("notifications_enabled", true)) return false
 
+        // 1b. Check Granular Category Notification Preferences
+        val lowerTitle = title.lowercase()
+        val lowerContent = content.lowercase()
+        val isExpiry = lowerTitle.contains("expiry") || lowerTitle.contains("expired") || lowerContent.contains("expiry") || lowerContent.contains("fefo")
+        val isLowStock = lowerTitle.contains("stock") || lowerTitle.contains("restock") || lowerContent.contains("low stock") || lowerContent.contains("reorder")
+        val isRestockCutoff = lowerTitle.contains("cutoff") || lowerContent.contains("cutoff") || lowerTitle.contains("supplier order")
+        val isCycleCount = lowerTitle.contains("cycle count") || lowerContent.contains("cycle count") || lowerTitle.contains("reconcil") || lowerTitle.contains("audit")
+        val isRefill = lowerTitle.contains("refill") || lowerTitle.contains("outbound") || lowerContent.contains("refill")
+        val isFollowup = lowerTitle.contains("follow-up") || lowerTitle.contains("intervention") || lowerContent.contains("follow-up") || lowerContent.contains("intervention")
+        val isEscalation = lowerTitle.contains("escalation") || lowerTitle.contains("unconfirmed") || lowerContent.contains("escalat")
+        val isBriefing = lowerTitle.contains("opening") || lowerTitle.contains("closing") || lowerTitle.contains("briefing") || lowerTitle.contains("summary")
+        val isTaskAssignment = lowerTitle.contains("task") || lowerContent.contains("assigned to you")
+        val isStockTransfer = lowerTitle.contains("transfer") || lowerContent.contains("stock transfer")
+
+        if (isExpiry && (!prefs.getBoolean("notif_pref_expiry", true))) return false
+        if (isLowStock && (!prefs.getBoolean("notif_pref_low_stock", true))) return false
+        if (isRestockCutoff && (!prefs.getBoolean("notif_pref_restock_cutoff", true))) return false
+        if (isCycleCount && (!prefs.getBoolean("notif_pref_cycle_count", true) || !prefs.getBoolean("notif_pref_cycle_counts", true))) return false
+        if (isRefill && (!prefs.getBoolean("notif_pref_refill", true) || !prefs.getBoolean("notif_pref_refill_outbound", true))) return false
+        if (isFollowup && (!prefs.getBoolean("notif_pref_followup", true))) return false
+        if (isTaskAssignment && (!prefs.getBoolean("notif_pref_task_assignment", true))) return false
+        if (isStockTransfer && (!prefs.getBoolean("notif_pref_stock_transfer", true))) return false
+        if (isEscalation && !prefs.getBoolean("notif_pref_escalations", true)) return false
+        if (isBriefing && !prefs.getBoolean("notif_pref_shift_briefings", true)) return false
+
         // 2. Active Completed Task Suppressor: If target task is already completed, suppress notification
         if (isCompletedTask) return false
 
@@ -114,14 +139,21 @@ object SmartNotificationDispatcher {
             if (!targetCustomerName.isNullOrBlank()) putExtra("TARGET_CUSTOMER_NAME", targetCustomerName)
         }
 
+        val deterministicId = if (targetTaskId != null && targetTaskId > 0L) {
+            targetTaskId.toInt()
+        } else {
+            val stableKey = dedupKey ?: "${channelId}_${title.trim()}_${targetTab ?: ""}_${targetSubTab ?: ""}"
+            (stableKey.hashCode() and 0x7FFFFFFF) % 900000 + 10000
+        }
+
         val pendingIntent: PendingIntent = PendingIntent.getActivity(
             context,
-            (targetTaskId?.toInt() ?: (0..9999).random()),
+            deterministicId,
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
-        val notificationId = targetTaskId?.toInt() ?: (1000..9999).random()
+        val notificationId = deterministicId
 
         // 10. Construct Notification
         val builder = NotificationCompat.Builder(context, channelId)
@@ -181,9 +213,9 @@ object SmartNotificationDispatcher {
         }
     }
 
-    private fun setupNotificationChannels(context: Context) {
+    fun setupNotificationChannels(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as? NotificationManager ?: return
 
             // Critical Channel (High Importance, Vibration)
             if (manager.getNotificationChannel(CHANNEL_CRITICAL) == null) {

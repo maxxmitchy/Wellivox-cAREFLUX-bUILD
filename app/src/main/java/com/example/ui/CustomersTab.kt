@@ -44,6 +44,8 @@ import com.example.data.ClinicalIntervention
 import com.example.ui.theme.*
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.ui.PharmacyViewModel
+import android.app.DatePickerDialog
+import java.util.Calendar
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -55,6 +57,7 @@ fun CustomersTabContent(
     inventoryMeds: List<InventoryItem>,
     clinicalInterventions: List<ClinicalIntervention>,
     targetCustomerQuery: String? = null,
+    initialSubTab: String? = null,
     onAddNewCustomerClick: () -> Unit,
     onEditCustomerClick: (Customer) -> Unit,
     onDeleteCustomer: (Customer) -> Unit,
@@ -65,10 +68,24 @@ fun CustomersTabContent(
     context: Context
 ) {
     var searchQuery by remember { mutableStateOf(targetCustomerQuery ?: "") }
-    var activeSubTab by remember { mutableStateOf(0) } // 0 = Patient Ledger, 1 = Refill Command Center
+    val defaultSubTab = when (initialSubTab) {
+        "refill_reminders", "refill", "refills", "reminders", "refill_queue", "ops_task_board" -> 1
+        "interventions", "clinical", "clinical_followups", "followups" -> 2
+        else -> 0
+    }
+    var activeSubTab by remember { mutableStateOf(defaultSubTab) } // 0 = Patient Ledger, 1 = Refill Command Center, 2 = Clinical Follow-ups
     var customerToDelete by remember { mutableStateOf<Customer?>(null) }
     val customTemplates by viewModel.customTemplates.collectAsStateWithLifecycle()
     val coroutineScope = rememberCoroutineScope()
+
+    LaunchedEffect(initialSubTab) {
+        if (!initialSubTab.isNullOrBlank()) {
+            when (initialSubTab) {
+                "refill_reminders", "refill", "refills", "reminders", "refill_queue", "ops_task_board" -> activeSubTab = 1
+                "interventions", "clinical", "clinical_followups", "followups" -> activeSubTab = 2
+            }
+        }
+    }
 
     LaunchedEffect(targetCustomerQuery, customers) {
         if (!targetCustomerQuery.isNullOrBlank()) {
@@ -448,38 +465,8 @@ fun CustomerCard(
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = TealTertiary,
-                            modifier = Modifier.weight(1f, fill = false),
-                            maxLines = 1,
-                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                            modifier = Modifier.weight(1f, fill = false)
                         )
-                        // NDPA Shield Badge (Lightweight Custom Badge to maintain cohesive visual style and avoid squishing)
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(6.dp))
-                                .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f))
-                                .border(0.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f), RoundedCornerShape(6.dp))
-                                .padding(horizontal = 6.dp, vertical = 2.dp)
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(2.dp)
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Filled.Security,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(10.dp)
-                                )
-                                Text(
-                                    text = "NDPA Compliant",
-                                    fontSize = 8.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    maxLines = 1,
-                                    softWrap = false
-                                )
-                            }
-                        }
                         if (customerDdiAlerts.isNotEmpty()) {
                             Badge(
                                 containerColor = MaterialTheme.colorScheme.error,
@@ -541,6 +528,35 @@ fun CustomerCard(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        // NDPA Shield Badge (Positioned cleanly among status chips to avoid squeezing patient name)
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f))
+                                .border(0.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f), RoundedCornerShape(6.dp))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(3.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Filled.Security,
+                                    contentDescription = "NDPA Compliant",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(11.dp)
+                                )
+                                Text(
+                                    text = "NDPA Compliant",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    maxLines = 1,
+                                    softWrap = false
+                                )
+                            }
+                        }
+
                         // Loyalty badge
                         Box(
                             modifier = Modifier
@@ -1026,21 +1042,47 @@ fun CustomerCard(
                                         Box(
                                             modifier = Modifier
                                                 .clip(RoundedCornerShape(6.dp))
-                                                .background(SlateBackgroundLight)
+                                                .background(TealPrimary.copy(alpha = 0.08f))
+                                                .border(0.5.dp, TealPrimary.copy(alpha = 0.25f), RoundedCornerShape(6.dp))
+                                                .clickable {
+                                                    val cal = Calendar.getInstance().apply {
+                                                        timeInMillis = if (med.nextRefillDate > 0L) med.nextRefillDate else System.currentTimeMillis()
+                                                    }
+                                                    DatePickerDialog(
+                                                        context,
+                                                        { _, year, month, dayOfMonth ->
+                                                            val selectedCal = Calendar.getInstance().apply {
+                                                                set(Calendar.YEAR, year)
+                                                                set(Calendar.MONTH, month)
+                                                                set(Calendar.DAY_OF_MONTH, dayOfMonth)
+                                                                set(Calendar.HOUR_OF_DAY, 12)
+                                                                set(Calendar.MINUTE, 0)
+                                                                set(Calendar.SECOND, 0)
+                                                                set(Calendar.MILLISECOND, 0)
+                                                            }
+                                                            val newDateMs = selectedCal.timeInMillis
+                                                            viewModel.updateCustomerMedication(med.copy(nextRefillDate = newDateMs))
+                                                            Toast.makeText(context, "Refill date updated for ${med.medicationName}", Toast.LENGTH_SHORT).show()
+                                                        },
+                                                        cal.get(Calendar.YEAR),
+                                                        cal.get(Calendar.MONTH),
+                                                        cal.get(Calendar.DAY_OF_MONTH)
+                                                    ).show()
+                                                }
                                                 .padding(horizontal = 6.dp, vertical = 2.dp)
                                         ) {
                                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                                                 Icon(
                                                     imageVector = Icons.Filled.Event,
-                                                    contentDescription = null,
-                                                    tint = SlateTextMedium,
+                                                    contentDescription = "Select Next Refill Date",
+                                                    tint = TealPrimary,
                                                     modifier = Modifier.size(12.dp)
                                                 )
                                                 Text(
                                                     text = "Due: ${sdf.format(Date(med.nextRefillDate))}",
                                                     style = MaterialTheme.typography.labelSmall,
-                                                    fontWeight = FontWeight.SemiBold,
-                                                    color = SlateTextMedium
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = TealPrimary
                                                 )
                                             }
                                         }
@@ -3552,12 +3594,53 @@ fun RefillCommandCenter(
                                         fontSize = 11.sp,
                                         color = SlateTextMedium
                                     )
-                                    Text(
-                                        text = "Due: ${SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()).format(Date(med.nextRefillDate))}",
-                                        fontSize = 10.sp,
-                                        color = SlateTextMedium,
-                                        fontWeight = FontWeight.SemiBold
-                                    )
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .background(TealPrimary.copy(alpha = 0.08f))
+                                            .border(0.5.dp, TealPrimary.copy(alpha = 0.25f), RoundedCornerShape(4.dp))
+                                            .clickable {
+                                                val cal = Calendar.getInstance().apply {
+                                                    timeInMillis = if (med.nextRefillDate > 0L) med.nextRefillDate else System.currentTimeMillis()
+                                                }
+                                                DatePickerDialog(
+                                                    context,
+                                                    { _, year, month, dayOfMonth ->
+                                                        val selectedCal = Calendar.getInstance().apply {
+                                                            set(Calendar.YEAR, year)
+                                                            set(Calendar.MONTH, month)
+                                                            set(Calendar.DAY_OF_MONTH, dayOfMonth)
+                                                            set(Calendar.HOUR_OF_DAY, 12)
+                                                            set(Calendar.MINUTE, 0)
+                                                            set(Calendar.SECOND, 0)
+                                                            set(Calendar.MILLISECOND, 0)
+                                                        }
+                                                        val newDateMs = selectedCal.timeInMillis
+                                                        viewModel.updateCustomerMedication(med.copy(nextRefillDate = newDateMs))
+                                                        Toast.makeText(context, "Refill date updated for ${med.medicationName}", Toast.LENGTH_SHORT).show()
+                                                    },
+                                                    cal.get(Calendar.YEAR),
+                                                    cal.get(Calendar.MONTH),
+                                                    cal.get(Calendar.DAY_OF_MONTH)
+                                                ).show()
+                                            }
+                                            .padding(horizontal = 5.dp, vertical = 2.dp)
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
+                                            Icon(
+                                                imageVector = Icons.Filled.Event,
+                                                contentDescription = "Select Next Refill Date",
+                                                tint = TealPrimary,
+                                                modifier = Modifier.size(11.dp)
+                                            )
+                                            Text(
+                                                text = "Due: ${SimpleDateFormat("MMM d, yyyy", Locale.getDefault()).format(Date(med.nextRefillDate))}",
+                                                fontSize = 10.sp,
+                                                color = TealPrimary,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }

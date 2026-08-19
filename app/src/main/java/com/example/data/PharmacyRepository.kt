@@ -1,8 +1,98 @@
 package com.example.data
 
+import com.example.data.remote.FirestoreRemoteDataSourceImpl
+import com.example.data.remote.RemoteDataSource
+import com.example.data.sync.SaleSyncRequest
+import com.example.data.sync.SyncResult
 import kotlinx.coroutines.flow.Flow
 
-class PharmacyRepository(private val pharmacyDao: PharmacyDao) {
+class PharmacyRepository(
+    private val pharmacyDao: PharmacyDao,
+    val remoteDataSource: RemoteDataSource = FirestoreRemoteDataSourceImpl()
+) {
+
+    // --- Remote Observations & Sync Operations ---
+    fun getCurrentUserUid(): String? = remoteDataSource.getCurrentUserUid()
+    fun getCurrentUserEmail(): String? = remoteDataSource.getCurrentUserEmail()
+
+    suspend fun getPharmacistBranchId(uid: String): String? = remoteDataSource.getPharmacistBranchId(uid)
+
+    fun observePharmacist(uid: String): Flow<Map<String, Any>?> = remoteDataSource.observePharmacist(uid)
+    fun observeBranchSettings(branchId: String): Flow<Map<String, Any>?> = remoteDataSource.observeBranchSettings(branchId)
+    fun observeStaffMembers(branchId: String = ""): Flow<List<Map<String, Any>>> = remoteDataSource.observeStaffMembers(branchId)
+    fun observeBranchInventory(branchId: String = ""): Flow<List<Map<String, Any>>> = remoteDataSource.observeBranchInventory(branchId)
+    fun observeBranchCustomers(branchId: String = ""): Flow<List<Map<String, Any>>> = remoteDataSource.observeBranchCustomers(branchId)
+    fun observeBranchCustomerMedications(branchId: String = ""): Flow<List<Map<String, Any>>> = remoteDataSource.observeBranchCustomerMedications(branchId)
+    fun observeBranchInterventions(branchId: String = ""): Flow<List<Map<String, Any>>> = remoteDataSource.observeBranchInterventions(branchId)
+    fun observeBranchOperationTasks(branchId: String = ""): Flow<List<Map<String, Any>>> = remoteDataSource.observeBranchOperationTasks(branchId)
+    fun observeBranchReceipts(branchId: String = ""): Flow<List<Map<String, Any>>> = remoteDataSource.observeBranchReceipts(branchId)
+    fun observeBranchAuditLogs(branchId: String = ""): Flow<List<Map<String, Any>>> = remoteDataSource.observeBranchAuditLogs(branchId)
+    fun observeAllPharmacists(): Flow<List<Map<String, Any>>> = remoteDataSource.observeAllPharmacists()
+    fun observeAllBranches(): Flow<List<Map<String, Any>>> = remoteDataSource.observeAllBranches()
+    fun observeDeviceConfigs(): Flow<List<Map<String, Any>>> = remoteDataSource.observeDeviceConfigs()
+    fun observeDeviceConfig(deviceId: String): Flow<Map<String, Any>?> = remoteDataSource.observeDeviceConfig(deviceId)
+    fun observeExpiryRescueListings(): Flow<List<Map<String, Any>>> = remoteDataSource.observeExpiryRescueListings()
+    fun observeKeyCreationRequests(): Flow<List<Map<String, Any>>> = remoteDataSource.observeKeyCreationRequests()
+    fun observeCanonicalProducts(): Flow<List<Map<String, Any>>> = remoteDataSource.observeCanonicalProducts()
+    fun observeAdminAuditLogs(): Flow<List<Map<String, Any>>> = remoteDataSource.observeAdminAuditLogs()
+    fun observeMedicationSales(): Flow<List<Map<String, Any>>> = remoteDataSource.observeMedicationSales()
+
+    suspend fun getRemoteDocument(collection: String, documentId: String): Result<Map<String, Any>?> =
+        remoteDataSource.getDocument(collection, documentId)
+
+    suspend fun getRemoteDocumentsWhereEquals(collection: String, field: String, value: Any): Result<List<Map<String, Any>>> =
+        remoteDataSource.getDocumentsWhereEquals(collection, field, value)
+
+    suspend fun getAllRemoteDocuments(collection: String): Result<List<Map<String, Any>>> =
+        remoteDataSource.getAllDocuments(collection)
+
+    suspend fun upsertRemoteDocument(collection: String, documentId: String, data: Map<String, Any?>): Result<Unit> =
+        remoteDataSource.upsertDocument(collection, documentId, data)
+
+    suspend fun addRemoteDocument(collection: String, data: Map<String, Any?>): Result<String> =
+        remoteDataSource.addDocument(collection, data)
+
+    suspend fun deleteRemoteDocument(collection: String, documentId: String): Result<Unit> =
+        remoteDataSource.deleteDocument(collection, documentId)
+
+    suspend fun claimRescueListing(listingId: String, deviceId: String, deviceModel: String): Result<Boolean> =
+        remoteDataSource.claimRescueListing(listingId, deviceId, deviceModel)
+
+    suspend fun updateStaffCredentials(staffUid: String, staffEmail: String?, newRole: String, isApproved: Boolean): Result<Unit> =
+        remoteDataSource.updateStaffCredentials(staffUid, staffEmail, newRole, isApproved)
+
+    suspend fun joinBranch(uid: String, email: String, displayName: String, phoneNumber: String, branchCode: String, deviceId: String, deviceModel: String): Result<Pair<String, String>> =
+        remoteDataSource.joinBranch(uid, email, displayName, phoneNumber, branchCode, deviceId, deviceModel)
+
+    suspend fun registerBranch(uid: String, email: String, displayName: String, phoneNumber: String, name: String, lga: String, state: String, deviceId: String, deviceModel: String): Result<String> =
+        remoteDataSource.registerBranch(uid, email, displayName, phoneNumber, name, lga, state, deviceId, deviceModel)
+
+    suspend fun deleteBranch(branchId: String): Result<Unit> =
+        remoteDataSource.deleteBranch(branchId)
+
+    suspend fun deleteDeviceNode(nodeId: String): Result<Unit> =
+        remoteDataSource.deleteDeviceNode(nodeId)
+
+    suspend fun appointManager(branchId: String, branchName: String, pharmacistUid: String, pharmacistName: String, pharmacistEmail: String): Result<Unit> =
+        remoteDataSource.appointManager(branchId, branchName, pharmacistUid, pharmacistName, pharmacistEmail)
+
+    suspend fun switchActiveBranch(uid: String, branchId: String, branchName: String): Result<Unit> =
+        remoteDataSource.switchActiveBranch(uid, branchId, branchName)
+
+    suspend fun updateBranchDetails(branchId: String, newName: String, newLga: String, newState: String): Result<Unit> =
+        remoteDataSource.updateBranchDetails(branchId, newName, newLga, newState)
+
+    suspend fun updateBranchFeatures(branchId: String, features: Map<String, Boolean>): Result<Unit> =
+        remoteDataSource.updateBranchFeatures(branchId, features)
+
+    suspend fun deletePharmacist(pharmacistUid: String, branchId: String?, role: String?): Result<Unit> =
+        remoteDataSource.deletePharmacist(pharmacistUid, branchId, role)
+
+    suspend fun syncSaleTransaction(request: SaleSyncRequest): SyncResult =
+        remoteDataSource.syncSaleTransaction(request)
+
+    suspend fun logOutboundSms(logData: Map<String, Any?>): Result<Unit> =
+        remoteDataSource.logOutboundSms(logData)
 
     // --- Operation Tasks ---
     val allOperationTasks: Flow<List<OperationTask>> = pharmacyDao.getAllOperationTasks()
@@ -270,6 +360,40 @@ class PharmacyRepository(private val pharmacyDao: PharmacyDao) {
     suspend fun insertExpiryAlertClaim(claim: ExpiryAlertClaim) {
         pharmacyDao.insertExpiryAlertClaim(claim)
     }
+
+    // --- Organizations ---
+    val organization: Flow<Organization?> = pharmacyDao.getOrganization()
+
+    suspend fun insertOrganization(org: Organization): Long {
+        return pharmacyDao.insertOrganization(org)
+    }
+
+    // --- Users & Access ---
+    val allUsers: Flow<List<User>> = pharmacyDao.getAllUsers()
+
+    suspend fun getUserById(id: Int): User? = pharmacyDao.getUserById(id)
+
+    suspend fun getUserByPhone(phone: String): User? = pharmacyDao.getUserByPhone(phone)
+
+    suspend fun insertUser(user: User): Long = pharmacyDao.insertUser(user)
+
+    suspend fun updateUser(user: User) = pharmacyDao.updateUser(user)
+
+    fun getUserBranchAccess(userId: Int): Flow<List<UserBranchAccess>> = pharmacyDao.getUserBranchAccess(userId)
+
+    suspend fun insertUserBranchAccess(access: UserBranchAccess): Long = pharmacyDao.insertUserBranchAccess(access)
+
+    // --- Customer Branch ---
+    fun getCustomerBranches(customerId: Int): Flow<List<CustomerBranch>> = pharmacyDao.getCustomerBranches(customerId)
+
+    suspend fun insertCustomerBranch(cb: CustomerBranch): Long = pharmacyDao.insertCustomerBranch(cb)
+
+    // --- Double-Entry Inventory Ledger ---
+    val allInventoryLedgerEntries: Flow<List<InventoryLedgerEntry>> = pharmacyDao.getAllInventoryLedgerEntries()
+
+    fun getLedgerEntriesByItem(itemId: Int): Flow<List<InventoryLedgerEntry>> = pharmacyDao.getLedgerEntriesByItem(itemId)
+
+    suspend fun insertInventoryLedgerEntry(entry: InventoryLedgerEntry): Long = pharmacyDao.insertInventoryLedgerEntry(entry)
 
     suspend fun clearAllData() {
         pharmacyDao.clearAllData()

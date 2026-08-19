@@ -21,6 +21,9 @@ data class InventoryItem(
     val imageUri: String? = null,
     val brand: String = "",
     val salesStrategy: String = "",
+    val isFastMoving: Boolean = false,
+    val globalId: String = java.util.UUID.randomUUID().toString(),
+    val syncStatus: String = "SYNCED",
     val lastUpdated: Long = System.currentTimeMillis(),
     val lastReconciledAt: Long = 0L
 ) {

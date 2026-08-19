@@ -5,9 +5,8 @@ import android.os.Build
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
 import com.example.data.PharmacyDatabase
-import com.google.firebase.firestore.FirebaseFirestore
+import com.example.data.PharmacyRepository
 import kotlinx.coroutines.flow.firstOrNull
-import kotlinx.coroutines.tasks.await
 
 class CloudSyncWorker(
     appContext: Context, 
@@ -18,33 +17,27 @@ class CloudSyncWorker(
         return try {
             val database = PharmacyDatabase.getDatabase(applicationContext)
             val dao = database.pharmacyDao()
+            val repository = PharmacyRepository(dao)
+            val deviceRepository = com.example.data.device.DeviceRepository(applicationContext)
+            
+            // Flush any pending device registration
+            try {
+                deviceRepository.syncPendingRegistration()
+            } catch (e: Exception) {
+                // Non-fatal
+            }
             
             // Unique Device ID to partition or identify source device under a single global dataset
-            val sharedPrefs = applicationContext.getSharedPreferences("careflux_prefs", Context.MODE_PRIVATE)
-            var deviceId = sharedPrefs.getString("device_uuid", null)
-            if (deviceId == null) {
-                deviceId = java.util.UUID.randomUUID().toString()
-                sharedPrefs.edit().putString("device_uuid", deviceId).apply()
-            }
+            val deviceId = deviceRepository.getDeviceId()
             val deviceModel = "${Build.MANUFACTURER} ${Build.MODEL}"
             val syncTime = System.currentTimeMillis()
             
-            // Get singleton firestore instance
-            val firestore = FirebaseFirestore.getInstance()
-            
-            // Fetch current authenticated user's branchId
-            val firebaseAuth = com.google.firebase.auth.FirebaseAuth.getInstance()
-            val currentUser = firebaseAuth.currentUser
+            // Fetch current authenticated user's branchId via Repository
+            val currentUserUid = repository.getCurrentUserUid()
             var branchId: String? = null
-            if (currentUser != null) {
+            if (currentUserUid != null) {
                 try {
-                    val pharmacistDoc = firestore.collection("registered_pharmacists")
-                        .document(currentUser.uid)
-                        .get()
-                        .await()
-                    if (pharmacistDoc.exists()) {
-                        branchId = pharmacistDoc.getString("branchId")
-                    }
+                    branchId = repository.getPharmacistBranchId(currentUserUid)
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
@@ -57,29 +50,28 @@ class CloudSyncWorker(
                 // 1. Bi-directional Customer Sync
                 // ==========================================
                 try {
-                    val remoteCustSnapshot = firestore.collection("branch_customers")
-                        .whereEqualTo("branchId", branchId)
-                        .get()
-                        .await()
-                    for (doc in remoteCustSnapshot.documents) {
-                        val id = (doc.get("id") as? Number)?.toInt() ?: continue
-                        val name = doc.getString("name") ?: ""
-                        val phoneNumber = doc.getString("phoneNumber") ?: ""
-                        val email = doc.getString("email") ?: ""
-                        val notes = doc.getString("notes") ?: ""
-                        val loyaltyPoints = (doc.get("loyaltyPoints") as? Number)?.toInt() ?: 0
-                        val refillStreak = (doc.get("refillStreak") as? Number)?.toInt() ?: 0
-                        val dateAdded = (doc.get("dateAdded") as? Number)?.toLong() ?: syncTime
-                        val age = (doc.get("age") as? Number)?.toInt() ?: 30
-                        val gender = doc.getString("gender") ?: "Male"
-                        val state = doc.getString("state") ?: "Lagos"
-                        val lga = doc.getString("lga") ?: "Ikeja"
-                        val city = doc.getString("city") ?: "Ikeja"
-                        val consentPrescriptionTracking = doc.getBoolean("consentPrescriptionTracking") ?: true
-                        val consentSmsRefills = doc.getBoolean("consentSmsRefills") ?: false
-                        val consentCloudSync = doc.getBoolean("consentCloudSync") ?: false
-                        val consentLastUpdated = (doc.get("consentLastUpdated") as? Number)?.toLong() ?: dateAdded
-                        val consentChannel = doc.getString("consentChannel") ?: "Verbal Consent"
+                    val remoteCustDocs = repository.getRemoteDocumentsWhereEquals("branch_customers", "branchId", branchId).getOrDefault(emptyList())
+                    for (doc in remoteCustDocs) {
+                        val id = (doc["id"] as? Number)?.toInt()
+                            ?: (doc["id"] as? String)?.toIntOrNull()
+                            ?: continue
+                        val name = doc["name"] as? String ?: ""
+                        val phoneNumber = doc["phoneNumber"] as? String ?: ""
+                        val email = doc["email"] as? String ?: ""
+                        val notes = doc["notes"] as? String ?: ""
+                        val loyaltyPoints = (doc["loyaltyPoints"] as? Number)?.toInt() ?: 0
+                        val refillStreak = (doc["refillStreak"] as? Number)?.toInt() ?: 0
+                        val dateAdded = (doc["dateAdded"] as? Number)?.toLong() ?: syncTime
+                        val age = (doc["age"] as? Number)?.toInt() ?: 30
+                        val gender = doc["gender"] as? String ?: "Male"
+                        val state = doc["state"] as? String ?: "Lagos"
+                        val lga = doc["lga"] as? String ?: "Ikeja"
+                        val city = doc["city"] as? String ?: "Ikeja"
+                        val consentPrescriptionTracking = doc["consentPrescriptionTracking"] as? Boolean ?: true
+                        val consentSmsRefills = doc["consentSmsRefills"] as? Boolean ?: false
+                        val consentCloudSync = doc["consentCloudSync"] as? Boolean ?: false
+                        val consentLastUpdated = (doc["consentLastUpdated"] as? Number)?.toLong() ?: dateAdded
+                        val consentChannel = doc["consentChannel"] as? String ?: "Verbal Consent"
 
                         val localCust = dao.getCustomerById(id)
                         if (localCust == null || consentLastUpdated >= localCust.consentLastUpdated) {
@@ -139,27 +131,24 @@ class CloudSyncWorker(
                     )
                     
                     val globalDocId = "${deviceId}_${c.id}"
-                    firestore.collection("customers").document(globalDocId).set(customerMap)
-                    firestore.collection("branch_customers").document("${branchId}_${c.id}").set(customerMap)
+                    repository.upsertRemoteDocument("customers", globalDocId, customerMap)
+                    repository.upsertRemoteDocument("branch_customers", "${branchId}_${c.id}", customerMap)
                 }
 
                 // ==========================================
                 // 2. Bi-directional Customer Medications Sync
                 // ==========================================
                 try {
-                    val remoteMedSnapshot = firestore.collection("branch_customer_medications")
-                        .whereEqualTo("branchId", branchId)
-                        .get()
-                        .await()
-                    for (doc in remoteMedSnapshot.documents) {
-                        val id = (doc.get("id") as? Number)?.toInt() ?: continue
-                        val customerId = (doc.get("customerId") as? Number)?.toInt() ?: continue
-                        val inventoryItemId = (doc.get("inventoryItemId") as? Number)?.toInt() ?: 0
-                        val medicationName = doc.getString("medicationName") ?: ""
-                        val customDosage = doc.getString("customDosage") ?: ""
-                        val cost = (doc.get("cost") as? Number)?.toDouble() ?: 0.0
-                        val cycleDays = (doc.get("cycleDays") as? Number)?.toInt() ?: 30
-                        val nextRefillDate = (doc.get("nextRefillDate") as? Number)?.toLong() ?: syncTime
+                    val remoteMedDocs = repository.getRemoteDocumentsWhereEquals("branch_customer_medications", "branchId", branchId).getOrDefault(emptyList())
+                    for (doc in remoteMedDocs) {
+                        val id = (doc["id"] as? Number)?.toInt() ?: continue
+                        val customerId = (doc["customerId"] as? Number)?.toInt() ?: continue
+                        val inventoryItemId = (doc["inventoryItemId"] as? Number)?.toInt() ?: 0
+                        val medicationName = doc["medicationName"] as? String ?: ""
+                        val customDosage = doc["customDosage"] as? String ?: ""
+                        val cost = (doc["cost"] as? Number)?.toDouble() ?: 0.0
+                        val cycleDays = (doc["cycleDays"] as? Number)?.toInt() ?: 30
+                        val nextRefillDate = (doc["nextRefillDate"] as? Number)?.toLong() ?: 0L
 
                         val localMeds = dao.getAllCustomerMedications().firstOrNull() ?: emptyList()
                         val localExists = localMeds.any { it.id == id }
@@ -172,7 +161,7 @@ class CloudSyncWorker(
                                 customDosage = customDosage,
                                 cost = cost,
                                 cycleDays = cycleDays,
-                                nextRefillDate = nextRefillDate
+                                nextRefillDate = if (nextRefillDate > 0L) nextRefillDate else syncTime
                             )
                             dao.insertCustomerMedication(newLocalMed)
                         }
@@ -201,29 +190,26 @@ class CloudSyncWorker(
                     )
                     
                     val globalMedDocId = "${deviceId}_${m.id}"
-                    firestore.collection("customer_medications").document(globalMedDocId).set(medMap)
-                    firestore.collection("branch_customer_medications").document("${branchId}_${m.id}").set(medMap)
+                    repository.upsertRemoteDocument("customer_medications", globalMedDocId, medMap)
+                    repository.upsertRemoteDocument("branch_customer_medications", "${branchId}_${m.id}", medMap)
                 }
 
                 // ==========================================
                 // 3. Bi-directional Clinical Interventions Sync
                 // ==========================================
                 try {
-                    val remoteIntSnapshot = firestore.collection("branch_interventions")
-                        .whereEqualTo("branchId", branchId)
-                        .get()
-                        .await()
-                    for (doc in remoteIntSnapshot.documents) {
-                        val id = (doc.get("id") as? Number)?.toInt() ?: continue
-                        val customerId = (doc.get("customerId") as? Number)?.toInt() ?: continue
-                        val presentation = doc.getString("presentation") ?: ""
-                        val testResults = doc.getString("testResults") ?: ""
-                        val recommendation = doc.getString("recommendation") ?: ""
-                        val currentStatus = doc.getString("currentStatus") ?: "Pending"
-                        val followUpDay3Sent = doc.getBoolean("followUpDay3Sent") ?: false
-                        val followUpDay7Sent = doc.getBoolean("followUpDay7Sent") ?: false
-                        val followUpDay14Sent = doc.getBoolean("followUpDay14Sent") ?: false
-                        val dateAdded = (doc.get("dateAdded") as? Number)?.toLong() ?: syncTime
+                    val remoteIntDocs = repository.getRemoteDocumentsWhereEquals("branch_interventions", "branchId", branchId).getOrDefault(emptyList())
+                    for (doc in remoteIntDocs) {
+                        val id = (doc["id"] as? Number)?.toInt() ?: continue
+                        val customerId = (doc["customerId"] as? Number)?.toInt() ?: continue
+                        val presentation = doc["presentation"] as? String ?: ""
+                        val testResults = doc["testResults"] as? String ?: ""
+                        val recommendation = doc["recommendation"] as? String ?: ""
+                        val currentStatus = doc["currentStatus"] as? String ?: "Pending"
+                        val followUpDay3Sent = doc["followUpDay3Sent"] as? Boolean ?: false
+                        val followUpDay7Sent = doc["followUpDay7Sent"] as? Boolean ?: false
+                        val followUpDay14Sent = doc["followUpDay14Sent"] as? Boolean ?: false
+                        val dateAdded = (doc["dateAdded"] as? Number)?.toLong() ?: 0L
 
                         val localInt = dao.getClinicalInterventionById(id)
                         if (localInt == null || dateAdded >= localInt.dateAdded) {
@@ -237,7 +223,7 @@ class CloudSyncWorker(
                                 followUpDay3Sent = followUpDay3Sent,
                                 followUpDay7Sent = followUpDay7Sent,
                                 followUpDay14Sent = followUpDay14Sent,
-                                dateAdded = dateAdded
+                                dateAdded = if (dateAdded > 0L) dateAdded else syncTime
                             )
                             dao.insertClinicalIntervention(newLocalInt)
                         }
@@ -268,40 +254,37 @@ class CloudSyncWorker(
                     )
                     
                     val globalIntDocId = "${deviceId}_${i.id}"
-                    firestore.collection("interventions").document(globalIntDocId).set(interventionMap)
-                    firestore.collection("branch_interventions").document("${branchId}_${i.id}").set(interventionMap)
+                    repository.upsertRemoteDocument("interventions", globalIntDocId, interventionMap)
+                    repository.upsertRemoteDocument("branch_interventions", "${branchId}_${i.id}", interventionMap)
                 }
 
                 // ==========================================
                 // 4. Bi-directional Inventory (Products) Sync
                 // ==========================================
                 try {
-                    val remoteInvSnapshot = firestore.collection("branch_inventory")
-                        .whereEqualTo("branchId", branchId)
-                        .get()
-                        .await()
-                    for (doc in remoteInvSnapshot.documents) {
-                        val id = (doc.get("id") as? Number)?.toInt() ?: continue
+                    val remoteInvDocs = repository.getRemoteDocumentsWhereEquals("branch_inventory", "branchId", branchId).getOrDefault(emptyList())
+                    for (doc in remoteInvDocs) {
+                        val id = (doc["id"] as? Number)?.toInt() ?: continue
                         if (id == 0) continue // Skip placeholder corrupt ID
-                        val name = doc.getString("name") ?: ""
-                        val dosage = doc.getString("dosage") ?: ""
-                        val stockQuantity = (doc.get("stockQuantity") as? Number)?.toInt() ?: 0
-                        val minRequiredStock = (doc.get("minRequiredStock") as? Number)?.toInt() ?: 0
-                        val category = doc.getString("category") ?: ""
-                        val price = (doc.get("price") as? Number)?.toDouble() ?: 0.0
-                        val expiryDate = (doc.get("expiryDate") as? Number)?.toLong() ?: 0L
-                        val batchNumber = doc.getString("batchNumber") ?: ""
-                        val supplier = doc.getString("supplier") ?: ""
-                        val unitForm = doc.getString("unitForm") ?: ""
-                        val lastSoldDate = (doc.get("lastSoldDate") as? Number)?.toLong() ?: 0L
-                        val totalSoldQuantity = (doc.get("totalSoldQuantity") as? Number)?.toInt() ?: 0
-                        val imageUri = doc.getString("imageUri")
-                        val brand = doc.getString("brand") ?: ""
-                        val salesStrategy = doc.getString("salesStrategy") ?: ""
-                        val lastUpdated = (doc.get("lastUpdated") as? Number)?.toLong() ?: syncTime
+                        val name = doc["name"] as? String ?: ""
+                        val dosage = doc["dosage"] as? String ?: ""
+                        val stockQuantity = (doc["stockQuantity"] as? Number)?.toInt() ?: 0
+                        val minRequiredStock = (doc["minRequiredStock"] as? Number)?.toInt() ?: 0
+                        val category = doc["category"] as? String ?: ""
+                        val price = (doc["price"] as? Number)?.toDouble() ?: 0.0
+                        val expiryDate = (doc["expiryDate"] as? Number)?.toLong() ?: 0L
+                        val batchNumber = doc["batchNumber"] as? String ?: ""
+                        val supplier = doc["supplier"] as? String ?: ""
+                        val unitForm = doc["unitForm"] as? String ?: ""
+                        val lastSoldDate = (doc["lastSoldDate"] as? Number)?.toLong() ?: 0L
+                        val totalSoldQuantity = (doc["totalSoldQuantity"] as? Number)?.toInt() ?: 0
+                        val imageUri = doc["imageUri"] as? String
+                        val brand = doc["brand"] as? String ?: ""
+                        val salesStrategy = doc["salesStrategy"] as? String ?: ""
+                        val lastUpdated = (doc["lastUpdated"] as? Number)?.toLong() ?: 0L
 
                         val localItem = dao.getInventoryItemById(id)
-                        if (localItem == null || lastUpdated >= localItem.lastUpdated) {
+                        if (localItem == null || lastUpdated > localItem.lastUpdated) {
                             val newLocalItem = com.example.data.InventoryItem(
                                 id = id,
                                 name = name,
@@ -354,9 +337,7 @@ class CloudSyncWorker(
                         "imageUri" to (item.imageUri ?: "")
                     )
                     
-                    firestore.collection("branch_inventory")
-                        .document("${branchId}_${item.id}")
-                        .set(invMap)
+                    repository.upsertRemoteDocument("branch_inventory", "${branchId}_${item.id}", invMap)
                 }
             }
             

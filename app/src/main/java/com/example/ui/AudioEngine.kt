@@ -206,6 +206,7 @@ object AudioEngine {
         val inputBuffer = ByteArray(4096)
         var isPcmEof = false
         var isEncoderEof = false
+        var totalBytesRead = 0L
 
         while (!isEncoderEof) {
             if (!isPcmEof) {
@@ -216,10 +217,13 @@ object AudioEngine {
                     val readBytes = fis.read(inputBuffer)
                     if (readBytes > 0) {
                         byteBuf?.put(inputBuffer, 0, readBytes)
-                        encoder.queueInputBuffer(inputIdx, 0, readBytes, System.nanoTime() / 1000, 0)
+                        val ptsUs = (totalBytesRead / (channels * 2)) * 1_000_000L / sampleRate
+                        totalBytesRead += readBytes
+                        encoder.queueInputBuffer(inputIdx, 0, readBytes, ptsUs, 0)
                     } else {
                         isPcmEof = true
-                        encoder.queueInputBuffer(inputIdx, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
+                        val ptsUs = (totalBytesRead / (channels * 2)) * 1_000_000L / sampleRate
+                        encoder.queueInputBuffer(inputIdx, 0, 0, ptsUs, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
                     }
                 }
             }

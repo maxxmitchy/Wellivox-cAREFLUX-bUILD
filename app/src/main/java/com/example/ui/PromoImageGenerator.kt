@@ -18,8 +18,8 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.*
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -176,6 +176,24 @@ object PromoImageGenerator {
         if (uriString.isNullOrEmpty()) return null
         return kotlinx.coroutines.withContext(Dispatchers.IO) {
             try {
+                // 0. Asset loading for file:///android_asset/...
+                val assetPath = when {
+                    uriString.startsWith("file:///android_asset/") -> uriString.substring("file:///android_asset/".length)
+                    uriString.startsWith("file://android_asset/") -> uriString.substring("file://android_asset/".length)
+                    uriString.startsWith("android_asset/") -> uriString.substring("android_asset/".length)
+                    else -> null
+                }
+                if (assetPath != null) {
+                    try {
+                        context.assets.open(assetPath).use { stream ->
+                            val decoded = BitmapFactory.decodeStream(stream)
+                            if (decoded != null) return@withContext decoded
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+
                 // 1. Direct local file loading
                 val cleanPath = when {
                     uriString.startsWith("file://") -> uriString.substring("file://".length)
@@ -281,6 +299,15 @@ object PromoImageGenerator {
                 e.printStackTrace()
                 null
             }
+        }
+    }
+
+    fun loadDrawableAsBitmap(context: Context, resId: Int?): Bitmap? {
+        if (resId == null || resId == 0) return null
+        return try {
+            BitmapFactory.decodeResource(context.resources, resId)
+        } catch (e: Exception) {
+            null
         }
     }
 
@@ -698,9 +725,17 @@ fun CarefluxProductCardItem(
                     .padding(4.dp),
                 contentAlignment = Alignment.Center
             ) {
-                if (!product.imageUri.isNullOrEmpty()) {
-                    AsyncImage(
-                        model = product.imageUri,
+                val cardContext = LocalContext.current
+                val loadedBmpState = produceState<Bitmap?>(initialValue = null, key1 = product.imageUri) {
+                    value = if (!product.imageUri.isNullOrEmpty()) {
+                        PromoImageGenerator.loadUriAsBitmap(cardContext, product.imageUri)
+                    } else null
+                }
+                val loadedBmp = loadedBmpState.value
+
+                if (loadedBmp != null) {
+                    Image(
+                        bitmap = loadedBmp.asImageBitmap(),
                         contentDescription = product.name,
                         contentScale = ContentScale.Fit,
                         modifier = Modifier.fillMaxSize()

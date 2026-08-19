@@ -1,0 +1,402 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ============================================================
+    // AUTH & ROLE HELPERS
+    // ============================================================
+
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    function userExists() {
+      return exists(
+        /databases/$(database)/documents/registered_pharmacists/$(request.auth.uid)
+      );
+    }
+
+    function getProfile() {
+      return get(
+        /databases/$(database)/documents/registered_pharmacists/$(request.auth.uid)
+      ).data;
+    }
+
+    function getBranchId() {
+      return userExists() ? getProfile().branchId : null;
+    }
+
+    function isAdmin() {
+      return isAuth() &&
+        (
+          request.auth.token.email == 'maduemeziachinedu6@gmail.com' ||
+          (
+            userExists() &&
+            getProfile().isSystemAdmin == true
+          )
+        );
+    }
+
+    function isManager() {
+      return userExists() &&
+        getProfile().role == 'Branch Manager';
+    }
+
+    function isBranchCreator(targetBranchId) {
+      return targetBranchId != null &&
+        targetBranchId != "" &&
+        exists(/databases/$(database)/documents/branches/$(targetBranchId)) &&
+        get(/databases/$(database)/documents/branches/$(targetBranchId)).data.createdBy == request.auth.uid;
+    }
+
+    function isBranchManager(targetBranchId) {
+      return targetBranchId != null &&
+        targetBranchId != "" &&
+        exists(/databases/$(database)/documents/branches/$(targetBranchId)) &&
+        get(/databases/$(database)/documents/branches/$(targetBranchId)).data.managerId == request.auth.uid;
+    }
+
+
+    // ============================================================
+    // 1. PHARMACIST PROFILES
+    // ============================================================
+
+    match /registered_pharmacists/{uid} {
+
+      allow read: if isAuth();
+
+      // Creation (Sign up / Initial registration)
+      allow create: if isAuth() && (
+        isAdmin() ||
+        (
+          request.auth.uid == uid &&
+          request.resource.data.uid == uid &&
+          // Cannot self-grant system admin
+          (!('isSystemAdmin' in request.resource.data) || request.resource.data.isSystemAdmin == false) &&
+          // Role assignment validation
+          (
+            request.resource.data.role in ['Pharmacist', 'Intern Pharmacist', 'Technician'] ||
+            (
+              request.resource.data.role == 'Branch Manager' &&
+              isBranchCreator(request.resource.data.branchId)
+            )
+          ) &&
+          // Target branch must exist if specified
+          (
+            request.resource.data.branchId == null ||
+            request.resource.data.branchId == "" ||
+            exists(/databases/$(database)/documents/branches/$(request.resource.data.branchId))
+          )
+        )
+      );
+
+      // Updates (Self profile updates, branch joining/switching vs Admin / Manager controls)
+      allow update: if isAuth() && (
+        // Administrator full access
+        isAdmin() ||
+
+        // Branch Manager managing staff within their assigned branch
+        (
+          isManager() &&
+          getBranchId() == resource.data.branchId &&
+          request.resource.data.branchId == resource.data.branchId &&
+          (!('isSystemAdmin' in request.resource.data) || request.resource.data.isSystemAdmin == resource.data.isSystemAdmin)
+        ) ||
+
+        // Standard Self-Updates
+        (
+          request.auth.uid == uid &&
+          // System Admin flag cannot be self-modified
+          (
+            (!('isSystemAdmin' in resource.data) && !('isSystemAdmin' in request.resource.data)) ||
+            request.resource.data.isSystemAdmin == resource.data.isSystemAdmin
+          ) &&
+          // Suspension state cannot be self-modified
+          (
+            (!('isSuspended' in resource.data) && !('isSuspended' in request.resource.data)) ||
+            request.resource.data.isSuspended == resource.data.isSuspended
+          ) &&
+          // Role & Approval handling:
+          (
+            // Normal profile update or joining/switching an existing branch (Role and Approval preserved)
+            (
+              request.resource.data.role == resource.data.role &&
+              request.resource.data.isApproved == resource.data.isApproved &&
+              (
+                request.resource.data.branchId == resource.data.branchId ||
+                request.resource.data.branchId == "" ||
+                request.resource.data.branchId == null ||
+                exists(/databases/$(database)/documents/branches/$(request.resource.data.branchId))
+              )
+            ) ||
+            // Legitimate branch registration (Creator promoting self to Branch Manager for new branch)
+            (
+              request.resource.data.role == 'Branch Manager' &&
+              isBranchCreator(request.resource.data.branchId)
+            )
+          )
+        )
+      );
+
+      allow delete: if isAuth() && (
+        isAdmin() ||
+        (isManager() && getBranchId() == resource.data.branchId) ||
+        request.auth.uid == uid
+      );
+    }
+
+
+    // ============================================================
+    // 2. BRANCHES MANAGEMENT
+    // ============================================================
+
+    match /branches/{branchId} {
+
+      allow read: if isAuth();
+
+      allow create: if isAuth() &&
+        request.resource.data.id == branchId &&
+        request.resource.data.createdBy == request.auth.uid;
+
+      // Update & Delete: Restricted to Admin or the designated Manager/Creator of THAT SPECIFIC branch
+      allow update: if isAuth() && (
+        isAdmin() ||
+        (
+          isManager() &&
+          getBranchId() == branchId &&
+          (resource.data.createdBy == request.auth.uid || resource.data.managerId == request.auth.uid)
+        )
+      );
+
+      allow delete: if isAuth() && (
+        isAdmin() ||
+        (isManager() && getBranchId() == branchId && resource.data.createdBy == request.auth.uid)
+      );
+    }
+
+
+    // ============================================================
+    // 3. DEVICES REGISTRY (FCM Push Notification Devices)
+    // ============================================================
+
+    match /devices/{deviceId} {
+
+      // Individual device reading restricted to device owner or admin
+      allow get: if isAuth() && (
+        resource.data.currentUid == null ||
+        resource.data.currentUid == request.auth.uid ||
+        isAdmin()
+      );
+
+      // Enumerate / list devices is STRICTLY FORBIDDEN to clients
+      allow list: if false;
+
+      // Device creation
+      allow create: if request.resource.data.deviceId == deviceId
+        && request.resource.data.platform == "android"
+        && (
+          // Unauthenticated token capture (App launch before login)
+          (
+            !isAuth() &&
+            request.resource.data.isActive == false &&
+            request.resource.data.currentUid == null &&
+            request.resource.data.currentRole == null &&
+            request.resource.data.currentBranchId == null
+          )
+          ||
+          // Authenticated initial registration with strict profile binding
+          (
+            isAuth() &&
+            request.resource.data.currentUid == request.auth.uid &&
+            request.resource.data.isActive == true &&
+            userExists() &&
+            request.resource.data.currentRole == getProfile().role &&
+            request.resource.data.currentBranchId == getProfile().branchId
+          )
+        );
+
+      // Device updates (Login, Logout, Branch Switch, Token Refresh)
+      allow update: if request.resource.data.deviceId == resource.data.deviceId
+        && request.resource.data.registeredAt == resource.data.registeredAt
+        && request.resource.data.platform == resource.data.platform
+        && (
+          // Case A: User Login / Claim Device (From inactive/unbound state or existing session)
+          (
+            isAuth() &&
+            request.resource.data.currentUid == request.auth.uid &&
+            request.resource.data.isActive == true &&
+            userExists() &&
+            request.resource.data.currentRole == getProfile().role &&
+            request.resource.data.currentBranchId == getProfile().branchId &&
+            (
+              resource.data.currentUid == null ||
+              resource.data.isActive == false ||
+              resource.data.currentUid == request.auth.uid
+            )
+          )
+          ||
+          // Case B: User Logout / Deactivate Device
+          (
+            isAuth() &&
+            resource.data.currentUid == request.auth.uid &&
+            request.resource.data.isActive == false &&
+            request.resource.data.currentUid == null &&
+            request.resource.data.currentRole == null &&
+            request.resource.data.currentBranchId == null
+          )
+          ||
+          // Case C: Unauthenticated Token Refresh while Logged Out
+          (
+            !isAuth() &&
+            resource.data.isActive == false &&
+            request.resource.data.isActive == false &&
+            request.resource.data.currentUid == null &&
+            request.resource.data.currentRole == null &&
+            request.resource.data.currentBranchId == null
+          )
+        );
+
+      allow delete: if isAuth() && (
+        resource.data.currentUid == request.auth.uid ||
+        isAdmin()
+      );
+    }
+
+
+    // ============================================================
+    // 4. BRANCH AUDIT LOGS
+    // ============================================================
+
+    match /branch_audit_logs/{logId} {
+
+      allow read: if isAuth() &&
+        userExists() &&
+        getBranchId() != null &&
+        (
+          resource.data.branchId == getBranchId() ||
+          logId.startsWith(getBranchId())
+        );
+
+      allow create: if isAuth();
+
+      allow update: if isAuth() &&
+        isManager() &&
+        getBranchId() == resource.data.branchId &&
+        request.resource.data
+          .diff(resource.data)
+          .affectedKeys()
+          .hasOnly([
+            'verified',
+            'verifiedBy',
+            'verifiedAt'
+          ]);
+
+      allow delete: if false;
+    }
+
+
+    // ============================================================
+    // 5. BRANCH-SPECIFIC REAL-TIME COLLECTIONS
+    // ============================================================
+
+    match /{collectionName}/{docId} {
+
+      allow read, write: if isAuth() &&
+        (
+          collectionName in [
+            'branch_inventory',
+            'branch_customers',
+            'branch_customer_medications',
+            'branch_interventions',
+            'branch_operation_tasks',
+            'branch_receipts',
+            'branch_outbound_logs'
+          ]
+        ) &&
+        (
+          (
+            getBranchId() != null &&
+            docId.startsWith(getBranchId())
+          ) ||
+
+          docId == '0' ||
+
+          (
+            resource != null &&
+            getBranchId() != null &&
+            resource.data.branchId == getBranchId()
+          ) ||
+
+          (
+            request.resource != null &&
+            getBranchId() != null &&
+            request.resource.data.branchId == getBranchId()
+          )
+        );
+    }
+
+
+    // ============================================================
+    // 6. EXPLICIT TRANSACTIONAL & ADMINISTRATIVE COLLECTIONS
+    // ============================================================
+
+    // Medication Sales Transactions (Write-once branch audit ledger)
+    match /medication_sales/{saleId} {
+      allow read: if isAuth() && (
+        isAdmin() ||
+        (getBranchId() != null && resource.data.branchId == getBranchId())
+      );
+      allow create: if isAuth() &&
+        getBranchId() != null &&
+        request.resource.data.branchId == getBranchId();
+      allow update, delete: if isAdmin();
+    }
+
+    // System Administrative Audit Logs
+    match /admin_audit_logs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isAuth();
+      allow update, delete: if false;
+    }
+
+    // API Key Creation Requests
+    match /key_creation_requests/{requestId} {
+      allow read: if isAdmin() || (isAuth() && resource.data.requestedBy == request.auth.uid);
+      allow create: if isAuth() && request.resource.data.requestedBy == request.auth.uid;
+      allow update, delete: if isAdmin();
+    }
+
+    // Device Hardware Node Configurations
+    match /device_configs/{nodeId} {
+      allow read: if isAuth();
+      allow create, update: if isAuth() && (
+        isAdmin() ||
+        (isManager() && getBranchId() != null)
+      );
+      allow delete: if isAdmin();
+    }
+
+    // Canonical Drug Formulary Catalog
+    match /canonical_products/{productId} {
+      allow read: if isAuth();
+      allow write: if isAdmin();
+    }
+
+    // B2B Expiry Rescue Listings (Nationwide Marketplace)
+    match /expiry_rescue_listings/{listingId} {
+      allow read: if isAuth();
+      allow create: if isAuth() && getBranchId() != null && request.resource.data.branchId == getBranchId();
+      allow update: if isAuth();
+      allow delete: if isAuth() && (
+        isAdmin() ||
+        (resource.data.branchId == getBranchId() && isManager())
+      );
+    }
+
+    // Consent Handshakes (NDPA Clinical Consent)
+    match /consent_handshakes/{handshakeId} {
+      allow read, write: if isAuth();
+    }
+  }
+}

@@ -10,6 +10,9 @@ import androidx.core.app.NotificationCompat
 import com.example.MainActivity
 import com.google.firebase.messaging.FirebaseMessagingService
 import com.google.firebase.messaging.RemoteMessage
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 class MyFirebaseMessagingService : FirebaseMessagingService() {
 
@@ -55,7 +58,17 @@ class MyFirebaseMessagingService : FirebaseMessagingService() {
 
     override fun onNewToken(token: String) {
         super.onNewToken(token)
-        // Store or send token to backend for routing Notifications
-        println("FCM Token: $token")
+        try {
+            val deviceRepository = com.example.data.device.DeviceRepository(applicationContext)
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                try {
+                    deviceRepository.handleTokenRefreshed(token)
+                } catch (e: Exception) {
+                    // Fail-safe handling
+                }
+            }
+        } catch (e: Exception) {
+            // Never crash
+        }
     }
 }

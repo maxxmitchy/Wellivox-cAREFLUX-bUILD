@@ -49,7 +49,7 @@ object CarefluxAIEngine {
         Active Customer Meds: ${medications.size}
         
         Details (USE ONLY THIS DATA, DO NOT MAKE UP ANY OTHER ITEMS OR CUSTOMERS):
-        Inventory: ${inventory.map { "${it.name} (Qty: ${it.stockQuantity})" }}
+        Inventory: ${inventory.map { "${it.name} [${it.dosage} • ${it.unitForm}] (Qty: ${it.stockQuantity})${if (it.isFastMoving) " [⚡ Fast-Moving]" else ""} [Item #${it.id}]" }}
         Customers: ${customers.map { "${it.name} - ${it.notes}" }}
         Customer Prescriptions: ${medications.mapNotNull { med -> 
             val customerName = customers.find { it.id == med.customerId }?.name

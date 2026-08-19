@@ -36,23 +36,25 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.theme.AppThemeManager
 import com.example.ui.theme.TealPrimary
+import com.example.R
+import com.example.data.auth.AuthRepository
+import com.example.data.auth.AuthUser
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.ApiException
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.auth.GoogleAuthProvider
-import com.google.firebase.auth.FirebaseUser
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AuthScreen(
-    onAuthSuccess: (FirebaseUser) -> Unit,
+    onAuthSuccess: (AuthUser) -> Unit,
+    onShowOnboarding: (() -> Unit)? = null,
+    authRepository: AuthRepository = remember { AuthRepository() },
+    remoteDataSource: com.example.data.remote.RemoteDataSource = remember { com.example.data.remote.FirestoreRemoteDataSourceImpl() },
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val auth = remember { FirebaseAuth.getInstance() }
     val scope = rememberCoroutineScope()
     
     var isSignUp by remember { mutableStateOf(false) }
@@ -72,11 +74,11 @@ fun AuthScreen(
     var selectedRole by remember { mutableStateOf("Pharmacist") } // "Pharmacist", "Intern Pharmacist", "Technician"
     
     // Manage email verification screen if not verified
-    var pendingVerificationUser by remember { mutableStateOf<FirebaseUser?>(null) }
+    var pendingVerificationUser by remember { mutableStateOf<AuthUser?>(null) }
     
     // Check initially if currentUser needs verification
     LaunchedEffect(Unit) {
-        val currentUser = auth.currentUser
+        val currentUser = authRepository.getCurrentUser()
         if (currentUser != null) {
             if (currentUser.isEmailVerified || isGoogleProvider(currentUser)) {
                 onAuthSuccess(currentUser)
@@ -106,20 +108,19 @@ fun AuthScreen(
                 val account = task.getResult(ApiException::class.java)
                 val idToken = account.idToken
                 if (idToken != null) {
-                    val credential = GoogleAuthProvider.getCredential(idToken, null)
-                    auth.signInWithCredential(credential)
-                        .addOnCompleteListener { authResult ->
-                            isLoading = false
-                            if (authResult.isSuccessful) {
-                                val user = auth.currentUser
-                                if (user != null) {
-                                    Toast.makeText(context, "Welcome ${user.displayName ?: "User"}", Toast.LENGTH_SHORT).show()
-                                    onAuthSuccess(user)
-                                }
-                            } else {
-                                Toast.makeText(context, "Google Sign-In failed: ${authResult.exception?.localizedMessage}", Toast.LENGTH_LONG).show()
+                    scope.launch {
+                        val authResult = authRepository.signInWithGoogleIdToken(idToken)
+                        isLoading = false
+                        authResult.fold(
+                            onSuccess = { user ->
+                                Toast.makeText(context, "Welcome ${user.displayName ?: "User"}", Toast.LENGTH_SHORT).show()
+                                onAuthSuccess(user)
+                            },
+                            onFailure = { ex ->
+                                Toast.makeText(context, "Google Sign-In failed: ${ex.localizedMessage}", Toast.LENGTH_LONG).show()
                             }
-                        }
+                        )
+                    }
                 } else {
                     isLoading = false
                     Toast.makeText(context, "Failed to get Google ID Token", Toast.LENGTH_SHORT).show()
@@ -144,11 +145,12 @@ fun AuthScreen(
         val user = pendingVerificationUser!!
         EmailVerificationScreen(
             user = user,
+            authRepository = authRepository,
             onVerified = {
                 onAuthSuccess(user)
             },
             onCancel = {
-                auth.signOut()
+                authRepository.signOut()
                 pendingVerificationUser = null
             }
         )
@@ -174,7 +176,18 @@ fun AuthScreen(
         ) {
             
             // 2. Beautiful branding title
-            Spacer(modifier = Modifier.height(40.dp))
+            Spacer(modifier = Modifier.height(32.dp))
+            Image(
+                painter = painterResource(id = R.drawable.ic_careflux_logo),
+                contentDescription = "Careflux Logo (Tap to view app tour)",
+                modifier = Modifier
+                    .size(64.dp)
+                    .clip(CircleShape)
+                    .clickable(enabled = onShowOnboarding != null) {
+                        onShowOnboarding?.invoke()
+                    }
+            )
+            Spacer(modifier = Modifier.height(10.dp))
             Text(
                 text = "CarefluxRx",
                 fontWeight = FontWeight.Black,
@@ -190,7 +203,7 @@ fun AuthScreen(
                 modifier = Modifier.padding(top = 4.dp)
             )
             
-            Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(20.dp))
             
             // 3. Welcome Sign In Content card matching styling in image
             Card(
@@ -487,203 +500,187 @@ fun AuthScreen(
                                     return@Button
                                 }
                                 
-                                val dbFirestore = com.google.firebase.firestore.FirebaseFirestore.getInstance()
-                                dbFirestore.collection("registered_pharmacists")
-                                    .whereEqualTo("phoneNumber", normPhone)
-                                    .get()
-                                    .addOnCompleteListener { isUniqueCheck ->
-                                        if (isUniqueCheck.isSuccessful && !isUniqueCheck.result.isEmpty) {
-                                            isLoading = false
-                                            Toast.makeText(context, "Sign Up Failed: This phone number is already registered by another pharmacist!", Toast.LENGTH_LONG).show()
-                                        } else {
-                                            if (!registerNewBranch) {
-                                                // Join Branch Verification
-                                                val cleanCode = signUpBranchCode.trim().uppercase()
-                                                if (cleanCode.isBlank()) {
-                                                    Toast.makeText(context, "Please enter a valid Branch Code to join", Toast.LENGTH_SHORT).show()
-                                                    isLoading = false
-                                                    return@addOnCompleteListener
-                                                }
-                                                dbFirestore.collection("branches").document(cleanCode).get()
-                                                    .addOnCompleteListener { branchTask ->
-                                                        if (branchTask.isSuccessful && branchTask.result != null && branchTask.result.exists()) {
-                                                            val bName = branchTask.result.getString("name") ?: "Careflux Pharmacy"
-                                                            
-                                                            // Proceed with creation
-                                                            auth.createUserWithEmailAndPassword(email, password)
-                                                                .addOnCompleteListener { signupResult ->
-                                                                    if (signupResult.isSuccessful) {
-                                                                        val user = auth.currentUser
-                                                                        val profileUpdates = com.google.firebase.auth.userProfileChangeRequest {
-                                                                            displayName = name.trim()
-                                                                        }
-                                                                        user?.updateProfile(profileUpdates)?.addOnCompleteListener {
-                                                                            val devId = context.getSharedPreferences("careflux_prefs", Context.MODE_PRIVATE)
-                                                                                .getString("device_uuid", "Unknown") ?: "Unknown"
-                                                                            val deviceModel = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
-                                                                            
-                                                                            val pharmacistMap = hashMapOf(
-                                                                                "uid" to user.uid,
-                                                                                "email" to user.email.orEmpty(),
-                                                                                "displayName" to name.trim(),
-                                                                                "phoneNumber" to normPhone,
-                                                                                "deviceId" to devId,
-                                                                                "deviceModel" to deviceModel,
-                                                                                "registeredAt" to System.currentTimeMillis(),
-                                                                                "lastLoginAt" to System.currentTimeMillis(),
-                                                                                "branchId" to cleanCode,
-                                                                                "branchName" to bName,
-                                                                                "role" to selectedRole,
-                                                                                "isApproved" to true // Default approved for easy onboarding, toggled by Manager
-                                                                            )
-                                                                            dbFirestore.collection("registered_pharmacists")
-                                                                                .document(user.uid)
-                                                                                .set(pharmacistMap)
-                                                                            
-                                                                            user.sendEmailVerification()
-                                                                                .addOnCompleteListener { verifResult ->
-                                                                                    isLoading = false
-                                                                                    if (verifResult.isSuccessful) {
-                                                                                        Toast.makeText(context, "Verification email sent. Please check your inbox.", Toast.LENGTH_LONG).show()
-                                                                                        pendingVerificationUser = user
-                                                                                    } else {
-                                                                                        Toast.makeText(context, "Created successfully but failed to send email verification.", Toast.LENGTH_SHORT).show()
-                                                                                        pendingVerificationUser = user
-                                                                                    }
-                                                                                }
-                                                                        }
-                                                                    } else {
-                                                                        isLoading = false
-                                                                        Toast.makeText(context, "Sign Up Failed: ${signupResult.exception?.localizedMessage}", Toast.LENGTH_LONG).show()
-                                                                    }
-                                                                }
-                                                        } else {
-                                                            isLoading = false
-                                                            Toast.makeText(context, "Branch Code '$cleanCode' not found. Please contact your Branch Manager.", Toast.LENGTH_LONG).show()
-                                                        }
-                                                    }
-                                            } else {
-                                                // Register New Branch
-                                                val cleanBranchName = signUpBranchName.trim()
-                                                val cleanLga = signUpBranchLga.trim().ifBlank { "Ikeja" }
-                                                val cleanState = signUpBranchState.trim().ifBlank { "Lagos" }
-                                                if (cleanBranchName.isBlank()) {
-                                                    Toast.makeText(context, "Please enter a name for the new branch", Toast.LENGTH_SHORT).show()
-                                                    isLoading = false
-                                                    return@addOnCompleteListener
-                                                }
-                                                
-                                                val randomCode = "CF-" + (100000..999999).random().toString()
-                                                
-                                                auth.createUserWithEmailAndPassword(email, password)
-                                                    .addOnCompleteListener { signupResult ->
-                                                        if (signupResult.isSuccessful) {
-                                                            val user = auth.currentUser
-                                                            val profileUpdates = com.google.firebase.auth.userProfileChangeRequest {
-                                                                displayName = name.trim()
-                                                            }
-                                                            user?.updateProfile(profileUpdates)?.addOnCompleteListener {
-                                                                val devId = context.getSharedPreferences("careflux_prefs", Context.MODE_PRIVATE)
-                                                                    .getString("device_uuid", "Unknown") ?: "Unknown"
-                                                                val deviceModel = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
-                                                                
-                                                                // Create Branch document first
-                                                                val branchMap = hashMapOf(
-                                                                    "id" to randomCode,
-                                                                    "name" to cleanBranchName,
-                                                                    "lga" to cleanLga,
-                                                                    "state" to cleanState,
-                                                                    "createdBy" to user.uid,
-                                                                    "createdAt" to System.currentTimeMillis()
-                                                                )
-                                                                dbFirestore.collection("branches").document(randomCode).set(branchMap)
-                                                                
-                                                                // Then create Pharmacist document as Branch Manager
-                                                                val pharmacistMap = hashMapOf(
-                                                                    "uid" to user.uid,
-                                                                    "email" to user.email.orEmpty(),
-                                                                    "displayName" to name.trim(),
-                                                                    "phoneNumber" to normPhone,
-                                                                    "deviceId" to devId,
-                                                                    "deviceModel" to deviceModel,
-                                                                    "registeredAt" to System.currentTimeMillis(),
-                                                                    "lastLoginAt" to System.currentTimeMillis(),
-                                                                    "branchId" to randomCode,
-                                                                    "branchName" to cleanBranchName,
-                                                                    "role" to "Branch Manager",
-                                                                    "isApproved" to true
-                                                                )
-                                                                dbFirestore.collection("registered_pharmacists")
-                                                                    .document(user.uid)
-                                                                    .set(pharmacistMap)
-                                                                
-                                                                user.sendEmailVerification()
-                                                                    .addOnCompleteListener { verifResult ->
-                                                                        isLoading = false
-                                                                        if (verifResult.isSuccessful) {
-                                                                            Toast.makeText(context, "Verification email sent. Your generated Branch Code is $randomCode . Please check your inbox.", Toast.LENGTH_LONG).show()
-                                                                            pendingVerificationUser = user
-                                                                        } else {
-                                                                            Toast.makeText(context, "Created successfully but failed to send email verification. Branch Code: $randomCode", Toast.LENGTH_LONG).show()
-                                                                            pendingVerificationUser = user
-                                                                        }
-                                                                    }
-                                                            }
-                                                        } else {
-                                                            isLoading = false
-                                                            Toast.makeText(context, "Sign Up Failed: ${signupResult.exception?.localizedMessage}", Toast.LENGTH_LONG).show()
-                                                        }
-                                                    }
-                                            }
-                                        }
-                                    }
-                            } else {
-                                // Real Firebase Sign In with Email Verification Enforcement
-                                auth.signInWithEmailAndPassword(email, password)
-                                    .addOnCompleteListener { loginResult ->
+                                val remoteDataSource = com.example.data.remote.FirestoreRemoteDataSourceImpl()
+                                scope.launch {
+                                    val phoneCheck = remoteDataSource.getDocumentsWhereEquals("registered_pharmacists", "phoneNumber", normPhone)
+                                    if (phoneCheck.isSuccess && phoneCheck.getOrNull()?.isNotEmpty() == true) {
                                         isLoading = false
-                                        if (loginResult.isSuccessful) {
-                                            val user = auth.currentUser
-                                            if (user != null) {
-                                                if (user.isEmailVerified) {
-                                                    // Save pharmacist details/login stats
-                                                    val dbFirestore = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                                        Toast.makeText(context, "Sign Up Failed: This phone number is already registered by another pharmacist!", Toast.LENGTH_LONG).show()
+                                    } else {
+                                        if (!registerNewBranch) {
+                                            // Join Branch Verification
+                                            val cleanCode = signUpBranchCode.trim().uppercase()
+                                            if (cleanCode.isBlank()) {
+                                                Toast.makeText(context, "Please enter a valid Branch Code to join", Toast.LENGTH_SHORT).show()
+                                                isLoading = false
+                                                return@launch
+                                            }
+                                            val branchDoc = remoteDataSource.getDocument("branches", cleanCode).getOrNull()
+                                            if (branchDoc != null) {
+                                                val bName = branchDoc["name"] as? String ?: "Careflux Pharmacy"
+                                                
+                                                // Proceed with creation
+                                                val createRes = authRepository.createUserWithEmailAndPassword(email, password)
+                                                createRes.fold(
+                                                    onSuccess = { user ->
+                                                        authRepository.updateDisplayName(name.trim())
+                                                        val devId = context.getSharedPreferences("careflux_prefs", Context.MODE_PRIVATE)
+                                                            .getString("device_uuid", "Unknown") ?: "Unknown"
+                                                        val deviceModel = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
+                                                        
+                                                        val pharmacistMap = hashMapOf<String, Any?>(
+                                                            "uid" to user.uid,
+                                                            "email" to (user.email ?: ""),
+                                                            "displayName" to name.trim(),
+                                                            "phoneNumber" to normPhone,
+                                                            "deviceId" to devId,
+                                                            "deviceModel" to deviceModel,
+                                                            "registeredAt" to System.currentTimeMillis(),
+                                                            "lastLoginAt" to System.currentTimeMillis(),
+                                                            "branchId" to cleanCode,
+                                                            "branchName" to bName,
+                                                            "role" to selectedRole,
+                                                            "isApproved" to true
+                                                        )
+                                                        scope.launch {
+                                                            remoteDataSource.upsertDocument("registered_pharmacists", user.uid, pharmacistMap)
+                                                        }
+                                                        
+                                                        scope.launch {
+                                                            val verifRes = authRepository.sendEmailVerification()
+                                                            isLoading = false
+                                                            if (verifRes.isSuccess) {
+                                                                Toast.makeText(context, "Verification email sent. Please check your inbox.", Toast.LENGTH_LONG).show()
+                                                            } else {
+                                                                Toast.makeText(context, "Created successfully but failed to send email verification.", Toast.LENGTH_SHORT).show()
+                                                            }
+                                                            pendingVerificationUser = user
+                                                        }
+                                                    },
+                                                    onFailure = { ex ->
+                                                        isLoading = false
+                                                        Toast.makeText(context, "Sign Up Failed: ${ex.localizedMessage}", Toast.LENGTH_LONG).show()
+                                                    }
+                                                )
+                                            } else {
+                                                isLoading = false
+                                                Toast.makeText(context, "Branch Code '$cleanCode' not found. Please contact your Branch Manager.", Toast.LENGTH_LONG).show()
+                                            }
+                                        } else {
+                                            // Register New Branch
+                                            val cleanBranchName = signUpBranchName.trim()
+                                            val cleanLga = signUpBranchLga.trim().ifBlank { "Ikeja" }
+                                            val cleanState = signUpBranchState.trim().ifBlank { "Lagos" }
+                                            if (cleanBranchName.isBlank()) {
+                                                Toast.makeText(context, "Please enter a name for the new branch", Toast.LENGTH_SHORT).show()
+                                                isLoading = false
+                                                return@launch
+                                            }
+                                            
+                                            val randomCode = "CF-" + (100000..999999).random().toString()
+                                            
+                                            val createRes = authRepository.createUserWithEmailAndPassword(email, password)
+                                            createRes.fold(
+                                                onSuccess = { user ->
+                                                    authRepository.updateDisplayName(name.trim())
                                                     val devId = context.getSharedPreferences("careflux_prefs", Context.MODE_PRIVATE)
                                                         .getString("device_uuid", "Unknown") ?: "Unknown"
                                                     val deviceModel = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
                                                     
-                                                    val updateMap = hashMapOf<String, Any>(
+                                                    // Create Branch document first
+                                                    val branchMap = hashMapOf<String, Any?>(
+                                                        "id" to randomCode,
+                                                        "name" to cleanBranchName,
+                                                        "lga" to cleanLga,
+                                                        "state" to cleanState,
+                                                        "createdBy" to user.uid,
+                                                        "createdAt" to System.currentTimeMillis()
+                                                    )
+                                                    scope.launch {
+                                                        remoteDataSource.upsertDocument("branches", randomCode, branchMap)
+                                                    }
+                                                    
+                                                    // Then create Pharmacist document as Branch Manager
+                                                    val pharmacistMap = hashMapOf<String, Any?>(
                                                         "uid" to user.uid,
-                                                        "email" to user.email.orEmpty(),
-                                                        // "displayName" to user.displayName.orEmpty(),
+                                                        "email" to (user.email ?: ""),
+                                                        "displayName" to name.trim(),
+                                                        "phoneNumber" to normPhone,
                                                         "deviceId" to devId,
                                                         "deviceModel" to deviceModel,
-                                                        "lastLoginAt" to System.currentTimeMillis()
+                                                        "registeredAt" to System.currentTimeMillis(),
+                                                        "lastLoginAt" to System.currentTimeMillis(),
+                                                        "branchId" to randomCode,
+                                                        "branchName" to cleanBranchName,
+                                                        "role" to "Branch Manager",
+                                                        "isApproved" to true
                                                     )
-                                                    dbFirestore.collection("registered_pharmacists")
-                                                        .document(user.uid)
-                                                        .update(updateMap)
-                                                        .addOnFailureListener {
-                                                            updateMap["registeredAt"] = System.currentTimeMillis()
-                                                            if (updateMap["displayName"] == null) {
-                                                                updateMap["displayName"] = user.displayName ?: user.email?.substringBefore("@") ?: "Staff Pharmacist"
-                                                            }
-                                                            dbFirestore.collection("registered_pharmacists")
-                                                                .document(user.uid)
-                                                                .set(updateMap, com.google.firebase.firestore.SetOptions.merge())
+                                                    scope.launch {
+                                                        remoteDataSource.upsertDocument("registered_pharmacists", user.uid, pharmacistMap)
+                                                    }
+                                                    
+                                                    scope.launch {
+                                                        val verifRes = authRepository.sendEmailVerification()
+                                                        isLoading = false
+                                                        if (verifRes.isSuccess) {
+                                                            Toast.makeText(context, "Verification email sent. Your generated Branch Code is $randomCode . Please check your inbox.", Toast.LENGTH_LONG).show()
+                                                        } else {
+                                                            Toast.makeText(context, "Created successfully but failed to send email verification. Branch Code: $randomCode", Toast.LENGTH_SHORT).show()
                                                         }
-
-                                                    Toast.makeText(context, "Login Successful!", Toast.LENGTH_SHORT).show()
-                                                    onAuthSuccess(user)
-                                                } else {
-                                                    Toast.makeText(context, "Please verify your email address before logging in.", Toast.LENGTH_LONG).show()
-                                                    pendingVerificationUser = user
+                                                        pendingVerificationUser = user
+                                                    }
+                                                },
+                                                onFailure = { ex ->
+                                                    isLoading = false
+                                                    Toast.makeText(context, "Sign Up Failed: ${ex.localizedMessage}", Toast.LENGTH_LONG).show()
                                                 }
-                                            }
-                                        } else {
-                                            Toast.makeText(context, "Log In Failed: ${loginResult.exception?.localizedMessage}", Toast.LENGTH_LONG).show()
+                                            )
                                         }
                                     }
+                                }
+                            } else {
+                                // Real Auth Sign In with Email Verification Enforcement
+                                scope.launch {
+                                    val loginRes = authRepository.signInWithEmailAndPassword(email, password)
+                                    isLoading = false
+                                    loginRes.fold(
+                                        onSuccess = { user ->
+                                            if (user.isEmailVerified) {
+                                                // Save pharmacist details/login stats
+                                                val devId = context.getSharedPreferences("careflux_prefs", Context.MODE_PRIVATE)
+                                                    .getString("device_uuid", "Unknown") ?: "Unknown"
+                                                val deviceModel = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}"
+                                                
+                                                val updateMap = hashMapOf<String, Any?>(
+                                                    "uid" to user.uid,
+                                                    "email" to (user.email ?: ""),
+                                                    "deviceId" to devId,
+                                                    "deviceModel" to deviceModel,
+                                                    "lastLoginAt" to System.currentTimeMillis()
+                                                )
+                                                scope.launch {
+                                                    try {
+                                                        com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                                                            .collection("registered_pharmacists")
+                                                            .document(user.uid)
+                                                            .set(updateMap, com.google.firebase.firestore.SetOptions.merge())
+                                                    } catch (e: Exception) {
+                                                        // Non-blocking telemetry sync
+                                                    }
+                                                }
+
+                                                Toast.makeText(context, "Login Successful!", Toast.LENGTH_SHORT).show()
+                                                onAuthSuccess(user)
+                                            } else {
+                                                Toast.makeText(context, "Please verify your email address before logging in.", Toast.LENGTH_LONG).show()
+                                                pendingVerificationUser = user
+                                            }
+                                        },
+                                        onFailure = { ex ->
+                                            Toast.makeText(context, "Log In Failed: ${ex.localizedMessage}", Toast.LENGTH_LONG).show()
+                                        }
+                                    )
+                                }
                             }
                         },
                         colors = ButtonDefaults.buttonColors(
@@ -842,11 +839,13 @@ fun AuthScreen(
 
 @Composable
 fun EmailVerificationScreen(
-    user: FirebaseUser,
+    user: AuthUser,
+    authRepository: AuthRepository = remember { AuthRepository() },
     onVerified: () -> Unit,
     onCancel: () -> Unit
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val isDark = AppThemeManager.isDark
     var isChecking by remember { mutableStateOf(false) }
     var resendCooldown by remember { mutableStateOf(0) }
@@ -854,11 +853,10 @@ fun EmailVerificationScreen(
     // Auto check verification status every 5 seconds until verified
     LaunchedEffect(Unit) {
         while (true) {
-            user.reload().addOnCompleteListener { task ->
-                if (task.isSuccessful) {
-                    if (user.isEmailVerified) {
-                        onVerified()
-                    }
+            val reloadRes = authRepository.reloadUser()
+            reloadRes.getOrNull()?.let { updatedUser ->
+                if (updatedUser.isEmailVerified) {
+                    onVerified()
                 }
             }
             delay(5000)
@@ -929,19 +927,23 @@ fun EmailVerificationScreen(
                 
                 Button(
                     onClick = {
-                        isChecking = true
-                        user.reload().addOnCompleteListener { task ->
+                        scope.launch {
+                            isChecking = true
+                            val reloadRes = authRepository.reloadUser()
                             isChecking = false
-                            if (task.isSuccessful) {
-                                if (user.isEmailVerified) {
-                                    Toast.makeText(context, "Email Verified Successfully!", Toast.LENGTH_SHORT).show()
-                                    onVerified()
-                                } else {
-                                    Toast.makeText(context, "Verification email still check pending. Please wait or reload.", Toast.LENGTH_LONG).show()
+                            reloadRes.fold(
+                                onSuccess = { updatedUser ->
+                                    if (updatedUser.isEmailVerified) {
+                                        Toast.makeText(context, "Email Verified Successfully!", Toast.LENGTH_SHORT).show()
+                                        onVerified()
+                                    } else {
+                                        Toast.makeText(context, "Verification email still check pending. Please wait or reload.", Toast.LENGTH_LONG).show()
+                                    }
+                                },
+                                onFailure = { ex ->
+                                    Toast.makeText(context, "Error reloading user data: ${ex.localizedMessage}", Toast.LENGTH_SHORT).show()
                                 }
-                            } else {
-                                Toast.makeText(context, "Error reloading user data: ${task.exception?.localizedMessage}", Toast.LENGTH_SHORT).show()
-                            }
+                            )
                         }
                     },
                     colors = ButtonDefaults.buttonColors(
@@ -964,13 +966,17 @@ fun EmailVerificationScreen(
                 OutlinedButton(
                     onClick = {
                         if (resendCooldown == 0) {
-                            user.sendEmailVerification().addOnCompleteListener { task ->
-                                if (task.isSuccessful) {
-                                    Toast.makeText(context, "Verification email sent!", Toast.LENGTH_SHORT).show()
-                                    resendCooldown = 60
-                                } else {
-                                    Toast.makeText(context, "Failed to send link: ${task.exception?.localizedMessage}", Toast.LENGTH_LONG).show()
-                                }
+                            scope.launch {
+                                val sendRes = authRepository.sendEmailVerification()
+                                sendRes.fold(
+                                    onSuccess = {
+                                        Toast.makeText(context, "Verification email sent!", Toast.LENGTH_SHORT).show()
+                                        resendCooldown = 60
+                                    },
+                                    onFailure = { ex ->
+                                        Toast.makeText(context, "Failed to send link: ${ex.localizedMessage}", Toast.LENGTH_LONG).show()
+                                    }
+                                )
                             }
                         }
                     },
@@ -1004,11 +1010,6 @@ fun EmailVerificationScreen(
 }
 
 // Utility function to detect Google Auth providers so we do not enforce email verification screen on standard google logins
-fun isGoogleProvider(user: FirebaseUser): Boolean {
-    for (profile in user.providerData) {
-        if (profile.providerId == "google.com") {
-            return true
-        }
-    }
-    return false
+fun isGoogleProvider(user: AuthUser): Boolean {
+    return user.providerIds.contains("google.com")
 }

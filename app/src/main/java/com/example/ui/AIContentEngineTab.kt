@@ -2317,16 +2317,19 @@ fun CarefluxLiveStudioEditor(
     ) { uri: Uri? ->
         if (uri != null) {
             val savedPath = copyUriToInternalStorage(context, uri)
-            val finalUriStr = savedPath ?: uri.toString()
-            val activeIdx = when (state.activeEditSection) {
-                "product_0" -> 0
-                "product_1" -> 1
-                "product_2" -> 2
-                "product_3" -> 3
-                else -> 0
+            if (savedPath != null) {
+                val activeIdx = when (state.activeEditSection) {
+                    "product_0" -> 0
+                    "product_1" -> 1
+                    "product_2" -> 2
+                    "product_3" -> 3
+                    else -> 0
+                }
+                viewModel.updateMasterProductImageUri(activeIdx, savedPath)
+                Toast.makeText(context, "Product image updated!", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(context, "Could not process selected image. Please try another.", Toast.LENGTH_LONG).show()
             }
-            viewModel.updateMasterProductImageUri(activeIdx, finalUriStr)
-            Toast.makeText(context, "Product image updated!", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -2377,22 +2380,34 @@ fun CarefluxLiveStudioEditor(
                 onClick = {
                     coroutineScope.launch {
                         try {
-                            viewModel.setPromoUiMode(PromoUiMode.Generating)
+                            Toast.makeText(context, "Generating high-resolution PNG...", Toast.LENGTH_SHORT).show()
                             val resolvedBitmaps = withContext(Dispatchers.IO) {
                                 val map = mutableMapOf<Int, android.graphics.Bitmap>()
-                                val deferreds = state.selectedItems.map { item ->
-                                    item to async {
-                                        PromoImageGenerator.loadUriAsBitmap(context, item.imageUri)
+                                state.selectedItems.forEachIndexed { index, item ->
+                                    val prodSlot = state.products.getOrNull(index)
+                                    val targetUri = item.imageUri?.ifEmpty { null } ?: prodSlot?.imageUri?.ifEmpty { null }
+                                    var bmp: android.graphics.Bitmap? = null
+                                    if (!targetUri.isNullOrEmpty()) {
+                                        bmp = PromoImageGenerator.loadUriAsBitmap(context, targetUri)
+                                    } else if (prodSlot?.drawableResId != null) {
+                                        bmp = PromoImageGenerator.loadDrawableAsBitmap(context, prodSlot.drawableResId)
+                                    }
+                                    if (bmp != null) {
+                                        map[item.id] = bmp
+                                        if (prodSlot != null) {
+                                            map[prodSlot.id] = bmp
+                                        }
                                     }
                                 }
-                                deferreds.forEach { (item, deferred) ->
-                                    try {
-                                        val bmp = deferred.await()
-                                        if (bmp != null) {
-                                            map[item.id] = bmp
+                                state.products.forEach { prod ->
+                                    if (!map.containsKey(prod.id)) {
+                                        var bmp: android.graphics.Bitmap? = null
+                                        if (!prod.imageUri.isNullOrEmpty()) {
+                                            bmp = PromoImageGenerator.loadUriAsBitmap(context, prod.imageUri)
+                                        } else if (prod.drawableResId != null) {
+                                            bmp = PromoImageGenerator.loadDrawableAsBitmap(context, prod.drawableResId)
                                         }
-                                    } catch (e: Exception) {
-                                        e.printStackTrace()
+                                        if (bmp != null) map[prod.id] = bmp
                                     }
                                 }
                                 map
@@ -2411,14 +2426,18 @@ fun CarefluxLiveStudioEditor(
                             )
                             if (result.first != null) {
                                 viewModel.setPromoGeneratedUri(result.first)
-                                viewModel.setPromoUiMode(PromoUiMode.Success)
+                                val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                                    type = "image/png"
+                                    putExtra(android.content.Intent.EXTRA_STREAM, result.first)
+                                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                }
+                                context.startActivity(android.content.Intent.createChooser(shareIntent, "Share Studio Design PNG"))
+                                Toast.makeText(context, "PNG Export Ready!", Toast.LENGTH_SHORT).show()
                             } else {
-                                viewModel.setPromoUiMode(PromoUiMode.Configuration)
                                 Toast.makeText(context, "Error rendering flyer.", Toast.LENGTH_SHORT).show()
                             }
                         } catch (e: Exception) {
                             e.printStackTrace()
-                            viewModel.setPromoUiMode(PromoUiMode.Configuration)
                             Toast.makeText(context, "Rendering error: ${e.localizedMessage}", Toast.LENGTH_SHORT).show()
                         }
                     }
@@ -3381,6 +3400,52 @@ fun PromoSuccessScreen(
                     if (mainBmp != null) {
                         frames.add(mainBmp)
                     }
+                }
+                if (frames.isEmpty()) {
+                    val resolvedBitmaps = withContext(Dispatchers.IO) {
+                        val map = mutableMapOf<Int, android.graphics.Bitmap>()
+                        state.selectedItems.forEachIndexed { index, item ->
+                            val prodSlot = state.products.getOrNull(index)
+                            val targetUri = item.imageUri?.ifEmpty { null } ?: prodSlot?.imageUri?.ifEmpty { null }
+                            var bmp: android.graphics.Bitmap? = null
+                            if (!targetUri.isNullOrEmpty()) {
+                                bmp = PromoImageGenerator.loadUriAsBitmap(context, targetUri)
+                            } else if (prodSlot?.drawableResId != null) {
+                                bmp = PromoImageGenerator.loadDrawableAsBitmap(context, prodSlot.drawableResId)
+                            }
+                            if (bmp != null) {
+                                map[item.id] = bmp
+                                if (prodSlot != null) {
+                                    map[prodSlot.id] = bmp
+                                }
+                            }
+                        }
+                        state.products.forEach { prod ->
+                            if (!map.containsKey(prod.id)) {
+                                var bmp: android.graphics.Bitmap? = null
+                                if (!prod.imageUri.isNullOrEmpty()) {
+                                    bmp = PromoImageGenerator.loadUriAsBitmap(context, prod.imageUri)
+                                } else if (prod.drawableResId != null) {
+                                    bmp = PromoImageGenerator.loadDrawableAsBitmap(context, prod.drawableResId)
+                                }
+                                if (bmp != null) map[prod.id] = bmp
+                            }
+                        }
+                        map
+                    }
+                    val framePair = PromoImageGenerator.generatePromoGrid(
+                        context = context,
+                        selectedItems = state.selectedItems,
+                        priceOverrides = state.priceOverrides,
+                        nameOverrides = state.nameOverrides,
+                        isOfferBanner = state.isOfferBanner,
+                        resolvedBitmaps = resolvedBitmaps,
+                        subheader = state.subheader,
+                        promoTheme = state.promoTheme,
+                        state = state
+                    )
+                    val frameBmp = framePair.second
+                    if (frameBmp != null) frames.add(frameBmp)
                 }
                 frames
             }

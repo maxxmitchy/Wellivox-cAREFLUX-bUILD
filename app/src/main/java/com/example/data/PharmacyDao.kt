@@ -297,6 +297,55 @@ interface PharmacyDao {
     @Query("DELETE FROM expiry_alert_claims")
     suspend fun clearExpiryAlertClaims()
 
+    // --- Organizations Opers ---
+    @Query("SELECT * FROM organizations LIMIT 1")
+    fun getOrganization(): Flow<Organization?>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertOrganization(org: Organization): Long
+
+    // --- Users & Branch Access Opers ---
+    @Query("SELECT * FROM users ORDER BY fullName ASC")
+    fun getAllUsers(): Flow<List<User>>
+
+    @Query("SELECT * FROM users WHERE id = :id LIMIT 1")
+    suspend fun getUserById(id: Int): User?
+
+    @Query("SELECT * FROM users WHERE phoneNumber = :phone LIMIT 1")
+    suspend fun getUserByPhone(phone: String): User?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertUser(user: User): Long
+
+    @Update
+    suspend fun updateUser(user: User)
+
+    @Query("SELECT * FROM user_branch_access WHERE userId = :userId")
+    fun getUserBranchAccess(userId: Int): Flow<List<UserBranchAccess>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertUserBranchAccess(access: UserBranchAccess): Long
+
+    // --- Customer Branch Opers ---
+    @Query("SELECT * FROM customer_branches WHERE customerId = :customerId")
+    fun getCustomerBranches(customerId: Int): Flow<List<CustomerBranch>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertCustomerBranch(cb: CustomerBranch): Long
+
+    // --- Double-Entry Inventory Ledger Opers ---
+    @Query("SELECT * FROM inventory_ledger_entries ORDER BY timestamp DESC")
+    fun getAllInventoryLedgerEntries(): Flow<List<InventoryLedgerEntry>>
+
+    @Query("SELECT * FROM inventory_ledger_entries WHERE inventoryItemId = :itemId ORDER BY timestamp DESC")
+    fun getLedgerEntriesByItem(itemId: Int): Flow<List<InventoryLedgerEntry>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertInventoryLedgerEntry(entry: InventoryLedgerEntry): Long
+
+    @Query("DELETE FROM inventory_ledger_entries")
+    suspend fun clearInventoryLedgerEntries()
+
     @Transaction
     suspend fun clearAllData() {
         clearOperationTasks()
@@ -315,5 +364,6 @@ interface PharmacyDao {
         clearInventoryBatches()
         clearSmsLogs()
         clearExpiryAlertClaims()
+        clearInventoryLedgerEntries()
     }
 }

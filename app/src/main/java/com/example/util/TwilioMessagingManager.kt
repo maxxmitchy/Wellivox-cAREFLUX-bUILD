@@ -7,7 +7,7 @@ import com.example.data.PharmacyDao
 import com.example.data.TwilioConstants
 import com.example.data.TwilioMessageResponse
 import com.example.data.TwilioRetrofitClient
-import com.google.firebase.firestore.FirebaseFirestore
+import com.example.data.remote.FirestoreRemoteDataSourceImpl
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -305,7 +305,7 @@ object TwilioMessagingManager {
         }
 
         try {
-            val firestore = FirebaseFirestore.getInstance()
+            val remoteDataSource = FirestoreRemoteDataSourceImpl()
             val map = hashMapOf<String, Any?>(
                 "recipientPhone" to recipient,
                 "messageContent" to content,
@@ -318,7 +318,9 @@ object TwilioMessagingManager {
                 "twilioSid" to twilioSid,
                 "costEstimate" to costEst
             )
-            firestore.collection("branch_outbound_logs").add(map)
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                remoteDataSource.logOutboundSms(map)
+            }
         } catch (e: Exception) {
             e.printStackTrace()
         }

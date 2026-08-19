@@ -88,13 +88,13 @@ object Mp4VideoEncoder {
                     try {
                         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), bgPaint)
 
-                        // Smooth transition & subtle Ken Burns scale/pan effect
-                        val scale = 1.0f + (slideProgress * 0.05f) // Subtle 5% zoom
-                        val dx = (slideProgress * 15f)
+                        // Crisp stationary rendering (no zoom/pan motion)
+                        val scale = 1.0f
+                        val dx = 0f
 
                         // If transitioning out in last 10 frames, crossfade
-                        val isTransitioning = f >= (framesPerSlide - 10)
-                        if (isTransitioning && bitmaps.size > 1) {
+                        val isTransitioning = f >= (framesPerSlide - 10) && bitmaps.size > 1
+                        if (isTransitioning) {
                             val alphaTransition = (f - (framesPerSlide - 10)) / 10f
                             
                             // Draw current slide

@@ -50,6 +50,7 @@ fun AnalyticsTab(viewModel: PharmacyViewModel, isUserAdmin: Boolean = false) {
     val interventions by viewModel.clinicalInterventions.collectAsStateWithLifecycle()
     val medicationSales by viewModel.medicationSales.collectAsStateWithLifecycle()
     val currentPharmacistName by viewModel.currentPharmacistName.collectAsStateWithLifecycle()
+    val claimingAlertItemIds by viewModel.claimingAlertItemIds.collectAsStateWithLifecycle()
     val activeStaffName = currentPharmacistName?.ifBlank { "Staff Pharmacist" } ?: "Staff Pharmacist"
 
     val timeNow = System.currentTimeMillis()
@@ -1008,13 +1009,25 @@ fun AnalyticsTab(viewModel: PharmacyViewModel, isUserAdmin: Boolean = false) {
                                                         }
                                                     }
                                                     else -> {
+                                                        val isItemBeingClaimed = item.id in claimingAlertItemIds
                                                         OutlinedButton(
                                                             onClick = { viewModel.claimExpiryAlert(item, activeStaffName) },
+                                                            enabled = !isItemBeingClaimed,
                                                             border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary),
                                                             contentPadding = PaddingValues(horizontal = 10.dp, vertical = 2.dp),
                                                             modifier = Modifier.height(28.dp)
                                                         ) {
-                                                            Text("Claim Task", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                                            if (isItemBeingClaimed) {
+                                                                CircularProgressIndicator(
+                                                                    modifier = Modifier.size(12.dp),
+                                                                    color = MaterialTheme.colorScheme.primary,
+                                                                    strokeWidth = 1.5.dp
+                                                                )
+                                                                Spacer(modifier = Modifier.width(4.dp))
+                                                                Text("Claiming...", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                                            } else {
+                                                                Text("Claim Task", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                                                            }
                                                         }
                                                     }
                                                 }

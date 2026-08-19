@@ -36,7 +36,19 @@ class NotificationActionReceiver : BroadcastReceiver() {
         }
 
         val prefs = context.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
-        val staffName = prefs.getString("cached_user_name", "Staff Pharmacist") ?: "Staff Pharmacist"
+
+        // Session & Branch verification
+        val authUser = com.example.data.auth.AuthRepository().getCurrentUser()
+        val branchId = prefs.getString("cached_branch_id", null)
+        if (authUser == null || branchId.isNullOrBlank()) {
+            return
+        }
+
+        val staffName = prefs.getString("cached_user_name", null)?.takeIf { it.isNotBlank() }
+            ?: authUser.displayName?.takeIf { it.isNotBlank() }
+            ?: authUser.email
+            ?: "Staff Pharmacist"
+        val userRole = prefs.getString("cached_role", "Staff") ?: "Staff"
 
         val db = PharmacyDatabase.getDatabase(context)
         val repository = PharmacyRepository(db.pharmacyDao())
@@ -47,8 +59,12 @@ class NotificationActionReceiver : BroadcastReceiver() {
                 when (action) {
                     ACTION_CLAIM_TASK -> {
                         val task = repository.getOperationTaskById(taskId.toInt())
-                        if (task != null) {
-                            val updated = task.copy(assignedToName = staffName)
+                        // Only claim if task exists and is not already completed
+                        if (task != null && !task.isCompleted) {
+                            val updated = task.copy(
+                                assignedToName = staffName,
+                                assignedToUid = authUser.uid
+                            )
                             repository.updateOperationTask(updated)
 
                             CoroutineScope(Dispatchers.Main).launch {
@@ -61,8 +77,25 @@ class NotificationActionReceiver : BroadcastReceiver() {
                         }
                     }
                     ACTION_QUARANTINE_TASK -> {
+                        val isAuthorized = userRole.equals("Pharmacist", ignoreCase = true) ||
+                                userRole.equals("Admin", ignoreCase = true) ||
+                                userRole.equals("SuperAdmin", ignoreCase = true) ||
+                                userRole.equals("Manager", ignoreCase = true)
+
+                        if (!isAuthorized) {
+                            CoroutineScope(Dispatchers.Main).launch {
+                                Toast.makeText(
+                                    context,
+                                    "Unauthorized: Quarantine action requires Pharmacist or Manager role",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                            return@launch
+                        }
+
                         val task = repository.getOperationTaskById(taskId.toInt())
-                        if (task != null) {
+                        // Do not overwrite verification metadata if already completed
+                        if (task != null && !task.isCompleted) {
                             val updated = task.copy(
                                 isCompleted = true,
                                 verifiedBy = staffName,

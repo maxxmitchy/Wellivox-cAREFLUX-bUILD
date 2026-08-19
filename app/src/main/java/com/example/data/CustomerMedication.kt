@@ -8,6 +8,7 @@ data class CustomerMedication(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
     val customerId: Int,
     val inventoryItemId: Int,
+    val canonicalProductId: String = "",
     val medicationName: String,
     val customDosage: String,
     val cost: Double,

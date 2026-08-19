@@ -11,6 +11,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.animation.*
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
@@ -34,6 +35,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.*
 import androidx.compose.ui.text.font.*
 import androidx.compose.ui.text.input.KeyboardType
@@ -119,6 +121,9 @@ class MainActivity : ComponentActivity() {
             // Trigger immediate run of AI Operations to process baseline clinical alerts and notifications
             val immediateAiRequest = androidx.work.OneTimeWorkRequestBuilder<com.example.work.AIOperationsWorker>().build()
             WorkManager.getInstance(this).enqueueUniqueWork("ai_operations_immediate", androidx.work.ExistingWorkPolicy.KEEP, immediateAiRequest)
+
+            // Schedule background exact operational alarms
+            com.example.receiver.AlarmAndBootReceiver.scheduleOperationalAlarms(this)
         } catch (e: Exception) {
             e.printStackTrace()
         }
@@ -147,15 +152,19 @@ class MainActivity : ComponentActivity() {
                 val currentTaskId = activeTarget?.taskId ?: initialTaskId
                 val currentCustomerQuery = activeTarget?.customerQuery ?: initialCustomerQuery
 
+                val authRepository = remember { com.example.data.auth.AuthRepository() }
                 var currentUser by remember {
                     mutableStateOf(
                         try {
-                            com.google.firebase.auth.FirebaseAuth.getInstance().currentUser
+                            authRepository.getCurrentUser()
                         } catch (e: Exception) {
                             null
                         }
                     )
                 }
+                val context = androidx.compose.ui.platform.LocalContext.current
+                val prefs = remember(context) { context.getSharedPreferences("careflux_prefs", android.content.Context.MODE_PRIVATE) }
+                var hasCompletedOnboarding by remember { mutableStateOf(prefs.getBoolean("has_completed_onboarding", false)) }
                 val isSuspended by viewModel.isSuspended.collectAsStateWithLifecycle()
                 
                 LaunchedEffect(currentUser) {
@@ -234,19 +243,37 @@ class MainActivity : ComponentActivity() {
                                 initialCustomerQuery = currentCustomerQuery,
                                 currentUser = user,
                                 onSignOut = {
+                                    viewModel.handleUserLoggedOut()
                                     viewModel.clearAllData()
-                                    com.google.firebase.auth.FirebaseAuth.getInstance().signOut()
+                                    authRepository.signOut()
                                     currentUser = null
                                 },
                                 modifier = Modifier.padding(innerPadding)
                             )
                         } else {
-                            com.example.ui.AuthScreen(
-                                onAuthSuccess = { verifiedUser ->
-                                    currentUser = verifiedUser
-                                },
-                                modifier = Modifier.padding(innerPadding)
-                            )
+                            if (!hasCompletedOnboarding) {
+                                com.example.ui.OnboardingScreen(
+                                    onFinishOnboarding = {
+                                        prefs.edit().putBoolean("has_completed_onboarding", true).apply()
+                                        hasCompletedOnboarding = true
+                                    },
+                                    onLoginClick = {
+                                        prefs.edit().putBoolean("has_completed_onboarding", true).apply()
+                                        hasCompletedOnboarding = true
+                                    },
+                                    modifier = Modifier.padding(innerPadding)
+                                )
+                            } else {
+                                com.example.ui.AuthScreen(
+                                    onAuthSuccess = { verifiedUser ->
+                                        currentUser = verifiedUser
+                                    },
+                                    onShowOnboarding = {
+                                        hasCompletedOnboarding = false
+                                    },
+                                    modifier = Modifier.padding(innerPadding)
+                                )
+                            }
                         }
                     }
                 }
@@ -269,7 +296,7 @@ fun PharmacyRootScreen(
     initialSubTab: String? = null,
     initialTaskId: Long? = null,
     initialCustomerQuery: String? = null,
-    currentUser: com.google.firebase.auth.FirebaseUser? = null,
+    currentUser: com.example.data.auth.AuthUser? = null,
     onSignOut: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
@@ -447,20 +474,11 @@ fun PharmacyRootScreen(
             ) {
                 Spacer(Modifier.height(16.dp))
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
-                    Box(
-                        modifier = Modifier
-                            .size(40.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(TealPrimary),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.MedicalServices,
-                            contentDescription = "Careflux Logo",
-                            tint = Color.Black,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
+                    Image(
+                        painter = painterResource(id = R.drawable.ic_careflux_logo),
+                        contentDescription = "Careflux Logo",
+                        modifier = Modifier.size(40.dp)
+                    )
                     Spacer(modifier = Modifier.width(12.dp))
                     Text("Careflux Menu", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                 }
@@ -658,6 +676,14 @@ fun PharmacyRootScreen(
             var tempPharmacyLga by remember { mutableStateOf(viewModel.getPharmacyLga()) }
             var tempPharmacyState by remember { mutableStateOf(viewModel.getPharmacyState()) }
             var tempNotificationsEnabled by remember { mutableStateOf(viewModel.getNotificationsEnabled()) }
+            var tempNotifExpiry by remember { mutableStateOf(viewModel.getNotificationPref("notif_pref_expiry", true)) }
+            var tempNotifLowStock by remember { mutableStateOf(viewModel.getNotificationPref("notif_pref_low_stock", true)) }
+            var tempNotifRestockCutoff by remember { mutableStateOf(viewModel.getNotificationPref("notif_pref_restock_cutoff", true)) }
+            var tempNotifRefill by remember { mutableStateOf(viewModel.getNotificationPref("notif_pref_refill", true)) }
+            var tempNotifFollowup by remember { mutableStateOf(viewModel.getNotificationPref("notif_pref_followup", true)) }
+            var tempNotifCycleCount by remember { mutableStateOf(viewModel.getNotificationPref("notif_pref_cycle_count", true)) }
+            var tempNotifTaskAssignment by remember { mutableStateOf(viewModel.getNotificationPref("notif_pref_task_assignment", true)) }
+            var tempNotifStockTransfer by remember { mutableStateOf(viewModel.getNotificationPref("notif_pref_stock_transfer", true)) }
             var showClearDbDialog by remember { mutableStateOf(false) }
 
             if (showClearDbDialog) {
@@ -762,74 +788,6 @@ fun PharmacyRootScreen(
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
-                            } else {
-                                Card(
-                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.3f)),
-                                    shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)
-                                ) {
-                                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        Text("Dedicated Node Credentials", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = TealPrimary)
-                                        
-                                        val myRequest = keyRequests.find { (it["deviceId"] as? String) == viewModel.deviceId }
-                                        if (myRequest == null) {
-                                            Text(
-                                                text = "This node is currently running on the shared clinical cooperative resource pool. For dedicated API quotas and guaranteed delivery services, you can request a personal API suite.",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                                            )
-                                            Button(
-                                                onClick = { viewModel.submitKeyRequest() },
-                                                colors = ButtonDefaults.buttonColors(containerColor = TealPrimary),
-                                                shape = RoundedCornerShape(8.dp),
-                                                modifier = Modifier.fillMaxWidth()
-                                            ) {
-                                                Text("Submit Request for Personal Keys", color = Color.Black, fontWeight = FontWeight.Bold)
-                                            }
-                                        } else {
-                                            val status = myRequest["status"] as? String ?: "PENDING"
-                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                Text("Request Status:", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
-                                                val statusColor = when (status) {
-                                                    "APPROVED" -> Color(0xFF4CAF50)
-                                                    "REJECTED" -> MaterialTheme.colorScheme.error
-                                                    else -> Color(0xFFFF9800)
-                                                }
-                                                Text(status.uppercase(), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold, color = statusColor)
-                                            }
-                                            
-                                            if (status == "PENDING") {
-                                                Text(
-                                                    text = "Your request for a personal Gemini API suite is submitted and pending review by administrative compliance officers.",
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                            } else if (status == "APPROVED") {
-                                                Text(
-                                                    text = "✓ Dedicated API suite successfully provisioned and active on this node. Shared database queries and messaging tasks are now running on personal isolated keys.",
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = Color(0xFF4CAF50),
-                                                    fontWeight = FontWeight.Medium
-                                                )
-                                            } else if (status == "REJECTED") {
-                                                Text(
-                                                    text = "Your request was declined. Please verify your node registration or reach out to Wellivox administration.",
-                                                    style = MaterialTheme.typography.bodySmall,
-                                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                                )
-                                                Spacer(modifier = Modifier.height(4.dp))
-                                                Button(
-                                                    onClick = { viewModel.submitKeyRequest() },
-                                                    colors = ButtonDefaults.buttonColors(containerColor = TealPrimary),
-                                                    shape = RoundedCornerShape(8.dp),
-                                                    modifier = Modifier.fillMaxWidth()
-                                                ) {
-                                                    Text("Re-submit Key Request", color = Color.Black, fontWeight = FontWeight.Bold)
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
                             }
 
                             Spacer(modifier = Modifier.height(16.dp))
@@ -846,34 +804,188 @@ fun PharmacyRootScreen(
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Row(
+                                Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(horizontal = 14.dp, vertical = 10.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.SpaceBetween
+                                        .padding(horizontal = 14.dp, vertical = 10.dp)
                                 ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(
-                                            "System & Push Notifications",
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            fontWeight = FontWeight.Bold
-                                        )
-                                        Text(
-                                            "Alerts for refills, expiry, and 3-6 PM restock cutoffs",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(
+                                                "Master Notifications Toggle",
+                                                style = MaterialTheme.typography.bodyMedium,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Text(
+                                                "Master switch for all device notifications & background alerts",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Switch(
+                                            checked = tempNotificationsEnabled,
+                                            onCheckedChange = { tempNotificationsEnabled = it },
+                                            colors = SwitchDefaults.colors(
+                                                checkedThumbColor = Color.White,
+                                                checkedTrackColor = TealPrimary
+                                            )
                                         )
                                     }
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Switch(
-                                        checked = tempNotificationsEnabled,
-                                        onCheckedChange = { tempNotificationsEnabled = it },
-                                        colors = SwitchDefaults.colors(
-                                            checkedThumbColor = Color.White,
-                                            checkedTrackColor = TealPrimary
+
+                                    if (tempNotificationsEnabled) {
+                                        Spacer(modifier = Modifier.height(10.dp))
+                                        HorizontalDivider()
+                                        Spacer(modifier = Modifier.height(10.dp))
+
+                                        Text(
+                                            "Alert Categories",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            fontWeight = FontWeight.Bold,
+                                            color = TealPrimary
                                         )
-                                    )
+                                        Spacer(modifier = Modifier.height(6.dp))
+
+                                        // Category Item 1: Refills & Patient Reminders
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text("Customer Refill Reminders", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                                                Text("Upcoming medication due dates & refill window alerts", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            }
+                                            Switch(
+                                                checked = tempNotifRefill,
+                                                onCheckedChange = { tempNotifRefill = it },
+                                                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = TealPrimary)
+                                            )
+                                        }
+
+                                        // Category Item 2: Expiry & FEFO Risk
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text("Expiry & Aging Stock", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                                                Text("Critical, urgent, and near-expiry FEFO notifications", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            }
+                                            Switch(
+                                                checked = tempNotifExpiry,
+                                                onCheckedChange = { tempNotifExpiry = it },
+                                                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = TealPrimary)
+                                            )
+                                        }
+
+                                        // Category Item 3: Low Stock & Reorders
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text("Low Stock & Restock Warnings", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                                                Text("Threshold replenishment alerts & inventory dips", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            }
+                                            Switch(
+                                                checked = tempNotifLowStock,
+                                                onCheckedChange = { tempNotifLowStock = it },
+                                                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = TealPrimary)
+                                            )
+                                        }
+
+                                        // Category Item 4: Restock Order Cutoffs
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text("Restock Cutoff Reminders (3–6 PM)", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                                                Text("Daily supplier ordering window deadline warnings", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            }
+                                            Switch(
+                                                checked = tempNotifRestockCutoff,
+                                                onCheckedChange = { tempNotifRestockCutoff = it },
+                                                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = TealPrimary)
+                                            )
+                                        }
+
+                                        // Category Item 5: Clinical Follow-ups & Interventions
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text("Clinical Inquiries & Interventions", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                                                Text("Day 3/7/14 care protocol and custom follow-up alarms", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            }
+                                            Switch(
+                                                checked = tempNotifFollowup,
+                                                onCheckedChange = { tempNotifFollowup = it },
+                                                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = TealPrimary)
+                                            )
+                                        }
+
+                                        // Category Item 6: Cycle Count Audits
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text("Cycle Count & Inventory Audits", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                                                Text("Randomized 5-item daily physical inventory audit tasks", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            }
+                                            Switch(
+                                                checked = tempNotifCycleCount,
+                                                onCheckedChange = { tempNotifCycleCount = it },
+                                                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = TealPrimary)
+                                            )
+                                        }
+
+                                        // Category Item 7: Task Assignments
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text("Direct Task Assignments", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                                                Text("Alerts when a manager assigns operational tasks directly to you", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            }
+                                            Switch(
+                                                checked = tempNotifTaskAssignment,
+                                                onCheckedChange = { tempNotifTaskAssignment = it },
+                                                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = TealPrimary)
+                                            )
+                                        }
+
+                                        // Category Item 8: Stock Transfers
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text("Inter-Branch Stock Transfers", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                                                Text("Incoming stock transit & verification requests from other nodes", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            }
+                                            Switch(
+                                                checked = tempNotifStockTransfer,
+                                                onCheckedChange = { tempNotifStockTransfer = it },
+                                                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = TealPrimary)
+                                            )
+                                        }
+                                    }
                                 }
                             }
 
@@ -910,6 +1022,14 @@ fun PharmacyRootScreen(
                             viewModel.setPharmacyLga(tempPharmacyLga)
                             viewModel.setPharmacyState(tempPharmacyState)
                             viewModel.setNotificationsEnabled(tempNotificationsEnabled)
+                            viewModel.setNotificationPref("notif_pref_expiry", tempNotifExpiry)
+                            viewModel.setNotificationPref("notif_pref_low_stock", tempNotifLowStock)
+                            viewModel.setNotificationPref("notif_pref_restock_cutoff", tempNotifRestockCutoff)
+                            viewModel.setNotificationPref("notif_pref_refill", tempNotifRefill)
+                            viewModel.setNotificationPref("notif_pref_followup", tempNotifFollowup)
+                            viewModel.setNotificationPref("notif_pref_cycle_count", tempNotifCycleCount)
+                            viewModel.setNotificationPref("notif_pref_task_assignment", tempNotifTaskAssignment)
+                            viewModel.setNotificationPref("notif_pref_stock_transfer", tempNotifStockTransfer)
                             showSettingsDialog = false
                         }) {
                             Text("Save")
@@ -1223,34 +1343,6 @@ fun PharmacyRootScreen(
                 )
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // --- Priority Follow-up & Alerts Inbox (Sleek Collapsible Accordion) ---
-                val isPriorityRefillWindow = com.example.util.RefillNotificationSchedule.isPriorityRefillWindow()
-                val pendingAlertsList = remember(alerts, isPriorityRefillWindow) {
-                    alerts.filter { it.status == "Pending" }.sortedWith(
-                        compareByDescending<com.example.data.CustomerAlert> { alert ->
-                            val isRefill = alert.alertType.contains("Refill", ignoreCase = true) || alert.medicationName.contains("Refill", ignoreCase = true)
-                            if (isPriorityRefillWindow && isRefill) 100 else if (isRefill) 50 else 0
-                        }.thenBy { it.timestamp }
-                    )
-                }
-                PriorityFollowUpInbox(
-                    pendingAlerts = pendingAlertsList,
-                    onCompleteAlert = { alert ->
-                        viewModel.activePostDispatchConfirmAlert.value = alert
-                    },
-                    onDeleteAlert = { alert ->
-                        viewModel.deleteCustomerAlert(alert)
-                    },
-                    onScanRadar = {
-                        viewModel.generatePatientFirstAutomaticAlerts()
-                    },
-                    onNavigateToCustomer = { customerName ->
-                        activeTab = "customers"
-                        targetCustomerQuery = customerName
-                    }
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-
                 // Expandable full widgets with sleek animated slide/fade transitions
                 androidx.compose.animation.AnimatedVisibility(
                     visible = isDashboardExpanded,
@@ -1332,6 +1424,7 @@ fun PharmacyRootScreen(
                         inventoryMeds = inventory,
                         clinicalInterventions = clinicalInterventions,
                         targetCustomerQuery = targetCustomerQuery,
+                        initialSubTab = activeSubTab,
                         onAddNewCustomerClick = { showAddCustomerDialog = true },
                         onEditCustomerClick = { selectedCustForEdit = it },
                         onDeleteCustomer = { viewModel.deleteCustomer(it) },
@@ -1459,8 +1552,8 @@ fun PharmacyRootScreen(
     if (showAddMedDialog) {
         AddEditMedDialog(
             onDismiss = { showAddMedDialog = false },
-            onConfirm = { name, dosage, stock, minStock, category, price, expiryDate, batch, supplier, imageUri, unitForm, brand ->
-                viewModel.addOrUpdateInventory(name = name, dosage = dosage, currentStock = stock, minStock = minStock, category = category, price = price, expiryDate = expiryDate, batchNumber = batch, supplier = supplier, imageUri = imageUri, unitForm = unitForm, brand = brand)
+            onConfirm = { name, dosage, stock, minStock, category, price, expiryDate, batch, supplier, imageUri, unitForm, brand, isFastMoving ->
+                viewModel.addOrUpdateInventory(name = name, dosage = dosage, currentStock = stock, minStock = minStock, category = category, price = price, expiryDate = expiryDate, batchNumber = batch, supplier = supplier, imageUri = imageUri, unitForm = unitForm, brand = brand, isFastMoving = isFastMoving)
                 showAddMedDialog = false
             }
         )
@@ -1486,8 +1579,8 @@ fun PharmacyRootScreen(
             item = item,
             viewModel = viewModel,
             onDismiss = { selectedMedForEdit = null },
-            onConfirm = { name, dosage, stock, minStock, category, price, expiryDate, batch, supplier, imageUri, unitForm, brand, reason ->
-                viewModel.addOrUpdateInventory(name = name, dosage = dosage, currentStock = stock, minStock = minStock, category = category, price = price, id = item.id, expiryDate = expiryDate, batchNumber = batch, supplier = supplier, imageUri = imageUri, unitForm = unitForm, brand = brand, reason = reason)
+            onConfirm = { name, dosage, stock, minStock, category, price, expiryDate, batch, supplier, imageUri, unitForm, brand, reason, isFastMoving ->
+                viewModel.addOrUpdateInventory(name = name, dosage = dosage, currentStock = stock, minStock = minStock, category = category, price = price, id = item.id, expiryDate = expiryDate, batchNumber = batch, supplier = supplier, imageUri = imageUri, unitForm = unitForm, brand = brand, reason = reason, isFastMoving = isFastMoving)
                 selectedMedForEdit = null
             }
         )
@@ -2678,6 +2771,23 @@ fun InventoryCard(
                                     )
                                 }
                             }
+                            if (item.isFastMoving) {
+                                Surface(
+                                    color = Color(0xFFFEF3C7),
+                                    contentColor = Color(0xFF92400E),
+                                    shape = RoundedCornerShape(4.dp),
+                                    modifier = Modifier.weight(1f, fill = false)
+                                ) {
+                                    Text(
+                                        text = "⚡ Fast",
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        maxLines = 1,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                        modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                    )
+                                }
+                            }
                             if (item.unitForm.isNotBlank()) {
                                 Surface(
                                     color = MaterialTheme.colorScheme.surfaceVariant,
@@ -3542,7 +3652,7 @@ fun sendWhatsAppMessage(context: Context, phoneNumber: String, message: String) 
 @Composable
 fun AddEditMedDialog(
     onDismiss: () -> Unit,
-    onConfirm: (String, String, Int, Int, String, Double, Long?, String, String, String?, String, String) -> Unit
+    onConfirm: (String, String, Int, Int, String, Double, Long?, String, String, String?, String, String, Boolean) -> Unit
 ) {
     val appContext = LocalContext.current
     var name by remember { mutableStateOf("") }
@@ -3556,6 +3666,7 @@ fun AddEditMedDialog(
     var expiryDateStr by remember { mutableStateOf("") }
     var batchNumber by remember { mutableStateOf("") }
     var supplier by remember { mutableStateOf("") }
+    var isFastMoving by remember { mutableStateOf(false) }
     var imageUri by remember { mutableStateOf<String?>(null) }
     
     val launcher = androidx.activity.compose.rememberLauncherForActivityResult(
@@ -3745,6 +3856,25 @@ fun AddEditMedDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
+                // High Velocity Fast Moving Switch Row
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(if (isFastMoving) Color(0xFFFEF3C7) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("⚡ High-Velocity Product", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = if (isFastMoving) Color(0xFF92400E) else MaterialTheme.colorScheme.onSurface)
+                        Text("Triggers 7-day rolling cycle count audits instead of standard 14-day cycle", fontSize = 10.sp, color = Color.Gray)
+                    }
+                    Switch(
+                        checked = isFastMoving,
+                        onCheckedChange = { isFastMoving = it }
+                    )
+                }
+
                 // Simple spinner replacement category chips row
                 Text(
                     text = "Suggestions:",
@@ -3774,7 +3904,7 @@ fun AddEditMedDialog(
                                 parsedExpiry = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).parse(expiryDateStr)?.time
                             } catch (e: Exception) { }
                         }
-                        onConfirm(name, dosage, stockVal, minStockVal, category, priceVal, parsedExpiry, batchNumber, supplier, imageUri, unitForm, brand)
+                        onConfirm(name, dosage, stockVal, minStockVal, category, priceVal, parsedExpiry, batchNumber, supplier, imageUri, unitForm, brand, isFastMoving)
                     }
                 }
             ) {
@@ -3797,7 +3927,7 @@ fun EditStockQuantityDialog(
     item: InventoryItem,
     viewModel: PharmacyViewModel,
     onDismiss: () -> Unit,
-    onConfirm: (String, String, Int, Int, String, Double, Long?, String, String, String?, String, String, String) -> Unit
+    onConfirm: (String, String, Int, Int, String, Double, Long?, String, String, String?, String, String, String, Boolean) -> Unit
 ) {
     var name by remember { mutableStateOf(item.name) }
     var dosage by remember { mutableStateOf(item.dosage) }
@@ -3808,6 +3938,7 @@ fun EditStockQuantityDialog(
     var category by remember { mutableStateOf(item.category) }
     var price by remember { mutableStateOf(item.price.toString()) }
     var adjustmentReason by remember { mutableStateOf("") }
+    var isFastMoving by remember { mutableStateOf(item.isFastMoving) }
     var expiryDateStr by remember { 
         mutableStateOf(if (item.expiryDate > 0) java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).format(java.util.Date(item.expiryDate)) else "") 
     }
@@ -3977,6 +4108,25 @@ fun EditStockQuantityDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+
+                // High Velocity Fast Moving Switch Row
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(if (isFastMoving) Color(0xFFFEF3C7) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("⚡ High-Velocity Product", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = if (isFastMoving) Color(0xFF92400E) else MaterialTheme.colorScheme.onSurface)
+                        Text("Triggers 7-day rolling cycle count audits instead of standard 14-day cycle", fontSize = 10.sp, color = Color.Gray)
+                    }
+                    Switch(
+                        checked = isFastMoving,
+                        onCheckedChange = { isFastMoving = it }
+                    )
+                }
 
                 val currentStockVal = stock.toIntOrNull() ?: 0
                 val stockChanged = currentStockVal != item.stockQuantity
@@ -4351,7 +4501,7 @@ fun EditStockQuantityDialog(
                                 parsedExpiry = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault()).parse(expiryDateStr)?.time
                             } catch (e: Exception) { }
                         }
-                        onConfirm(name, dosage, stockVal, minStockVal, category, priceVal, parsedExpiry, batchNumber, supplier, imageUri, unitForm, brand, adjustmentReason.trim())
+                        onConfirm(name, dosage, stockVal, minStockVal, category, priceVal, parsedExpiry, batchNumber, supplier, imageUri, unitForm, brand, adjustmentReason.trim(), isFastMoving)
                     }
                 }
             ) {

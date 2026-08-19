@@ -27,7 +27,8 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.data.AdminAuditLog
 import com.example.ui.theme.*
-import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.launch
+import com.example.data.remote.FirestoreRemoteDataSourceImpl
 import java.text.SimpleDateFormat
 import java.util.*
 import android.content.ClipData
@@ -40,7 +41,6 @@ import androidx.compose.ui.text.font.FontFamily
 @Composable
 fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
     val auditLogs by viewModel.adminAuditLogs.collectAsStateWithLifecycle()
-    val keyRequests by viewModel.keyRequests.collectAsStateWithLifecycle()
     val allBranches by viewModel.allBranches.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
@@ -51,7 +51,7 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
     var localPharmacistRoleOverrides by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var localPharmacistBranchOverrides by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
 
-    var selectedSubTab by remember { mutableStateOf(0) } // 0 = Nodes, 1 = Pharmacies, 2 = LGA Analytics, 3 = Key Requests, 4 = Audit Trail
+    var selectedSubTab by remember { mutableStateOf(0) } // 0 = Nodes, 1 = Pharmacies, 2 = LGA Analytics, 3 = Audit Trail, 4 = NDPA Compliance
     var pharmacistsList by remember { mutableStateOf<List<Map<String, Any>>>(emptyList()) }
     var deviceConfigsList by remember { mutableStateOf<List<Map<String, Any>>>(emptyList()) }
     var isLoadingNodes by remember { mutableStateOf(true) }
@@ -176,32 +176,16 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
         if (selectedSubTab == 2) {
             isLoadingAnalytics = true
             try {
-                val db = FirebaseFirestore.getInstance()
-                db.collection("customers")
-                    .get()
-                    .addOnSuccessListener { qSnap ->
-                        globalCustomersForAnalytics = qSnap.documents.map { doc ->
-                            val d = doc.data?.toMutableMap() ?: mutableMapOf()
-                            d["id"] = doc.id
-                            d
-                        }
-                        db.collection("customer_medications")
-                            .get()
-                            .addOnSuccessListener { qSnapMeds ->
-                                globalMedsForAnalytics = qSnapMeds.documents.map { doc ->
-                                    val d = doc.data?.toMutableMap() ?: mutableMapOf()
-                                    d["id"] = doc.id
-                                    d
-                                }
-                                isLoadingAnalytics = false
-                            }
-                            .addOnFailureListener {
-                                isLoadingAnalytics = false
-                            }
-                    }
-                    .addOnFailureListener {
-                        isLoadingAnalytics = false
-                    }
+                val remote = FirestoreRemoteDataSourceImpl()
+                val custRes = remote.getAllDocuments("customers")
+                if (custRes.isSuccess) {
+                    globalCustomersForAnalytics = custRes.getOrDefault(emptyList())
+                }
+                val medRes = remote.getAllDocuments("customer_medications")
+                if (medRes.isSuccess) {
+                    globalMedsForAnalytics = medRes.getOrDefault(emptyList())
+                }
+                isLoadingAnalytics = false
             } catch (e: Exception) {
                 isLoadingAnalytics = false
                 e.printStackTrace()
@@ -225,117 +209,61 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
     var showDeleteNodeDialog by remember { mutableStateOf(false) }
     var nodeToDelete by remember { mutableStateOf<Map<String, Any>?>(null) }
 
-    val currentAuthUser = remember { com.google.firebase.auth.FirebaseAuth.getInstance().currentUser }
+    val scope = rememberCoroutineScope()
+    val authRepository = remember { com.example.data.auth.AuthRepository() }
+    val remoteDataSource = remember { com.example.data.remote.FirestoreRemoteDataSourceImpl() }
+    val currentAuthUser = remember { authRepository.getCurrentUser() }
     val currentDeviceId = viewModel.deviceId
     val isCurrentSuspended by viewModel.isSuspended.collectAsStateWithLifecycle()
     val isCurrentAiContentEnabled by viewModel.isAiContentEnabled.collectAsStateWithLifecycle()
     val isCurrentCarefluxAiEnabled by viewModel.isCarefluxAiEnabled.collectAsStateWithLifecycle()
 
-    // 1. Fetch dynamic nodes list from Firestore (will execute if security rules allow listing)
+    // 1. Fetch dynamic nodes list from RemoteDataSource
     LaunchedEffect(Unit) {
-        try {
-            val db = FirebaseFirestore.getInstance()
-            
-            // 1. Listen to registered_pharmacists
-            db.collection("registered_pharmacists")
-                .addSnapshotListener { snapshot, e ->
-                    if (e != null) {
-                        android.util.Log.e("AdminDashboardScreen", "Error listening to registered_pharmacists collection", e)
-                    }
-                    if (snapshot != null) {
-                        if (snapshot.metadata.isFromCache && viewModel.isOnline.value) {
-                            db.collection("registered_pharmacists")
-                                .get(com.google.firebase.firestore.Source.SERVER)
-                        }
-                        pharmacistsList = snapshot.documents.map { doc ->
-                            val data = doc.data?.toMutableMap() ?: mutableMapOf()
-                            data["id"] = doc.id
-                            data
-                        }
-                    }
-                }
-
-            // 2. Listen to device_configs
-            db.collection("device_configs")
-                .addSnapshotListener { snapshot, e ->
-                    if (e != null) {
-                        android.util.Log.e("AdminDashboardScreen", "Error listening to device_configs collection", e)
-                    }
-                    if (snapshot != null) {
-                        if (snapshot.metadata.isFromCache && viewModel.isOnline.value) {
-                            db.collection("device_configs")
-                                .get(com.google.firebase.firestore.Source.SERVER)
-                        }
-                        deviceConfigsList = snapshot.documents.map { doc ->
-                            val data = doc.data?.toMutableMap() ?: mutableMapOf()
-                            data["id"] = doc.id
-                            data
-                        }
-                    }
-                    isLoadingNodes = false
-                }
-        } catch (e: Exception) {
-            isLoadingNodes = false
-            e.printStackTrace()
+        scope.launch {
+            remoteDataSource.observeAllPharmacists().collect { list ->
+                pharmacistsList = list
+            }
+        }
+        scope.launch {
+            remoteDataSource.observeDeviceConfigs().collect { list ->
+                deviceConfigsList = list
+                isLoadingNodes = false
+            }
         }
     }
 
-    // 2. Specific single-document fallback listeners (guaranteed to bypass collection-level restrict security rules)
+    // 2. Specific single-document fallback listeners
     LaunchedEffect(currentAuthUser, currentDeviceId) {
         if (currentAuthUser != null) {
-            try {
-                val db = FirebaseFirestore.getInstance()
-                
-                // Securely query caller's profile (allowed under "own resource" rule) to guarantee it populates
-                db.collection("registered_pharmacists")
-                    .document(currentAuthUser.uid)
-                    .addSnapshotListener { snapshot, e ->
-                        if (snapshot != null && snapshot.exists()) {
-                            if (snapshot.metadata.isFromCache && viewModel.isOnline.value) {
-                                db.collection("registered_pharmacists")
-                                    .document(currentAuthUser.uid)
-                                    .get(com.google.firebase.firestore.Source.SERVER)
-                            }
-                            val data = snapshot.data?.toMutableMap() ?: mutableMapOf()
-                            data["id"] = snapshot.id
-                            
-                            val currentList = pharmacistsList.toMutableList()
-                            val idx = currentList.indexOfFirst { it["id"] == snapshot.id || it["uid"] == currentAuthUser.uid }
-                            if (idx >= 0) {
-                                currentList[idx] = data
-                            } else {
-                                currentList.add(data)
-                            }
-                            pharmacistsList = currentList
+            scope.launch {
+                remoteDataSource.observePharmacist(currentAuthUser.uid).collect { profileData ->
+                    if (profileData != null) {
+                        val currentList = pharmacistsList.toMutableList()
+                        val idx = currentList.indexOfFirst { it["id"] == profileData["id"] || it["uid"] == currentAuthUser.uid }
+                        if (idx >= 0) {
+                            currentList[idx] = profileData
+                        } else {
+                            currentList.add(profileData)
                         }
+                        pharmacistsList = currentList
                     }
-
-                // Securely query caller's device node (allowed under "own resource" rule) to guarantee it populates
-                db.collection("device_configs")
-                    .document(currentDeviceId)
-                    .addSnapshotListener { snapshot, e ->
-                        if (snapshot != null && snapshot.exists()) {
-                            if (snapshot.metadata.isFromCache && viewModel.isOnline.value) {
-                                db.collection("device_configs")
-                                    .document(currentDeviceId)
-                                    .get(com.google.firebase.firestore.Source.SERVER)
-                            }
-                            val data = snapshot.data?.toMutableMap() ?: mutableMapOf()
-                            data["id"] = snapshot.id
-                            
-                            val currentList = deviceConfigsList.toMutableList()
-                            val idx = currentList.indexOfFirst { it["id"] == snapshot.id || it["deviceId"] == currentDeviceId }
-                            if (idx >= 0) {
-                                currentList[idx] = data
-                            } else {
-                                currentList.add(data)
-                            }
-                            deviceConfigsList = currentList
-                            isLoadingNodes = false
+                }
+            }
+            scope.launch {
+                remoteDataSource.observeDeviceConfig(currentDeviceId).collect { nodeData ->
+                    if (nodeData != null) {
+                        val currentList = deviceConfigsList.toMutableList()
+                        val idx = currentList.indexOfFirst { it["id"] == nodeData["id"] || it["deviceId"] == currentDeviceId }
+                        if (idx >= 0) {
+                            currentList[idx] = nodeData
+                        } else {
+                            currentList.add(nodeData)
                         }
+                        deviceConfigsList = currentList
+                        isLoadingNodes = false
                     }
-            } catch (e: Exception) {
-                e.printStackTrace()
+                }
             }
         }
     }
@@ -396,52 +324,34 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                 syncedInterventions = emptyList()
                 isLoadingNodeDetail = true
                 try {
-                    val db = FirebaseFirestore.getInstance()
-                    
-                    db.collection("customers")
-                        .whereEqualTo("syncedFromDevice", nodeId)
-                        .get()
-                        .addOnSuccessListener { qSnap ->
-                            syncedCustomers = qSnap.documents.map { doc ->
-                                val data = doc.data?.toMutableMap() ?: mutableMapOf()
-                                data["id"] = data["id"]?.toString() ?: doc.id
-                                data
-                            }
-                            
-                            db.collection("customer_medications")
-                                .whereEqualTo("syncedFromDevice", nodeId)
-                                .get()
-                                .addOnSuccessListener { qSnapMeds ->
-                                    syncedMeds = qSnapMeds.documents.map { doc ->
-                                        val data = doc.data?.toMutableMap() ?: mutableMapOf()
-                                        data["id"] = data["id"]?.toString() ?: doc.id
-                                        data["customerId"] = data["customerId"]?.toString() ?: ""
-                                        data
-                                    }
-                                    
-                                    db.collection("interventions")
-                                        .whereEqualTo("syncedFromDevice", nodeId)
-                                        .get()
-                                        .addOnSuccessListener { qSnapInt ->
-                                            syncedInterventions = qSnapInt.documents.map { doc ->
-                                                val data = doc.data?.toMutableMap() ?: mutableMapOf()
-                                                data["id"] = data["id"]?.toString() ?: doc.id
-                                                data["customerId"] = data["customerId"]?.toString() ?: ""
-                                                data
-                                            }
-                                            isLoadingNodeDetail = false
-                                        }
-                                        .addOnFailureListener {
-                                            isLoadingNodeDetail = false
-                                        }
-                                }
-                                .addOnFailureListener {
-                                    isLoadingNodeDetail = false
-                                }
+                    val remote = FirestoreRemoteDataSourceImpl()
+                    val custRes = remote.getDocumentsWhereEquals("customers", "syncedFromDevice", nodeId)
+                    if (custRes.isSuccess) {
+                        syncedCustomers = custRes.getOrDefault(emptyList()).map { d ->
+                            val map = d.toMutableMap()
+                            map["id"] = map["id"]?.toString() ?: ""
+                            map
                         }
-                        .addOnFailureListener {
-                            isLoadingNodeDetail = false
+                    }
+                    val medRes = remote.getDocumentsWhereEquals("customer_medications", "syncedFromDevice", nodeId)
+                    if (medRes.isSuccess) {
+                        syncedMeds = medRes.getOrDefault(emptyList()).map { d ->
+                            val map = d.toMutableMap()
+                            map["id"] = map["id"]?.toString() ?: ""
+                            map["customerId"] = map["customerId"]?.toString() ?: ""
+                            map
                         }
+                    }
+                    val intRes = remote.getDocumentsWhereEquals("interventions", "syncedFromDevice", nodeId)
+                    if (intRes.isSuccess) {
+                        syncedInterventions = intRes.getOrDefault(emptyList()).map { d ->
+                            val map = d.toMutableMap()
+                            map["id"] = map["id"]?.toString() ?: ""
+                            map["customerId"] = map["customerId"]?.toString() ?: ""
+                            map
+                        }
+                    }
+                    isLoadingNodeDetail = false
                 } catch (e: Exception) {
                     isLoadingNodeDetail = false
                     e.printStackTrace()
@@ -737,7 +647,6 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                     "Nodes" to Icons.Filled.Store,
                     "Pharmacies" to Icons.Filled.MedicalServices,
                     "LGA Analytics" to Icons.Filled.Analytics,
-                    "Key Requests" to Icons.Filled.VpnKey,
                     "Audit Trail" to Icons.Filled.HistoryToggleOff,
                     "NDPA Compliance" to Icons.Filled.Security
                 ).forEachIndexed { idx, pair ->
@@ -1589,45 +1498,28 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
 
                                             OutlinedButton(
                                                 onClick = {
-                                                    val db = FirebaseFirestore.getInstance()
                                                     val currentTime = System.currentTimeMillis()
-                                                    db.collection("device_configs")
-                                                        .document(nodeId)
-                                                        .update("lastActive", currentTime)
-                                                        .addOnSuccessListener {
-                                                              val sdf = java.text.SimpleDateFormat("MMMM d, yyyy, h:mm:ss a", java.util.Locale.getDefault()).apply {
-                                                                  timeZone = java.util.TimeZone.getTimeZone("Africa/Lagos")
-                                                              }
-                                                              val dateString = sdf.format(java.util.Date(currentTime))
-                                                              android.widget.Toast.makeText(context, "Node sync forced: $dateString", android.widget.Toast.LENGTH_SHORT).show()
-                                                             viewModel.logAdminAction(
-                                                                 admin = "Chinedu (Admin)",
-                                                                 action = "FORCE_SYNC_NODE",
-                                                                 nodeId = nodeId,
-                                                                 nodeModel = modelName,
-                                                                 reason = "Manual Admin Force Sync"
-                                                             )
+                                                    scope.launch {
+                                                        remoteDataSource.upsertDocument("device_configs", nodeId, mapOf(
+                                                            "deviceId" to nodeId,
+                                                            "deviceModel" to modelName,
+                                                            "aiContentEnabled" to true,
+                                                            "carefluxAiEnabled" to true,
+                                                            "lastActive" to currentTime
+                                                        ))
+                                                        val sdf = java.text.SimpleDateFormat("MMMM d, yyyy, h:mm:ss a", java.util.Locale.getDefault()).apply {
+                                                            timeZone = java.util.TimeZone.getTimeZone("Africa/Lagos")
                                                         }
-                                                        .addOnFailureListener {
-                                                            db.collection("device_configs")
-                                                                .document(nodeId)
-                                                                .set(mapOf(
-                                                                    "deviceId" to nodeId,
-                                                                    "deviceModel" to modelName,
-                                                                    "aiContentEnabled" to true,
-                                                                    "carefluxAiEnabled" to true,
-                                                                    "lastActive" to currentTime
-                                                                ), com.google.firebase.firestore.SetOptions.merge())
-                                                                .addOnSuccessListener {
-                                                                    val sdf = java.text.SimpleDateFormat("MMMM d, yyyy, h:mm:ss a", java.util.Locale.getDefault()).apply {
-                                                                        timeZone = java.util.TimeZone.getTimeZone("Africa/Lagos")
-                                                                    }.apply {
-                                                                  timeZone = java.util.TimeZone.getTimeZone("Africa/Lagos")
-                                                              }
-                                                              val dateString = sdf.format(java.util.Date(currentTime))
-                                                              android.widget.Toast.makeText(context, "Node sync forced: $dateString", android.widget.Toast.LENGTH_SHORT).show()
-                                                                }
-                                                        }
+                                                        val dateString = sdf.format(java.util.Date(currentTime))
+                                                        android.widget.Toast.makeText(context, "Node sync forced: $dateString", android.widget.Toast.LENGTH_SHORT).show()
+                                                        viewModel.logAdminAction(
+                                                            admin = "Chinedu (Admin)",
+                                                            action = "FORCE_SYNC_NODE",
+                                                            nodeId = nodeId,
+                                                            nodeModel = modelName,
+                                                            reason = "Manual Admin Force Sync"
+                                                        )
+                                                    }
                                                 },
                                                 border = BorderStroke(1.dp, TealPrimary.copy(alpha = 0.5f)),
                                                 modifier = Modifier.weight(1f).height(32.dp),
@@ -1645,23 +1537,21 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                                                     val newAiVal = !carefluxAi
                                                     localCarefluxAiOverrides = localCarefluxAiOverrides + (nodeId to newAiVal)
                                                     
-                                                    val db = FirebaseFirestore.getInstance()
-                                                    db.collection("device_configs")
-                                                        .document(nodeId)
-                                                        .set(mapOf("carefluxAiEnabled" to newAiVal), com.google.firebase.firestore.SetOptions.merge())
-                                                    
-                                                    db.collection("registered_pharmacists")
-                                                        .document(nodeId)
-                                                        .set(mapOf("carefluxAiEnabled" to newAiVal), com.google.firebase.firestore.SetOptions.merge())
-                                                    
-                                                    db.collection("registered_pharmacists")
-                                                        .whereEqualTo("deviceId", nodeId)
-                                                        .get()
-                                                        .addOnSuccessListener { qSnap ->
-                                                            for (docSnap in qSnap.documents) {
-                                                                docSnap.reference.set(mapOf("carefluxAiEnabled" to newAiVal), com.google.firebase.firestore.SetOptions.merge())
+                                                    val remote = FirestoreRemoteDataSourceImpl()
+                                                    val scope = kotlinx.coroutines.MainScope()
+                                                    scope.launch {
+                                                        remote.upsertDocument("device_configs", nodeId, mapOf("carefluxAiEnabled" to newAiVal))
+                                                        remote.upsertDocument("registered_pharmacists", nodeId, mapOf("carefluxAiEnabled" to newAiVal))
+                                                        val pharmacistByDevice = remote.getDocumentsWhereEquals("registered_pharmacists", "deviceId", nodeId)
+                                                        if (pharmacistByDevice.isSuccess) {
+                                                            pharmacistByDevice.getOrNull()?.forEach { pharmacistDoc ->
+                                                                val pId = pharmacistDoc["id"] as? String
+                                                                if (!pId.isNullOrBlank()) {
+                                                                    remote.upsertDocument("registered_pharmacists", pId, mapOf("carefluxAiEnabled" to newAiVal))
+                                                                }
                                                             }
                                                         }
+                                                    }
  
                                                     viewModel.logAdminAction(
                                                         admin = "Chinedu (Admin)",
@@ -2294,7 +2184,9 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                 }
 
                 if (showFeaturesDialog && selectedBranchForFeatures != null) {
-                    val bId = selectedBranchForFeatures!!["id"] as? String ?: ""
+                    val bId = (selectedBranchForFeatures!!["id"] as? String)?.ifBlank { null }
+                        ?: (selectedBranchForFeatures!!["code"] as? String)?.ifBlank { null }
+                        ?: (selectedBranchForFeatures!!["branchId"] as? String) ?: ""
                     val bName = selectedBranchForFeatures!!["name"] as? String ?: "this branch"
                     
                     var fAiContent by remember(selectedBranchForFeatures) { mutableStateOf(selectedBranchForFeatures!!["aiContentEnabled"] as? Boolean ?: true) }
@@ -2731,7 +2623,8 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                 }
 
                 if (showEditStaffRoleDialog && selectedStaffForRoleEdit != null) {
-                    val pUid = selectedStaffForRoleEdit!!["id"] as? String ?: ""
+                    val pUid = selectedStaffForRoleEdit!!["id"] as? String ?: selectedStaffForRoleEdit!!["uid"] as? String ?: ""
+                    val pEmail = selectedStaffForRoleEdit!!["email"] as? String ?: ""
                     val pName = selectedStaffForRoleEdit!!["displayName"] as? String ?: "this pharmacist"
                     val currentRoleInDoc = selectedStaffForRoleEdit!!["role"] as? String ?: "Pharmacist"
                     val isApprovedInDoc = selectedStaffForRoleEdit!!["isApproved"] as? Boolean ?: true
@@ -2802,7 +2695,7 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                                     localPharmacistRoleOverrides = localPharmacistRoleOverrides + (pUid to selectedRole)
                                     
                                     // 2. Perform write to Firestore in background
-                                    viewModel.updateStaffRoleOrApproval(pUid, selectedRole, isApproved)
+                                    viewModel.updateStaffRoleOrApproval(pUid, selectedRole, isApproved, pEmail)
                                     Toast.makeText(context, "Role updated to $selectedRole successfully", Toast.LENGTH_SHORT).show()
                                     
                                     showEditStaffRoleDialog = false
@@ -3364,225 +3257,6 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                 }
             }
         } else if (selectedSubTab == 3) {
-            // --- Key Requests Screen (Interactive Management and Approval) ---
-            var requestToApprove by remember { mutableStateOf<Map<String, Any>?>(null) }
-            var requestToReject by remember { mutableStateOf<Map<String, Any>?>(null) }
-            var rejectionReason by remember { mutableStateOf("") }
-            
-            // Approval form states
-            var formGeminiKey by remember { mutableStateOf("") }
-
-            if (requestToApprove != null) {
-                val req = requestToApprove!!
-                val phName = req["pharmacyName"] as? String ?: "Cooperative Node"
-                val devId = req["deviceId"] as? String ?: ""
-                
-                AlertDialog(
-                    onDismissRequest = { requestToApprove = null },
-                    title = { Text("Approve & Provision API Suite", fontWeight = FontWeight.Bold) },
-                    text = {
-                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text("Assign dedicated Gemini key for $phName:", style = MaterialTheme.typography.bodyMedium)
-                            
-                            OutlinedTextField(
-                                value = formGeminiKey,
-                                onValueChange = { formGeminiKey = it },
-                                label = { Text("Gemini API Key") },
-                                placeholder = { Text("Enter Gemini API key...") },
-                                singleLine = true,
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(10.dp)
-                            )
-                        }
-                    },
-                    confirmButton = {
-                        Button(
-                            onClick = {
-                                viewModel.approveKeyRequest(devId, formGeminiKey)
-                                requestToApprove = null
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = TealPrimary),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Text("Approve & Sync Keys", color = Color.Black, fontWeight = FontWeight.Bold)
-                        }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { requestToApprove = null }) { Text("Cancel") }
-                    }
-                )
-            }
-
-            if (requestToReject != null) {
-                val req = requestToReject!!
-                val phName = req["pharmacyName"] as? String ?: "Cooperative Node"
-                val devId = req["deviceId"] as? String ?: ""
-                
-                AlertDialog(
-                    onDismissRequest = { requestToReject = null },
-                    title = { Text("Reject Key Request", fontWeight = FontWeight.Bold) },
-                    text = {
-                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Text("Specify decline rationale for $phName:", style = MaterialTheme.typography.bodyMedium)
-                            OutlinedTextField(
-                                value = rejectionReason,
-                                onValueChange = { rejectionReason = it },
-                                placeholder = { Text("e.g., node license unverified...") },
-                                label = { Text("Reason for decline") },
-                                modifier = Modifier.fillMaxWidth().height(100.dp),
-                                singleLine = false,
-                                shape = RoundedCornerShape(10.dp)
-                            )
-                        }
-                    },
-                    confirmButton = {
-                        Button(
-                            onClick = {
-                                viewModel.rejectKeyRequest(devId, rejectionReason)
-                                requestToReject = null
-                                rejectionReason = ""
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Text("Decline Request", color = Color.White, fontWeight = FontWeight.Bold)
-                        }
-                    },
-                    dismissButton = {
-                        TextButton(onClick = { requestToReject = null }) { Text("Cancel") }
-                    }
-                )
-            }
-
-            if (keyRequests.isEmpty()) {
-                Box(modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp), contentAlignment = Alignment.Center) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Icon(Icons.Filled.VpnKey, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f), modifier = Modifier.size(48.dp))
-                        Text(
-                            text = "No key request setups found.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            } else {
-                Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    keyRequests.sortedByDescending { it["requestedAt"] as? Long ?: 0L }.forEach { req ->
-                        val phName = req["pharmacyName"] as? String ?: "Unverified Node"
-                        val model = req["deviceModel"] as? String ?: "Network Node"
-                        val lga = req["lga"] as? String ?: ""
-                        val state = req["state"] as? String ?: ""
-                        val status = req["status"] as? String ?: "PENDING"
-                        val devId = req["deviceId"] as? String ?: ""
-                        val requestedAt = req["requestedAt"] as? Long ?: 0L
-                        val dateFormatted = java.text.SimpleDateFormat("MMM dd, yyyy - HH:mm", java.util.Locale.getDefault()).format(java.util.Date(requestedAt))
-
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f)),
-                            shape = RoundedCornerShape(16.dp),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f)),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Text(phName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
-                                        Text("Node ID: $devId", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    }
-                                    
-                                    val statusColor = when (status) {
-                                        "APPROVED" -> Color(0xFF4CAF50)
-                                        "REJECTED" -> MaterialTheme.colorScheme.error
-                                        else -> Color(0xFFFF9800)
-                                    }
-                                    
-                                    Box(
-                                        modifier = Modifier
-                                            .clip(RoundedCornerShape(6.dp))
-                                            .background(statusColor.copy(alpha = 0.12f))
-                                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                                    ) {
-                                        Text(status.uppercase(), fontSize = 10.sp, fontWeight = FontWeight.ExtraBold, color = statusColor)
-                                    }
-                                }
-
-                                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.08f))
-
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Column {
-                                        Text("Regional Scope: $lga, $state", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        Text("Submitted: $dateFormatted", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    }
-                                }
-
-                                if (status == "PENDING") {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        Button(
-                                            onClick = {
-                                                formGeminiKey = ""
-
-                                                requestToApprove = req
-                                            },
-                                            colors = ButtonDefaults.buttonColors(containerColor = TealPrimary),
-                                            shape = RoundedCornerShape(8.dp),
-                                            modifier = Modifier.weight(1f)
-                                        ) {
-                                            Text("Approve & Provision", color = Color.Black, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                                        }
-                                        
-                                        OutlinedButton(
-                                            onClick = {
-                                                rejectionReason = ""
-                                                requestToReject = req
-                                            },
-                                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.error),
-                                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-                                            shape = RoundedCornerShape(8.dp),
-                                            modifier = Modifier.weight(1.0f)
-                                        ) {
-                                            Text("Decline", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                                        }
-                                    }
-                                } else if (status == "APPROVED") {
-                                    val preGemini = req["geminiKey"] as? String ?: ""
-
-                                    
-                                    Column(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clip(RoundedCornerShape(8.dp))
-                                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.15f))
-                                            .padding(10.dp),
-                                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                                    ) {
-                                        Text("Provisioned Keys Profile:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = TealPrimary)
-                                        Text("Gemini: ${if (preGemini.length > 10) "${preGemini.take(6)}...${preGemini.takeLast(4)}" else "Custom Active"}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        Text("Twilio Multi-Channel: Active System Gateway", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        } else if (selectedSubTab == 4) {
 
             if (auditLogs.isEmpty()) {
                 Box(modifier = Modifier.fillMaxWidth().padding(vertical = 40.dp), contentAlignment = Alignment.Center) {
@@ -3692,7 +3366,7 @@ fun AdminDashboardScreen(viewModel: PharmacyViewModel) {
                     }
                 }
             }
-        } else if (selectedSubTab == 5) {
+        } else if (selectedSubTab == 4) {
             // --- NDPA PRIVACY POLICY & COMPLIANCE PLEDGE TAB ---
             val isPledgeSigned by viewModel.isNdpaPledgeSigned.collectAsStateWithLifecycle()
             var showPledgeDialog by remember { mutableStateOf(false) }

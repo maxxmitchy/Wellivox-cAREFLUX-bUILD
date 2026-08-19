@@ -193,7 +193,7 @@ data class PromoStudioState(
     val musicTrack: AudioTrackOption = AudioTrackOption.UPBEAT_RETAIL,
     val customAudioUri: Uri? = null,
     val videoAspectRatio: VideoAspectRatio = VideoAspectRatio.SQUARE_1_1,
-    val slideDurationSeconds: Int = 4,
+    val slideDurationSeconds: Int = 15,
     val isVideoEncoding: Boolean = false,
     val videoEncodingProgress: Float = 0f,
     val generatedVideoUri: Uri? = null
@@ -253,14 +253,15 @@ class AIContentEngineViewModel(private val repository: PharmacyRepository) : Vie
 
             val defaultProd = current.products.getOrElse(index) { current.products[0] }
 
+            val resolvedImgUri = item.imageUri
             newProducts[index] = PromoProductConfig(
                 id = item.id,
                 name = item.name,
                 subtitle = subtitleStr,
                 price = current.priceOverrides[item.id] ?: formattedPrice,
                 currency = "₦",
-                imageUri = item.imageUri,
-                drawableResId = if (item.imageUri.isNullOrEmpty()) defaultProd.drawableResId else null,
+                imageUri = resolvedImgUri,
+                drawableResId = if (resolvedImgUri.isNullOrEmpty()) defaultProd.drawableResId else null,
                 bgTintHex = bgTints.getOrElse(index) { "#E8ECE0" },
                 priceColorHex = priceColors.getOrElse(index) { "#1E4D2B" },
                 textColorHex = "#0D1B2A",
