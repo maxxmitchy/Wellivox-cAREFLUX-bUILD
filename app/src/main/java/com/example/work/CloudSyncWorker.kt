@@ -261,8 +261,9 @@ class CloudSyncWorker(
                 // ==========================================
                 // 4. Bi-directional Inventory (Products) Sync
                 // ==========================================
+                var remoteInvDocs: List<Map<String, Any>> = emptyList()
                 try {
-                    val remoteInvDocs = repository.getRemoteDocumentsWhereEquals("branch_inventory", "branchId", branchId).getOrDefault(emptyList())
+                    remoteInvDocs = repository.getRemoteDocumentsWhereEquals("branch_inventory", "branchId", branchId).getOrDefault(emptyList())
                     for (doc in remoteInvDocs) {
                         val id = (doc["id"] as? Number)?.toInt() ?: continue
                         if (id == 0) continue // Skip placeholder corrupt ID
@@ -311,33 +312,95 @@ class CloudSyncWorker(
                     e.printStackTrace()
                 }
 
-                // Sync Local Inventory Items to Cloud (if local is newer)
+                // Sync Local Inventory Items to Cloud (if local metadata is newer; never overwrite stock unconditionally)
                 val localInventory = dao.getAllInventoryItems().firstOrNull() ?: emptyList()
+                val remoteDocsMap = remoteInvDocs.associateBy { (it["id"] as? Number)?.toInt() ?: 0 }
+
                 for (item in localInventory) {
                     if (item.id == 0) continue // Skip corrupt placeholder
                     
-                    val invMap = hashMapOf(
-                        "id" to item.id,
-                        "name" to item.name,
-                        "dosage" to item.dosage,
-                        "stockQuantity" to item.stockQuantity,
-                        "minRequiredStock" to item.minRequiredStock,
-                        "category" to item.category,
-                        "price" to item.price,
-                        "expiryDate" to item.expiryDate,
-                        "batchNumber" to item.batchNumber,
-                        "supplier" to item.supplier,
-                        "unitForm" to item.unitForm,
-                        "lastSoldDate" to item.lastSoldDate,
-                        "totalSoldQuantity" to item.totalSoldQuantity,
-                        "brand" to item.brand,
-                        "salesStrategy" to item.salesStrategy,
-                        "lastUpdated" to item.lastUpdated,
-                        "branchId" to branchId,
-                        "imageUri" to (item.imageUri ?: "")
-                    )
-                    
-                    repository.upsertRemoteDocument("branch_inventory", "${branchId}_${item.id}", invMap)
+                    val remoteDoc = remoteDocsMap[item.id]
+                    if (remoteDoc == null) {
+                        // New local item: push initial document with stock quantity
+                        val invMap = hashMapOf(
+                            "id" to item.id,
+                            "name" to item.name,
+                            "dosage" to item.dosage,
+                            "stockQuantity" to item.stockQuantity,
+                            "minRequiredStock" to item.minRequiredStock,
+                            "category" to item.category,
+                            "price" to item.price,
+                            "expiryDate" to item.expiryDate,
+                            "batchNumber" to item.batchNumber,
+                            "supplier" to item.supplier,
+                            "unitForm" to item.unitForm,
+                            "lastSoldDate" to item.lastSoldDate,
+                            "totalSoldQuantity" to item.totalSoldQuantity,
+                            "brand" to item.brand,
+                            "salesStrategy" to item.salesStrategy,
+                            "lastUpdated" to item.lastUpdated,
+                            "branchId" to branchId,
+                            "imageUri" to (item.imageUri ?: "")
+                        )
+                        repository.upsertRemoteDocument("branch_inventory", "${branchId}_${item.id}", invMap)
+                    } else {
+                        // Existing item: update metadata only if local is newer, preserving remote stock
+                        val remoteLastUpdated = (remoteDoc["lastUpdated"] as? Number)?.toLong() ?: 0L
+                        if (item.lastUpdated > remoteLastUpdated) {
+                            val metadataMap = hashMapOf(
+                                "id" to item.id,
+                                "name" to item.name,
+                                "dosage" to item.dosage,
+                                "minRequiredStock" to item.minRequiredStock,
+                                "category" to item.category,
+                                "price" to item.price,
+                                "expiryDate" to item.expiryDate,
+                                "batchNumber" to item.batchNumber,
+                                "supplier" to item.supplier,
+                                "unitForm" to item.unitForm,
+                                "brand" to item.brand,
+                                "salesStrategy" to item.salesStrategy,
+                                "lastUpdated" to item.lastUpdated,
+                                "branchId" to branchId,
+                                "imageUri" to (item.imageUri ?: "")
+                            )
+                            repository.upsertRemoteDocument("branch_inventory", "${branchId}_${item.id}", metadataMap)
+                        }
+                    }
+                }
+
+                // ==========================================
+                // 5. Bi-directional Medication Sales Sync
+                // ==========================================
+                try {
+                    val pendingSales = dao.getAllMedicationSales().firstOrNull() ?: emptyList()
+                    for (sale in pendingSales) {
+                        if (sale.clientTransactionId.isBlank()) continue
+                        val saleDoc = repository.getRemoteDocument("medication_sales", sale.clientTransactionId).getOrNull()
+                        if (saleDoc == null) {
+                            val saleMap = mapOf(
+                                "productName" to sale.productName,
+                                "brand" to sale.brand,
+                                "genericName" to sale.genericName,
+                                "category" to sale.category,
+                                "quantitySold" to sale.quantitySold,
+                                "dateSold" to sale.dateSold,
+                                "pharmacyNode" to sale.pharmacyNode,
+                                "patientAge" to sale.patientAge,
+                                "patientGender" to sale.patientGender,
+                                "patientState" to sale.patientState,
+                                "patientLga" to sale.patientLga,
+                                "patientCity" to sale.patientCity,
+                                "salePrice" to sale.salePrice,
+                                "batchNumber" to sale.batchNumber,
+                                "clientTransactionId" to sale.clientTransactionId,
+                                "branchId" to sale.branchId.ifBlank { branchId }
+                            )
+                            repository.upsertRemoteDocument("medication_sales", sale.clientTransactionId, saleMap)
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
                 }
             }
             

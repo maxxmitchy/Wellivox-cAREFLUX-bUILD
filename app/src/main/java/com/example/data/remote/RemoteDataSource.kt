@@ -54,6 +54,7 @@ interface RemoteDataSource {
 
     // Sale Sync & Outbound Operations
     suspend fun syncSaleTransaction(request: SaleSyncRequest): SyncResult
+    suspend fun deductInventoryStockOnlineTransaction(branchId: String, itemId: Int, quantity: Int): Result<Unit> = Result.success(Unit)
     suspend fun logOutboundSms(logData: Map<String, Any?>): Result<Unit>
 
     // Device Registration & FCM Token Operations

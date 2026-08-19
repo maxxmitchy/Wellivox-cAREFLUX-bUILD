@@ -214,29 +214,14 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 currentCart + CartItem(item, quantity)
             }
         }
-        viewModelScope.launch {
-            val dbItem = repository.getInventoryItemById(item.id)
-            if (dbItem != null) {
-                val newQty = (dbItem.stockQuantity - quantity).coerceAtLeast(0)
-                saveAndSyncInventoryItemDirectly(dbItem.copy(stockQuantity = newQty, lastUpdated = System.currentTimeMillis()))
-            }
-        }
     }
 
     fun updateCartItemQuantity(itemId: Int, quantity: Int) {
         val currentCart = _cart.value
-        val existing = currentCart.find { it.inventoryItem.id == itemId } ?: return
-        val diff = quantity - existing.quantity
+        currentCart.find { it.inventoryItem.id == itemId } ?: return
         if (quantity <= 0) {
             removeFromCart(itemId)
             return
-        }
-        viewModelScope.launch {
-            val dbItem = repository.getInventoryItemById(itemId)
-            if (dbItem != null) {
-                val newQty = (dbItem.stockQuantity - diff).coerceAtLeast(0)
-                saveAndSyncInventoryItemDirectly(dbItem.copy(stockQuantity = newQty, lastUpdated = System.currentTimeMillis()))
-            }
         }
         _cart.value = _cart.value.map { if (it.inventoryItem.id == itemId) it.copy(quantity = quantity) else it }
     }
@@ -247,17 +232,6 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
 
     fun removeFromCart(itemId: Int) {
         val currentCart = _cart.value
-        val itemToRemove = currentCart.find { it.inventoryItem.id == itemId }
-        if (itemToRemove != null) {
-            val restoredQty = itemToRemove.quantity
-            viewModelScope.launch {
-                val dbItem = repository.getInventoryItemById(itemId)
-                if (dbItem != null) {
-                    val newQty = dbItem.stockQuantity + restoredQty
-                    saveAndSyncInventoryItemDirectly(dbItem.copy(stockQuantity = newQty, lastUpdated = System.currentTimeMillis()))
-                }
-            }
-        }
         _cart.value = currentCart.filter { it.inventoryItem.id != itemId }
     }
 
@@ -267,18 +241,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun clearCartAndRestoreStock() {
-        val currentCart = _cart.value
-        viewModelScope.launch {
-            currentCart.forEach { cartItem ->
-                val dbItem = repository.getInventoryItemById(cartItem.inventoryItem.id)
-                if (dbItem != null) {
-                    val newQty = dbItem.stockQuantity + cartItem.quantity
-                    saveAndSyncInventoryItemDirectly(dbItem.copy(stockQuantity = newQty, lastUpdated = System.currentTimeMillis()))
-                }
-            }
-        }
-        _cart.value = emptyList()
-        _deliveryFeeString.value = ""
+        clearCart()
     }
 
     // Streams of data from room database
@@ -3666,9 +3629,45 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun recordMedicationSale(cartItem: CartItem, customer: Customer?, overrideReason: String? = null, prescribingDoctor: String? = null, prescriptionRef: String? = null) {
-        viewModelScope.launch {
+    suspend fun completeCheckout(
+        cartItems: List<CartItem>,
+        customer: Customer?,
+        overrideReason: String? = null,
+        prescribingDoctor: String? = null,
+        prescriptionRef: String? = null
+    ): Result<Unit> {
+        if (cartItems.isEmpty()) return Result.failure(Exception("Cart is empty"))
+        for (item in cartItems) {
+            val result = recordMedicationSale(item, customer, overrideReason, prescribingDoctor, prescriptionRef)
+            if (result.isFailure) {
+                return result
+            }
+        }
+        return Result.success(Unit)
+    }
+
+    suspend fun recordMedicationSale(
+        cartItem: CartItem,
+        customer: Customer?,
+        overrideReason: String? = null,
+        prescribingDoctor: String? = null,
+        prescriptionRef: String? = null
+    ): Result<Unit> {
+        return try {
             val inv = cartItem.inventoryItem
+            val activeBranchId = _currentPharmacistBranchId.value ?: ""
+
+            // Online atomic stock deduction check if online
+            if (activeBranchId.isNotBlank()) {
+                val onlineRes = repository.deductInventoryStockOnlineTransaction(activeBranchId, inv.id, cartItem.quantity)
+                if (onlineRes.isFailure) {
+                    val err = onlineRes.exceptionOrNull()
+                    if (err is com.google.firebase.firestore.FirebaseFirestoreException && err.code == com.google.firebase.firestore.FirebaseFirestoreException.Code.ABORTED) {
+                        return Result.failure(Exception("Insufficient stock available in branch inventory."))
+                    }
+                }
+            }
+
             val age = customer?.age ?: 30
             val gender = customer?.gender ?: "Male"
             val state = customer?.state ?: "Lagos"
@@ -3717,23 +3716,15 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 }
             }
 
-            // Save updated batches
-            for (batch in updatedBatches) {
-                if (batch.id == 0) {
-                    repository.insertInventoryBatch(batch)
-                } else {
-                    repository.updateInventoryBatch(batch)
-                }
-            }
-
-            // Recalculate total item stock
             val totalBatchStock = updatedBatches.sumOf { it.stockQuantity }
             val updatedItem = inv.copy(
                 stockQuantity = totalBatchStock,
                 totalSoldQuantity = inv.totalSoldQuantity + cartItem.quantity,
                 lastSoldDate = System.currentTimeMillis()
             )
-            saveAndSyncInventoryItemDirectly(updatedItem)
+
+            val dateSoldMs = System.currentTimeMillis()
+            val clientTxId = "SALE_${activeBranchId}_${dateSoldMs}_${java.util.UUID.randomUUID().toString().take(8)}"
 
             val sale = MedicationSale(
                 productName = inv.name,
@@ -3741,7 +3732,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 genericName = inv.name,
                 category = inv.category,
                 quantitySold = cartItem.quantity,
-                dateSold = System.currentTimeMillis(),
+                dateSold = dateSoldMs,
                 pharmacyNode = android.os.Build.MODEL,
                 patientAge = age,
                 patientGender = gender,
@@ -3749,16 +3740,14 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 patientLga = lga,
                 patientCity = city,
                 salePrice = inv.price * cartItem.quantity,
-                batchNumber = inv.batchNumber
+                batchNumber = inv.batchNumber,
+                clientTransactionId = clientTxId,
+                branchId = activeBranchId
             )
 
-            // Insert locally
-            repository.insertMedicationSale(sale)
-
-            // Record Double-Entry Inventory Ledger for Point-of-Sale
             val branchName = _currentPharmacistBranchName.value ?: "Careflux"
-            recordDoubleEntryLedger(
-                itemId = inv.id,
+            val ledgerEntry = InventoryLedgerEntry(
+                inventoryItemId = inv.id,
                 itemName = inv.name,
                 batchNumber = inv.batchNumber,
                 transactionType = "SALE",
@@ -3767,9 +3756,14 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 quantity = cartItem.quantity,
                 unitPrice = inv.price,
                 totalValue = inv.price * cartItem.quantity,
-                referenceId = "SALE_${sale.id}",
-                notes = "Point of Sale Checkout for ${customer?.name ?: "Walk-in Patient"}"
+                referenceId = clientTxId,
+                notes = "Point of Sale Checkout for ${customer?.name ?: "Walk-in Patient"}",
+                actorName = _currentPharmacistName.value ?: "Pharmacist",
+                timestamp = dateSoldMs
             )
+
+            // Execute local checkout as ONE atomic Room transaction
+            repository.executeCheckoutTransaction(updatedItem, updatedBatches, sale, ledgerEntry)
 
             // Sync to Remote Data Source
             try {
@@ -3787,9 +3781,11 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                     "patientLga" to sale.patientLga,
                     "patientCity" to sale.patientCity,
                     "salePrice" to sale.salePrice,
-                    "batchNumber" to sale.batchNumber
+                    "batchNumber" to sale.batchNumber,
+                    "clientTransactionId" to clientTxId,
+                    "branchId" to activeBranchId
                 )
-                repository.addRemoteDocument("medication_sales", saleMap)
+                repository.upsertRemoteDocument("medication_sales", clientTxId, saleMap)
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -3806,18 +3802,19 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
             // Secure Clinical Audit Logging for Override or Prescription Checked
             if (!overrideReason.isNullOrBlank() || !prescribingDoctor.isNullOrBlank() || !prescriptionRef.isNullOrBlank()) {
                 val auditMsg = StringBuilder("Clinical sale tracing:")
-                if (!overrideReason.isNullOrBlank()) {
-                    auditMsg.append(" [OVERRIDE] Justification: $overrideReason")
-                }
-                if (!prescribingDoctor.isNullOrBlank() || !prescriptionRef.isNullOrBlank()) {
-                    auditMsg.append(" [RX VERIFIED] Dr. ${prescribingDoctor ?: "N/A"} (Ref: ${prescriptionRef ?: "N/A"})")
-                }
+                if (!overrideReason.isNullOrBlank()) auditMsg.append(" [Override: $overrideReason]")
+                if (!prescribingDoctor.isNullOrBlank()) auditMsg.append(" [Doctor: $prescribingDoctor]")
+                if (!prescriptionRef.isNullOrBlank()) auditMsg.append(" [RxRef: $prescriptionRef]")
                 logAuditTrail(
-                    action = "CLINICAL_DISPENSE_COMPLIANCE",
+                    action = "POS_CLINICAL_SALE",
                     details = auditMsg.toString(),
                     affectedId = inv.id.toString()
                 )
             }
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
         }
     }
 
@@ -4010,13 +4007,17 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 val patientLgaName = customer?.lga ?: "Ikeja"
                 val patientCityVal = customer?.city ?: "Ikeja"
 
+                val rescueActiveBranchId = _currentPharmacistBranchId.value ?: ""
+                val rescueDateSold = System.currentTimeMillis()
+                val rescueClientTxId = "SALE_${rescueActiveBranchId}_${rescueDateSold}_${java.util.UUID.randomUUID().toString().take(8)}"
+
                 val sale = MedicationSale(
                     productName = listing.productName,
                     brand = "Rescued from ${listing.ownerDeviceModel}",
                     genericName = listing.productName,
                     category = "Rescue Marketplace",
                     quantitySold = qtyToSell,
-                    dateSold = System.currentTimeMillis(),
+                    dateSold = rescueDateSold,
                     pharmacyNode = deviceModel,
                     patientAge = patientAge,
                     patientGender = patientGen,
@@ -4024,7 +4025,9 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                     patientLga = patientLgaName,
                     patientCity = patientCityVal,
                     salePrice = totalSaleRevenue,
-                    batchNumber = listing.batchNumber
+                    batchNumber = listing.batchNumber,
+                    clientTransactionId = rescueClientTxId,
+                    branchId = rescueActiveBranchId
                 )
                 val saleMap = mapOf(
                     "productName" to listing.productName,
@@ -4032,7 +4035,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                     "genericName" to listing.productName,
                     "category" to "Rescue Marketplace",
                     "quantitySold" to qtyToSell,
-                    "dateSold" to System.currentTimeMillis(),
+                    "dateSold" to rescueDateSold,
                     "pharmacyNode" to deviceModel,
                     "patientAge" to patientAge,
                     "patientGender" to patientGen,
@@ -4040,10 +4043,12 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                     "patientLga" to patientLgaName,
                     "patientCity" to patientCityVal,
                     "salePrice" to totalSaleRevenue,
-                    "batchNumber" to listing.batchNumber
+                    "batchNumber" to listing.batchNumber,
+                    "clientTransactionId" to rescueClientTxId,
+                    "branchId" to rescueActiveBranchId
                 )
                 repository.insertMedicationSale(sale)
-                repository.addRemoteDocument("medication_sales", saleMap)
+                repository.upsertRemoteDocument("medication_sales", rescueClientTxId, saleMap)
 
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -4412,8 +4417,14 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                     )
                 )
 
-                for (sale in sales) {
-                    repository.addRemoteDocument("medication_sales", sale)
+                val seedBranchId = _currentPharmacistBranchId.value ?: ""
+                for ((idx, sale) in sales.withIndex()) {
+                    val dateSold = sale["dateSold"] as? Long ?: System.currentTimeMillis()
+                    val clientTxId = "SALE_SEED_${seedBranchId}_${dateSold}_$idx"
+                    val mutableSale = sale.toMutableMap()
+                    mutableSale["branchId"] = seedBranchId
+                    mutableSale["clientTransactionId"] = clientTxId
+                    repository.upsertRemoteDocument("medication_sales", clientTxId, mutableSale)
                 }
 
                 android.util.Log.d("PharmacyViewModel", "Simulated cooperative nodes and sales successfully seeded!")

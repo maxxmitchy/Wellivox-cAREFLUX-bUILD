@@ -1003,11 +1003,22 @@ class FirestoreRemoteDataSourceImpl(
                     )
                 }
             )
-            val docRef = firestore.collection("medication_sales").add(payload).await()
+            val existingDoc = firestore.collection("medication_sales")
+                .document(request.clientTransactionId)
+                .get()
+                .await()
+
+            if (!existingDoc.exists()) {
+                firestore.collection("medication_sales")
+                    .document(request.clientTransactionId)
+                    .set(payload, com.google.firebase.firestore.SetOptions.merge())
+                    .await()
+            }
+
             SyncResult(
                 status = SyncStatus.SYNCED,
                 clientTransactionId = request.clientTransactionId,
-                remoteId = docRef.id
+                remoteId = request.clientTransactionId
             )
         } catch (e: Exception) {
             SyncResult(
@@ -1015,6 +1026,33 @@ class FirestoreRemoteDataSourceImpl(
                 clientTransactionId = request.clientTransactionId,
                 errorMessage = e.localizedMessage ?: "Firestore sync failed"
             )
+        }
+    }
+
+    override suspend fun deductInventoryStockOnlineTransaction(branchId: String, itemId: Int, quantity: Int): Result<Unit> {
+        return try {
+            val docId = "${branchId}_${itemId}"
+            val docRef = firestore.collection("branch_inventory").document(docId)
+            firestore.runTransaction { transaction ->
+                val snapshot = transaction.get(docRef)
+                if (snapshot.exists()) {
+                    val currentStock = (snapshot.getLong("stockQuantity") ?: 0L).toInt()
+                    if (currentStock < quantity) {
+                        throw com.google.firebase.firestore.FirebaseFirestoreException(
+                            "Insufficient remote stock: available $currentStock, requested $quantity",
+                            com.google.firebase.firestore.FirebaseFirestoreException.Code.ABORTED
+                        )
+                    }
+                    val newStock = currentStock - quantity
+                    transaction.update(docRef, mapOf(
+                        "stockQuantity" to newStock,
+                        "lastUpdated" to System.currentTimeMillis()
+                    ))
+                }
+            }.await()
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
         }
     }
 

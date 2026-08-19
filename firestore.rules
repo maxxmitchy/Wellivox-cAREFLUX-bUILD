@@ -350,7 +350,18 @@ service cloud.firestore {
       allow create: if isAuth() &&
         getBranchId() != null &&
         request.resource.data.branchId == getBranchId();
-      allow update, delete: if isAdmin();
+      allow update: if isAuth() && (
+        isAdmin() || (
+          getBranchId() != null &&
+          resource.data.branchId == getBranchId() &&
+          request.resource.data.branchId == resource.data.branchId &&
+          request.resource.data.clientTransactionId == resource.data.clientTransactionId &&
+          request.resource.data.salePrice == resource.data.salePrice &&
+          request.resource.data.quantitySold == resource.data.quantitySold &&
+          request.resource.data.productName == resource.data.productName
+        )
+      );
+      allow delete: if isAdmin();
     }
 
     // System Administrative Audit Logs

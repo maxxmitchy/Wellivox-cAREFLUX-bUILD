@@ -1502,12 +1502,18 @@ fun PharmacyRootScreen(
                                     }
                                 }
                             }
-                            // Update stock and stats via unified recordMedicationSale
-                            for (item in cartItems) {
-                                viewModel.recordMedicationSale(item, customer, overrideReason, prescribingDoctor, prescriptionRef)
+                            // Execute checkout atomically and clear cart only on success
+                            scope.launch {
+                                val checkoutResult = viewModel.completeCheckout(cartItems, customer, overrideReason, prescribingDoctor, prescriptionRef)
+                                if (checkoutResult.isSuccess) {
+                                    viewModel.clearCart()
+                                    activeTab = "inventory"
+                                    Toast.makeText(context, "Checkout completed successfully!", Toast.LENGTH_SHORT).show()
+                                } else {
+                                    val err = checkoutResult.exceptionOrNull()?.localizedMessage ?: "Checkout failed"
+                                    Toast.makeText(context, "Checkout Failed: $err. Stock was not modified.", Toast.LENGTH_LONG).show()
+                                }
                             }
-                            viewModel.clearCart()
-                            activeTab = "inventory"
                         },
                         onClearCart = { viewModel.clearCartAndRestoreStock() },
                         context = context,

@@ -347,6 +347,25 @@ interface PharmacyDao {
     suspend fun clearInventoryLedgerEntries()
 
     @Transaction
+    suspend fun executeCheckoutTransaction(
+        updatedItem: InventoryItem,
+        updatedBatches: List<InventoryBatch>,
+        sale: MedicationSale,
+        ledgerEntry: InventoryLedgerEntry
+    ) {
+        for (batch in updatedBatches) {
+            if (batch.id == 0) {
+                insertInventoryBatch(batch)
+            } else {
+                updateInventoryBatch(batch)
+            }
+        }
+        updateInventoryItem(updatedItem)
+        insertMedicationSale(sale)
+        insertInventoryLedgerEntry(ledgerEntry)
+    }
+
+    @Transaction
     suspend fun clearAllData() {
         clearOperationTasks()
         clearReceipts()

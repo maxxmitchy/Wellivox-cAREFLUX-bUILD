@@ -49,6 +49,18 @@ class PharmacyRepository(
     suspend fun upsertRemoteDocument(collection: String, documentId: String, data: Map<String, Any?>): Result<Unit> =
         remoteDataSource.upsertDocument(collection, documentId, data)
 
+    suspend fun deductInventoryStockOnlineTransaction(branchId: String, itemId: Int, quantity: Int): Result<Unit> =
+        remoteDataSource.deductInventoryStockOnlineTransaction(branchId, itemId, quantity)
+
+    suspend fun executeCheckoutTransaction(
+        updatedItem: InventoryItem,
+        updatedBatches: List<InventoryBatch>,
+        sale: MedicationSale,
+        ledgerEntry: InventoryLedgerEntry
+    ) {
+        pharmacyDao.executeCheckoutTransaction(updatedItem, updatedBatches, sale, ledgerEntry)
+    }
+
     suspend fun addRemoteDocument(collection: String, data: Map<String, Any?>): Result<String> =
         remoteDataSource.addDocument(collection, data)
 

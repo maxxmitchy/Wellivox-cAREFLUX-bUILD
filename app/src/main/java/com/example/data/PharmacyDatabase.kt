@@ -32,7 +32,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         CustomerBranch::class,
         InventoryLedgerEntry::class
     ],
-    version = 30,
+    version = 31,
     exportSchema = false
 )
 abstract class PharmacyDatabase : RoomDatabase() {
@@ -128,6 +128,13 @@ abstract class PharmacyDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_30_31 = object : Migration(30, 31) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE medication_sales ADD COLUMN clientTransactionId TEXT NOT NULL DEFAULT ''")
+                database.execSQL("ALTER TABLE medication_sales ADD COLUMN branchId TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun getDatabase(context: Context): PharmacyDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -135,7 +142,7 @@ abstract class PharmacyDatabase : RoomDatabase() {
                     PharmacyDatabase::class.java,
                     "pharmacy_database"
                 )
-                .addMigrations(MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_17_18, MIGRATION_22_23, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30)
+                .addMigrations(MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_17_18, MIGRATION_22_23, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31)
                 .fallbackToDestructiveMigration(dropAllTables = true)
                 .build()
                 INSTANCE = instance

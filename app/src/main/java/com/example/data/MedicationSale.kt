@@ -19,5 +19,7 @@ data class MedicationSale(
     val patientLga: String = "Ikeja",
     val patientCity: String = "Ikeja",
     val salePrice: Double = 0.0,
-    val batchNumber: String = ""
+    val batchNumber: String = "",
+    val clientTransactionId: String = "",
+    val branchId: String = ""
 )
