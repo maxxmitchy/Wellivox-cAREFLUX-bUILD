@@ -93,7 +93,9 @@ class CloudSyncWorker(
                                 consentSmsRefills = consentSmsRefills,
                                 consentCloudSync = consentCloudSync,
                                 consentLastUpdated = consentLastUpdated,
-                                consentChannel = consentChannel
+                                consentChannel = consentChannel,
+                                branchId = doc["branchId"] as? String ?: branchId,
+                                originatingUserUid = doc["originatingUserUid"] as? String ?: ""
                             )
                             dao.insertCustomer(newLocalCust)
                         }
@@ -105,6 +107,11 @@ class CloudSyncWorker(
                 // Sync Local Customers to Cloud
                 val localCustomers = dao.getAllCustomers().firstOrNull() ?: emptyList()
                 for (c in localCustomers) {
+                    val targetBranchId = c.branchId
+                    if (targetBranchId.isBlank()) {
+                        android.util.Log.w("CloudSyncWorker", "Skipping customer ${c.id} upload: missing branchId lineage.")
+                        continue
+                    }
                     val customerMap = hashMapOf(
                         "id" to c.id,
                         "name" to c.name,
@@ -122,7 +129,8 @@ class CloudSyncWorker(
                         "syncedFromDevice" to deviceId,
                         "deviceModel" to deviceModel,
                         "lastSyncedAt" to syncTime,
-                        "branchId" to branchId,
+                        "branchId" to targetBranchId,
+                        "originatingUserUid" to c.originatingUserUid,
                         "consentPrescriptionTracking" to c.consentPrescriptionTracking,
                         "consentSmsRefills" to c.consentSmsRefills,
                         "consentCloudSync" to c.consentCloudSync,
@@ -132,7 +140,7 @@ class CloudSyncWorker(
                     
                     val globalDocId = "${deviceId}_${c.id}"
                     repository.upsertRemoteDocument("customers", globalDocId, customerMap)
-                    repository.upsertRemoteDocument("branch_customers", "${branchId}_${c.id}", customerMap)
+                    repository.upsertRemoteDocument("branch_customers", "${targetBranchId}_${c.id}", customerMap)
                 }
 
                 // ==========================================
@@ -161,7 +169,9 @@ class CloudSyncWorker(
                                 customDosage = customDosage,
                                 cost = cost,
                                 cycleDays = cycleDays,
-                                nextRefillDate = if (nextRefillDate > 0L) nextRefillDate else syncTime
+                                nextRefillDate = if (nextRefillDate > 0L) nextRefillDate else syncTime,
+                                branchId = doc["branchId"] as? String ?: branchId,
+                                originatingUserUid = doc["originatingUserUid"] as? String ?: ""
                             )
                             dao.insertCustomerMedication(newLocalMed)
                         }
@@ -173,6 +183,11 @@ class CloudSyncWorker(
                 // Sync Local Medications to Cloud
                 val localMedications = dao.getAllCustomerMedications().firstOrNull() ?: emptyList()
                 for (m in localMedications) {
+                    val targetBranchId = m.branchId
+                    if (targetBranchId.isBlank()) {
+                        android.util.Log.w("CloudSyncWorker", "Skipping medication ${m.id} upload: missing branchId lineage.")
+                        continue
+                    }
                     val medMap = hashMapOf(
                         "id" to m.id,
                         "customerId" to m.customerId,
@@ -185,13 +200,14 @@ class CloudSyncWorker(
                         "syncedFromDevice" to deviceId,
                         "deviceModel" to deviceModel,
                         "lastSyncedAt" to syncTime,
-                        "branchId" to branchId,
+                        "branchId" to targetBranchId,
+                        "originatingUserUid" to m.originatingUserUid,
                         "globalCustomerDocId" to "${deviceId}_${m.customerId}"
                     )
                     
                     val globalMedDocId = "${deviceId}_${m.id}"
                     repository.upsertRemoteDocument("customer_medications", globalMedDocId, medMap)
-                    repository.upsertRemoteDocument("branch_customer_medications", "${branchId}_${m.id}", medMap)
+                    repository.upsertRemoteDocument("branch_customer_medications", "${targetBranchId}_${m.id}", medMap)
                 }
 
                 // ==========================================
@@ -223,7 +239,9 @@ class CloudSyncWorker(
                                 followUpDay3Sent = followUpDay3Sent,
                                 followUpDay7Sent = followUpDay7Sent,
                                 followUpDay14Sent = followUpDay14Sent,
-                                dateAdded = if (dateAdded > 0L) dateAdded else syncTime
+                                dateAdded = if (dateAdded > 0L) dateAdded else syncTime,
+                                branchId = doc["branchId"] as? String ?: branchId,
+                                originatingUserUid = doc["originatingUserUid"] as? String ?: ""
                             )
                             dao.insertClinicalIntervention(newLocalInt)
                         }
@@ -235,6 +253,11 @@ class CloudSyncWorker(
                 // Sync Local Interventions to Cloud
                 val localInterventions = dao.getAllClinicalInterventions().firstOrNull() ?: emptyList()
                 for (i in localInterventions) {
+                    val targetBranchId = i.branchId
+                    if (targetBranchId.isBlank()) {
+                        android.util.Log.w("CloudSyncWorker", "Skipping intervention ${i.id} upload: missing branchId lineage.")
+                        continue
+                    }
                     val interventionMap = hashMapOf(
                         "id" to i.id,
                         "customerId" to i.customerId,
@@ -249,13 +272,14 @@ class CloudSyncWorker(
                         "syncedFromDevice" to deviceId,
                         "deviceModel" to deviceModel,
                         "lastSyncedAt" to syncTime,
-                        "branchId" to branchId,
+                        "branchId" to targetBranchId,
+                        "originatingUserUid" to i.originatingUserUid,
                         "globalCustomerDocId" to "${deviceId}_${i.customerId}"
                     )
                     
                     val globalIntDocId = "${deviceId}_${i.id}"
                     repository.upsertRemoteDocument("interventions", globalIntDocId, interventionMap)
-                    repository.upsertRemoteDocument("branch_interventions", "${branchId}_${i.id}", interventionMap)
+                    repository.upsertRemoteDocument("branch_interventions", "${targetBranchId}_${i.id}", interventionMap)
                 }
 
                 // ==========================================
@@ -303,7 +327,9 @@ class CloudSyncWorker(
                                 imageUri = imageUri,
                                 brand = brand,
                                 salesStrategy = salesStrategy,
-                                lastUpdated = lastUpdated
+                                lastUpdated = lastUpdated,
+                                branchId = doc["branchId"] as? String ?: branchId,
+                                originatingUserUid = doc["originatingUserUid"] as? String ?: ""
                             )
                             dao.insertInventoryItem(newLocalItem)
                         }
@@ -319,6 +345,11 @@ class CloudSyncWorker(
                 for (item in localInventory) {
                     if (item.id == 0) continue // Skip corrupt placeholder
                     
+                    val targetBranchId = item.branchId
+                    if (targetBranchId.isBlank()) {
+                        android.util.Log.w("CloudSyncWorker", "Skipping inventory item ${item.id} upload: missing branchId lineage.")
+                        continue
+                    }
                     val remoteDoc = remoteDocsMap[item.id]
                     if (remoteDoc == null) {
                         // New local item: push initial document with stock quantity
@@ -339,10 +370,11 @@ class CloudSyncWorker(
                             "brand" to item.brand,
                             "salesStrategy" to item.salesStrategy,
                             "lastUpdated" to item.lastUpdated,
-                            "branchId" to branchId,
+                            "branchId" to targetBranchId,
+                            "originatingUserUid" to item.originatingUserUid,
                             "imageUri" to (item.imageUri ?: "")
                         )
-                        repository.upsertRemoteDocument("branch_inventory", "${branchId}_${item.id}", invMap)
+                        repository.upsertRemoteDocument("branch_inventory", "${targetBranchId}_${item.id}", invMap)
                     } else {
                         // Existing item: update metadata only if local is newer, preserving remote stock
                         val remoteLastUpdated = (remoteDoc["lastUpdated"] as? Number)?.toLong() ?: 0L
@@ -361,10 +393,11 @@ class CloudSyncWorker(
                                 "brand" to item.brand,
                                 "salesStrategy" to item.salesStrategy,
                                 "lastUpdated" to item.lastUpdated,
-                                "branchId" to branchId,
+                                "branchId" to targetBranchId,
+                                "originatingUserUid" to item.originatingUserUid,
                                 "imageUri" to (item.imageUri ?: "")
                             )
-                            repository.upsertRemoteDocument("branch_inventory", "${branchId}_${item.id}", metadataMap)
+                            repository.upsertRemoteDocument("branch_inventory", "${targetBranchId}_${item.id}", metadataMap)
                         }
                     }
                 }
@@ -378,6 +411,11 @@ class CloudSyncWorker(
                         if (sale.clientTransactionId.isBlank()) continue
                         val saleDoc = repository.getRemoteDocument("medication_sales", sale.clientTransactionId).getOrNull()
                         if (saleDoc == null) {
+                            val targetBranchId = sale.branchId
+                            if (targetBranchId.isBlank()) {
+                                android.util.Log.w("CloudSyncWorker", "Skipping sale ${sale.clientTransactionId} upload: missing branchId lineage.")
+                                continue
+                            }
                             val saleMap = mapOf(
                                 "productName" to sale.productName,
                                 "brand" to sale.brand,
@@ -394,9 +432,86 @@ class CloudSyncWorker(
                                 "salePrice" to sale.salePrice,
                                 "batchNumber" to sale.batchNumber,
                                 "clientTransactionId" to sale.clientTransactionId,
-                                "branchId" to sale.branchId.ifBlank { branchId }
+                                "branchId" to targetBranchId,
+                                "originatingUserUid" to sale.originatingUserUid
                             )
                             repository.upsertRemoteDocument("medication_sales", sale.clientTransactionId, saleMap)
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+
+                // ==========================================
+                // 6. Bi-directional Operation Task Sync
+                // ==========================================
+                try {
+                    val pendingTasks = dao.getAllOperationTasks().firstOrNull() ?: emptyList()
+                    for (task in pendingTasks) {
+                        val targetBranchId = task.branchId
+                        if (targetBranchId.isBlank()) {
+                            android.util.Log.w("CloudSyncWorker", "Skipping task ${task.id} upload: missing branchId lineage.")
+                            continue
+                        }
+                        val docId = "${targetBranchId}_${task.id}"
+                        val taskDoc = repository.getRemoteDocument("branch_operation_tasks", docId).getOrNull()
+                        if (taskDoc == null) {
+                            val taskMap = mapOf(
+                                "id" to task.id,
+                                "title" to task.title,
+                                "description" to task.description,
+                                "urgency" to task.urgency,
+                                "category" to task.category,
+                                "isCompleted" to task.isCompleted,
+                                "createdAt" to task.createdAt,
+                                "branchId" to targetBranchId,
+                                "originatingUserUid" to task.originatingUserUid,
+                                "assignedToName" to (task.assignedToName ?: ""),
+                                "assignedToUid" to (task.assignedToUid ?: ""),
+                                "verifiedBy" to (task.verifiedBy ?: ""),
+                                "verificationNotes" to (task.verificationNotes ?: ""),
+                                "verificationChannel" to (task.verificationChannel ?: ""),
+                                "verificationCustomerName" to (task.verificationCustomerName ?: ""),
+                                "verifiedAt" to (task.verifiedAt ?: 0L),
+                                "isApproved" to task.isApproved,
+                                "approvedBy" to (task.approvedBy ?: ""),
+                                "approvedAt" to (task.approvedAt ?: 0L),
+                                "approvalNotes" to (task.approvalNotes ?: "")
+                            )
+                            repository.upsertRemoteDocument("branch_operation_tasks", docId, taskMap)
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+
+                // ==========================================
+                // 7. Bi-directional Receipt Sync
+                // ==========================================
+                try {
+                    val pendingReceipts = dao.getAllReceipts().firstOrNull() ?: emptyList()
+                    for (receipt in pendingReceipts) {
+                        val targetBranchId = receipt.branchId
+                        if (targetBranchId.isBlank()) {
+                            android.util.Log.w("CloudSyncWorker", "Skipping receipt ${receipt.id} upload: missing branchId lineage.")
+                            continue
+                        }
+                        val docId = "${targetBranchId}_${receipt.id}"
+                        val receiptDoc = repository.getRemoteDocument("branch_receipts", docId).getOrNull()
+                        if (receiptDoc == null) {
+                            val receiptMap = mapOf(
+                                "id" to receipt.id,
+                                "timestamp" to receipt.timestamp,
+                                "customerName" to receipt.customerName,
+                                "totalAmount" to receipt.totalAmount,
+                                "imageFileName" to receipt.imageFileName,
+                                "isInvoice" to receipt.isInvoice,
+                                "paymentStatus" to receipt.paymentStatus,
+                                "orderId" to receipt.orderId,
+                                "branchId" to targetBranchId,
+                                "originatingUserUid" to receipt.originatingUserUid
+                            )
+                            repository.upsertRemoteDocument("branch_receipts", docId, receiptMap)
                         }
                     }
                 } catch (e: Exception) {

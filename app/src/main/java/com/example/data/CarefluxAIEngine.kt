@@ -109,7 +109,9 @@ object CarefluxAIEngine {
         try {
             val response = RetrofitClient.service.generateContent(apiKey, request)
             val jsonText = response.candidates.firstOrNull()?.content?.parts?.firstOrNull()?.text ?: ""
-            Log.d("CarefluxAIEngine", "Gemini Output: ${"$"}{jsonText}")
+            if (com.example.BuildConfig.DEBUG) {
+                Log.d("CarefluxAIEngine", "Gemini response received length=${jsonText.length}")
+            }
             
             // In case model wraps in markdown
             val cleanJson = jsonText.removePrefix("```json").removePrefix("```").removeSuffix("```").trim()

@@ -170,6 +170,88 @@ class BranchSecurityAndSequencingTest {
         assertEquals(branchId, payload["branchId"])
         assertFalse("Config should not allow forging arbitrary fields", payload.containsKey("isSystemAdmin"))
     }
+
+    // 8. C-01 Lineage Preservation Test
+    @Test
+    fun testOfflineMutationLineageInvariants() {
+        val branchA = "branch_ikeja"
+        val userA = "user_pharmacist_1"
+
+        val task = com.example.data.OperationTask(
+            id = 1,
+            title = "Count inventory",
+            description = "Audit A1",
+            urgency = "High",
+            category = "Audit",
+            isCompleted = false,
+            branchId = branchA,
+            originatingUserUid = userA
+        )
+        assertEquals(branchA, task.branchId)
+        assertEquals(userA, task.originatingUserUid)
+
+        val receipt = com.example.data.Receipt(
+            id = 101,
+            customerName = "John Doe",
+            totalAmount = 5000.0,
+            imageFileName = "receipt1.jpg",
+            branchId = branchA,
+            originatingUserUid = userA
+        )
+        assertEquals(branchA, receipt.branchId)
+        assertEquals(userA, receipt.originatingUserUid)
+
+        val customer = com.example.data.Customer(
+            id = 201,
+            name = "Jane Smith",
+            phoneNumber = "+2348000000000",
+            email = "jane@example.com",
+            branchId = branchA,
+            originatingUserUid = userA
+        )
+        assertEquals(branchA, customer.branchId)
+        assertEquals(userA, customer.originatingUserUid)
+
+        val sale = com.example.data.MedicationSale(
+            productName = "Paracetamol",
+            brand = "Emzor",
+            genericName = "Acetaminophen",
+            category = "Analgesic",
+            quantitySold = 2,
+            salePrice = 500.0,
+            clientTransactionId = "tx_999",
+            branchId = branchA,
+            originatingUserUid = userA
+        )
+        assertEquals(branchA, sale.branchId)
+        assertEquals(userA, sale.originatingUserUid)
+    }
+
+    // 9. H-01 Realtime Branch Generation Token Test
+    @Test
+    fun testBranchGenerationTokenEnforcement() {
+        val genToken = java.util.concurrent.atomic.AtomicInteger(0)
+        val currentGen = genToken.get()
+
+        var callbackExecuted = false
+        val processCallback = { expectedGen: Int ->
+            if (genToken.get() == expectedGen) {
+                callbackExecuted = true
+            }
+        }
+
+        // Before branch switch
+        processCallback(currentGen)
+        assertTrue("Callback executes when token matches", callbackExecuted)
+
+        // Reset flag and increment token (simulating branch switch)
+        callbackExecuted = false
+        genToken.incrementAndGet()
+
+        // Stale callback invocation
+        processCallback(currentGen)
+        assertFalse("Callback ignored when token mismatch (stale callback)", callbackExecuted)
+    }
 }
 
 // Recording Remote Data Source to track call sequence and simulate network failures

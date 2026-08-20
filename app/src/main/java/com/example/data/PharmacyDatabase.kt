@@ -32,7 +32,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         CustomerBranch::class,
         InventoryLedgerEntry::class
     ],
-    version = 31,
+    version = 33,
     exportSchema = false
 )
 abstract class PharmacyDatabase : RoomDatabase() {
@@ -135,6 +135,29 @@ abstract class PharmacyDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_31_32 = object : Migration(31, 32) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE customers ADD COLUMN branchId TEXT NOT NULL DEFAULT ''")
+                database.execSQL("ALTER TABLE customers ADD COLUMN originatingUserUid TEXT NOT NULL DEFAULT ''")
+                database.execSQL("ALTER TABLE customer_medications ADD COLUMN branchId TEXT NOT NULL DEFAULT ''")
+                database.execSQL("ALTER TABLE customer_medications ADD COLUMN originatingUserUid TEXT NOT NULL DEFAULT ''")
+                database.execSQL("ALTER TABLE clinical_interventions ADD COLUMN branchId TEXT NOT NULL DEFAULT ''")
+                database.execSQL("ALTER TABLE clinical_interventions ADD COLUMN originatingUserUid TEXT NOT NULL DEFAULT ''")
+                database.execSQL("ALTER TABLE inventory_items ADD COLUMN branchId TEXT NOT NULL DEFAULT ''")
+                database.execSQL("ALTER TABLE inventory_items ADD COLUMN originatingUserUid TEXT NOT NULL DEFAULT ''")
+                database.execSQL("ALTER TABLE medication_sales ADD COLUMN originatingUserUid TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
+        val MIGRATION_32_33 = object : Migration(32, 33) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE operations_tasks ADD COLUMN branchId TEXT NOT NULL DEFAULT ''")
+                database.execSQL("ALTER TABLE operations_tasks ADD COLUMN originatingUserUid TEXT NOT NULL DEFAULT ''")
+                database.execSQL("ALTER TABLE receipts ADD COLUMN branchId TEXT NOT NULL DEFAULT ''")
+                database.execSQL("ALTER TABLE receipts ADD COLUMN originatingUserUid TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         fun getDatabase(context: Context): PharmacyDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -142,8 +165,7 @@ abstract class PharmacyDatabase : RoomDatabase() {
                     PharmacyDatabase::class.java,
                     "pharmacy_database"
                 )
-                .addMigrations(MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_17_18, MIGRATION_22_23, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31)
-                .fallbackToDestructiveMigration(dropAllTables = true)
+                .addMigrations(MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_17_18, MIGRATION_22_23, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33)
                 .build()
                 INSTANCE = instance
                 instance

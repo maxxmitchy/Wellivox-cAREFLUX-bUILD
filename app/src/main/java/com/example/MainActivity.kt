@@ -5230,7 +5230,9 @@ fun importCustomersFromCsv(context: android.content.Context, uri: android.net.Ur
                             notes = notesStr.trim(),
                             loyaltyPoints = loyalty,
                             refillStreak = refill,
-                            dateAdded = dateAddedL
+                            dateAdded = dateAddedL,
+                            branchId = viewModel.getActiveBranchId(),
+                            originatingUserUid = viewModel.getCurrentUserUid()
                         )
                         val phoneNorm = phoneStr.trim().replace(Regex("[^+\\d]"), "")
                         val isDuplicate = if (phoneNorm.isNotEmpty()) {

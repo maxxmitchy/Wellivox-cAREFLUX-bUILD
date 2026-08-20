@@ -98,10 +98,16 @@ class DeviceRepository(
     }
 
     suspend fun handleUserLoggedOut(): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            FirebaseMessaging.getInstance().deleteToken()
+        } catch (e: Exception) {
+            // Ignore if offline
+        }
         prefs.edit()
             .remove(KEY_CACHED_UID)
             .remove(KEY_CACHED_ROLE)
             .remove(KEY_CACHED_BRANCH_ID)
+            .remove(KEY_CACHED_FCM_TOKEN)
             .putBoolean(KEY_IS_DEVICE_ACTIVE, false)
             .putBoolean(KEY_DEVICE_SYNC_PENDING, true)
             .apply()

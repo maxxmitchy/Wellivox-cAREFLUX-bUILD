@@ -14,5 +14,7 @@ data class CustomerMedication(
     val cost: Double,
     val cycleDays: Int,
     val nextRefillDate: Long, // Timestamp in ms
-    val dateAdded: Long = System.currentTimeMillis()
+    val dateAdded: Long = System.currentTimeMillis(),
+    val branchId: String = "",
+    val originatingUserUid: String = ""
 )

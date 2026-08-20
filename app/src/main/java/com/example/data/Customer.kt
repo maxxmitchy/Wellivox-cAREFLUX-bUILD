@@ -29,5 +29,9 @@ data class Customer(
     val consentSmsRefills: Boolean = false,
     val consentCloudSync: Boolean = false,
     val consentLastUpdated: Long = System.currentTimeMillis(),
-    val consentChannel: String = "Verbal Consent"
+    val consentChannel: String = "Verbal Consent",
+
+    // Branch and Sync Context Fields
+    val branchId: String = "",
+    val originatingUserUid: String = ""
 )

@@ -14,5 +14,7 @@ data class ClinicalIntervention(
     val followUpDay3Sent: Boolean = false,
     val followUpDay7Sent: Boolean = false,
     val followUpDay14Sent: Boolean = false,
-    val dateAdded: Long = System.currentTimeMillis()
+    val dateAdded: Long = System.currentTimeMillis(),
+    val branchId: String = "",
+    val originatingUserUid: String = ""
 )

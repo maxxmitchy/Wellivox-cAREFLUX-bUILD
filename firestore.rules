@@ -119,7 +119,7 @@ service cloud.firestore {
           ) &&
           // Role & Approval handling:
           (
-            // Normal profile update or joining/switching an existing branch (Role and Approval preserved)
+            // Normal profile update without branch switching (Role, Approval, BranchId preserved unless creator/manager or joining from empty)
             (
               request.resource.data.role == resource.data.role &&
               request.resource.data.isApproved == resource.data.isApproved &&
@@ -127,7 +127,10 @@ service cloud.firestore {
                 request.resource.data.branchId == resource.data.branchId ||
                 request.resource.data.branchId == "" ||
                 request.resource.data.branchId == null ||
-                exists(/databases/$(database)/documents/branches/$(request.resource.data.branchId))
+                resource.data.branchId == null ||
+                resource.data.branchId == "" ||
+                isBranchCreator(request.resource.data.branchId) ||
+                isBranchManager(request.resource.data.branchId)
               )
             ) ||
             // Legitimate branch registration (Creator promoting self to Branch Manager for new branch)
@@ -280,11 +283,22 @@ service cloud.firestore {
           logId.startsWith(getBranchId())
         );
 
-      allow create: if isAuth();
+      allow create: if isAuth() &&
+        userExists() &&
+        (
+          isAdmin() ||
+          (
+            getBranchId() != null &&
+            (request.resource.data.branchId == getBranchId() || logId.startsWith(getBranchId())) &&
+            (!('actorUid' in request.resource.data) || request.resource.data.actorUid == request.auth.uid)
+          )
+        );
 
       allow update: if isAuth() &&
+        userExists() &&
         isManager() &&
         getBranchId() == resource.data.branchId &&
+        request.resource.data.branchId == resource.data.branchId &&
         request.resource.data
           .diff(resource.data)
           .affectedKeys()
@@ -373,7 +387,15 @@ service cloud.firestore {
     // System Administrative Audit Logs
     match /admin_audit_logs/{logId} {
       allow read: if isAdmin();
-      allow create: if isAuth();
+      allow create: if isAuth() && userExists() && (
+        isAdmin() ||
+        (
+          (!('actorUid' in request.resource.data) || request.resource.data.actorUid == request.auth.uid) &&
+          (!('adminUid' in request.resource.data) || request.resource.data.adminUid == request.auth.uid) &&
+          (!('adminName' in request.resource.data) || request.resource.data.adminName == request.auth.uid) &&
+          (!('isSystemAdmin' in request.resource.data) || request.resource.data.isSystemAdmin == false)
+        )
+      );
       allow update, delete: if false;
     }
 
@@ -389,30 +411,39 @@ service cloud.firestore {
       allow read: if isAuth() && (
         isAdmin() ||
         (getBranchId() != null && resource.data.branchId == getBranchId()) ||
-        resource.data.ownerUid == request.auth.uid ||
-        nodeId.startsWith(getBranchId())
+        resource.data.ownerUid == request.auth.uid
       );
 
       allow create: if isAuth() &&
         request.resource.data.deviceId == nodeId &&
         (
           isAdmin() ||
-          !('ownerUid' in request.resource.data) ||
-          request.resource.data.ownerUid == request.auth.uid
+          (
+            getBranchId() != null &&
+            request.resource.data.branchId == getBranchId() &&
+            nodeId.startsWith(getBranchId()) &&
+            (!('ownerUid' in request.resource.data) || request.resource.data.ownerUid == request.auth.uid)
+          )
         );
 
       allow update: if isAuth() &&
-        request.resource.data.deviceId == nodeId &&
+        request.resource.data.deviceId == resource.data.deviceId &&
         (
           isAdmin() ||
-          (resource.data.ownerUid == request.auth.uid && request.resource.data.ownerUid == request.auth.uid) ||
-          (!('ownerUid' in resource.data) && request.resource.data.ownerUid == request.auth.uid) ||
-          (isManager() && getBranchId() != null && resource.data.branchId == getBranchId())
+          (
+            (
+              (resource.data.ownerUid == request.auth.uid && request.resource.data.ownerUid == resource.data.ownerUid) ||
+              (isManager() && getBranchId() != null && resource.data.branchId == getBranchId())
+            ) &&
+            request.resource.data.ownerUid == resource.data.ownerUid &&
+            request.resource.data.branchId == resource.data.branchId
+          )
         );
 
       allow delete: if isAuth() && (
         isAdmin() ||
-        (isManager() && getBranchId() != null && resource.data.branchId == getBranchId())
+        (isManager() && getBranchId() != null && resource.data.branchId == getBranchId()) ||
+        resource.data.ownerUid == request.auth.uid
       );
     }
 
@@ -429,31 +460,86 @@ service cloud.firestore {
       allow update: if isAuth() && (
         isAdmin() ||
         (
-          resource.data.branchId == getBranchId() && isManager() &&
-          request.resource.data.branchId == resource.data.branchId
-        ) ||
-        (
-          resource.data.ownerUid == request.auth.uid &&
+          (
+            resource.data.ownerUid == request.auth.uid ||
+            (isManager() && getBranchId() != null && resource.data.branchId == getBranchId())
+          ) &&
           request.resource.data.ownerUid == resource.data.ownerUid &&
-          request.resource.data.branchId == resource.data.branchId
+          request.resource.data.branchId == resource.data.branchId &&
+          (!('listedAt' in resource.data) || request.resource.data.listedAt == resource.data.listedAt) &&
+          (!('createdAt' in resource.data) || request.resource.data.createdAt == resource.data.createdAt)
         ) ||
         (
           resource.data.status == 'Available' &&
           request.resource.data.status in ['Claimed', 'Accepted'] &&
           request.resource.data.branchId == resource.data.branchId &&
-          request.resource.data.ownerUid == resource.data.ownerUid
+          request.resource.data.ownerUid == resource.data.ownerUid &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'acceptedByDeviceId', 'acceptedByDeviceModel', 'acceptedAt', 'soldAt', 'quantity', 'profitShareAmount', 'claimantUid', 'claimedAt', 'claimantBranchId'
+          ])
         )
       );
       allow delete: if isAuth() && (
         isAdmin() ||
-        (resource.data.branchId == getBranchId() && isManager()) ||
+        (isManager() && getBranchId() != null && resource.data.branchId == getBranchId()) ||
         (resource.data.ownerUid == request.auth.uid)
       );
     }
 
     // Consent Handshakes (NDPA Clinical Consent)
     match /consent_handshakes/{handshakeId} {
-      allow read, write: if isAuth();
+      allow read: if isAuth() && userExists() && (
+        isAdmin() ||
+        (
+          getBranchId() != null &&
+          (
+            resource.data.branchId == getBranchId() ||
+            resource.data.targetBranchId == getBranchId() ||
+            resource.data.patientUid == request.auth.uid ||
+            resource.data.pharmacistUid == request.auth.uid ||
+            resource.data.actorUid == request.auth.uid ||
+            handshakeId.startsWith(getBranchId())
+          )
+        )
+      );
+      allow create: if isAuth() && userExists() && (
+        isAdmin() ||
+        (
+          getBranchId() != null &&
+          request.resource.data.branchId == getBranchId() &&
+          (
+            !('actorUid' in request.resource.data) || request.resource.data.actorUid == request.auth.uid ||
+            !('pharmacistUid' in request.resource.data) || request.resource.data.pharmacistUid == request.auth.uid ||
+            !('patientUid' in request.resource.data) || request.resource.data.patientUid == request.auth.uid
+          )
+        )
+      );
+      allow update: if isAuth() && userExists() && (
+        isAdmin() ||
+        (
+          (
+            (getBranchId() != null && (resource.data.branchId == getBranchId() || resource.data.targetBranchId == getBranchId())) ||
+            resource.data.patientUid == request.auth.uid ||
+            resource.data.pharmacistUid == request.auth.uid ||
+            resource.data.actorUid == request.auth.uid
+          ) &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status',
+            'consentGranted',
+            'consentChannel',
+            'consentPrescriptionTracking',
+            'consentSmsRefills',
+            'consentCloudSync',
+            'consentLastUpdated',
+            'updatedAt',
+            'notes'
+          ])
+        )
+      );
+      allow delete: if isAuth() && userExists() && (
+        isAdmin() ||
+        (isManager() && getBranchId() != null && resource.data.branchId == getBranchId())
+      );
     }
   }
 }

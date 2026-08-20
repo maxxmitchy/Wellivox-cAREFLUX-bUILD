@@ -170,6 +170,14 @@ beforeEach(async () => {
       status: 'Active',
     });
 
+    // Device Config with nodeId starting with BRANCH_A but owned/belonging to BRANCH_B
+    await db.doc('device_configs/BRANCH_A_DEV_B2').set({
+      deviceId: 'BRANCH_A_DEV_B2',
+      branchId: 'BRANCH_B',
+      ownerUid: 'pharm_b',
+      status: 'Active',
+    });
+
     // Expiry Rescue Listings
     await db.doc('expiry_rescue_listings/rescue_b1').set({
       listingId: 'rescue_b1',
@@ -177,6 +185,46 @@ beforeEach(async () => {
       ownerUid: 'pharm_b',
       productName: 'Vitamin C',
       status: 'Available',
+    });
+
+    // Branch Audit Logs
+    await db.doc('branch_audit_logs/BRANCH_A_log1').set({
+      branchId: 'BRANCH_A',
+      actorUid: 'pharm_a',
+      action: 'DISPENSE',
+      verified: false,
+      verifiedBy: '',
+      verifiedAt: 0,
+    });
+
+    await db.doc('branch_audit_logs/BRANCH_B_log1').set({
+      branchId: 'BRANCH_B',
+      actorUid: 'pharm_b',
+      action: 'DISPENSE',
+      verified: false,
+      verifiedBy: '',
+      verifiedAt: 0,
+    });
+
+    // Consent Handshakes
+    await db.doc('consent_handshakes/BRANCH_A_handshake1').set({
+      handshakeId: 'BRANCH_A_handshake1',
+      branchId: 'BRANCH_A',
+      targetBranchId: 'BRANCH_A',
+      patientUid: 'patient_a',
+      pharmacistUid: 'pharm_a',
+      actorUid: 'pharm_a',
+      status: 'PENDING',
+      consentGranted: false,
+      notes: 'Initial request',
+    });
+
+    // Admin Audit Logs
+    await db.doc('admin_audit_logs/admin_log1').set({
+      adminName: 'pharm_a',
+      actorUid: 'pharm_a',
+      actionPerformed: 'SELF_AUDIT',
+      timestamp: 1700000000000,
     });
   });
 });
@@ -419,4 +467,501 @@ test('19. QueryTest: Scoped vs Unscoped medication_sales query authorization', a
   // Unscoped query MUST be rejected to prevent silent data leakage
   const unscopedQuery = dbA.collection('medication_sales');
   await assertFails(unscopedQuery.get());
+});
+
+test('20. BranchSwitchUnauthorizedDenied: Pharmacist A in Branch A attempts to update profile branchId to BRANCH_B without authorization', async () => {
+  const db = getPharmAContext().firestore();
+  await assertFails(
+    db.doc('registered_pharmacists/pharm_a').update({
+      branchId: 'BRANCH_B',
+    })
+  );
+});
+
+test('21. ExpiryListingPriceTamperOnClaimDenied: Non-owner claimant attempts to modify price on expiry rescue listing during claim', async () => {
+  const db = getPharmAContext().firestore();
+  await assertFails(
+    db.doc('expiry_rescue_listings/rescue_b1').update({
+      status: 'Claimed',
+      price: 1.0, // Tampering price during claim MUST fail
+    })
+  );
+});
+
+test('22. ConsentHandshakeUnboundWriteDenied: Cross-branch user attempts to write consent_handshakes for another branch', async () => {
+  const db = getPharmAContext().firestore();
+  await assertFails(
+    db.doc('consent_handshakes/BRANCH_B_handshake1').set({
+      branchId: 'BRANCH_B',
+      patientUid: 'patient_x',
+      actorUid: 'pharm_a', // Cross-branch attempt
+    })
+  );
+});
+
+test('23. BranchAuditLogCrossBranchWriteDenied: Branch A pharmacist attempts to create branch_audit_logs for Branch B', async () => {
+  const db = getPharmAContext().firestore();
+  await assertFails(
+    db.doc('branch_audit_logs/BRANCH_B_log1').set({
+      branchId: 'BRANCH_B',
+      actorUid: 'pharm_a',
+      action: 'TAMPER',
+    })
+  );
+});
+
+test('24. AdminAuditLogUnauthWriteDenied: Unauthenticated client attempts to create admin_audit_logs', async () => {
+  const db = getUnauthContext().firestore();
+  await assertFails(
+    db.doc('admin_audit_logs/log_unauth').set({
+      adminName: 'hacker',
+      actionPerformed: 'FORGE',
+      timestamp: Date.now(),
+    })
+  );
+});
+
+// ============================================================
+// FINDING 1 — ADMIN AUDIT LOG FORGERY TESTS
+// ============================================================
+
+test('25. AdminAuditLogSelfAttributedCreateAllowed: Non-admin user creates audit log attributed to self', async () => {
+  const db = getPharmAContext().firestore();
+  await assertSucceeds(
+    db.doc('admin_audit_logs/log_pharm_a').set({
+      adminName: 'pharm_a',
+      actorUid: 'pharm_a',
+      actionPerformed: 'SELF_DEVICE_CONFIG',
+      timestamp: Date.now(),
+    })
+  );
+});
+
+test('26. AdminAuditLogOtherUidAttributionDenied: Non-admin user attributes audit log to another user UID', async () => {
+  const db = getPharmAContext().firestore();
+  await assertFails(
+    db.doc('admin_audit_logs/log_forge_uid').set({
+      adminName: 'pharm_b',
+      actorUid: 'pharm_b',
+      actionPerformed: 'FORGE_ACTOR',
+      timestamp: Date.now(),
+    })
+  );
+});
+
+test('27. AdminAuditLogForgedAdminIdentityDenied: Non-admin user attempts to claim isSystemAdmin or forge admin identity', async () => {
+  const db = getPharmAContext().firestore();
+  await assertFails(
+    db.doc('admin_audit_logs/log_forge_admin').set({
+      adminName: 'pharm_a',
+      actorUid: 'pharm_a',
+      isSystemAdmin: true,
+      actionPerformed: 'FORGE_SYSTEM_ADMIN',
+      timestamp: Date.now(),
+    })
+  );
+});
+
+test('28. AdminAuditLogAdminCreateAllowed: Legitimate administrator creates admin audit log', async () => {
+  const db = getAdminContext().firestore();
+  await assertSucceeds(
+    db.doc('admin_audit_logs/log_admin_legit').set({
+      adminName: 'Administrator',
+      actorUid: 'admin_user',
+      actionPerformed: 'APPROVE_KEYS',
+      timestamp: Date.now(),
+    })
+  );
+});
+
+test('29. AdminAuditLogUpdateDenied: Modifying an existing admin audit log is denied', async () => {
+  const db = getAdminContext().firestore();
+  await assertFails(
+    db.doc('admin_audit_logs/admin_log1').update({
+      actionPerformed: 'TAMPER_LOG',
+    })
+  );
+});
+
+test('30. AdminAuditLogDeleteDenied: Deleting an existing admin audit log is denied', async () => {
+  const db = getAdminContext().firestore();
+  await assertFails(
+    db.doc('admin_audit_logs/admin_log1').delete()
+  );
+});
+
+// ============================================================
+// FINDING 2 — BRANCH AUDIT LOG UPDATE OVER-PERMISSION TESTS
+// ============================================================
+
+test('31. BranchAuditLogOrdinaryStaffUpdateDenied: Ordinary staff attempting to modify event data/verification is denied', async () => {
+  const db = getPharmAContext().firestore();
+  await assertFails(
+    db.doc('branch_audit_logs/BRANCH_A_log1').update({
+      verified: true,
+      verifiedBy: 'pharm_a',
+      verifiedAt: Date.now(),
+    })
+  );
+});
+
+test('32. BranchAuditLogStaffActorUidTamperDenied: Ordinary staff attempting to modify actorUid on branch audit log is denied', async () => {
+  const db = getPharmAContext().firestore();
+  await assertFails(
+    db.doc('branch_audit_logs/BRANCH_A_log1').update({
+      actorUid: 'pharm_b',
+    })
+  );
+});
+
+test('33. BranchAuditLogStaffBranchIdTamperDenied: Ordinary staff attempting to modify branchId on branch audit log is denied', async () => {
+  const db = getPharmAContext().firestore();
+  await assertFails(
+    db.doc('branch_audit_logs/BRANCH_A_log1').update({
+      branchId: 'BRANCH_B',
+    })
+  );
+});
+
+test('34. BranchAuditLogManagerVerificationUpdateAllowed: Branch manager updating verification fields on own branch audit log is allowed', async () => {
+  const db = getManagerAContext().firestore();
+  await assertSucceeds(
+    db.doc('branch_audit_logs/BRANCH_A_log1').update({
+      verified: true,
+      verifiedBy: 'manager_a',
+      verifiedAt: Date.now(),
+    })
+  );
+});
+
+test('35. BranchAuditLogManagerEventDataUpdateDenied: Branch manager attempting to modify action/event data on branch audit log is denied', async () => {
+  const db = getManagerAContext().firestore();
+  await assertFails(
+    db.doc('branch_audit_logs/BRANCH_A_log1').update({
+      verified: true,
+      verifiedBy: 'manager_a',
+      verifiedAt: Date.now(),
+      action: 'ALTERED_ACTION',
+    })
+  );
+});
+
+test('36. BranchAuditLogManagerBranchIdTamperDenied: Branch manager attempting to modify branchId on branch audit log is denied', async () => {
+  const db = getManagerAContext().firestore();
+  await assertFails(
+    db.doc('branch_audit_logs/BRANCH_A_log1').update({
+      verified: true,
+      verifiedBy: 'manager_a',
+      verifiedAt: Date.now(),
+      branchId: 'BRANCH_B',
+    })
+  );
+});
+
+test('37. BranchAuditLogCrossBranchManagerUpdateDenied: Manager from Branch A attempting to update Branch B audit log is denied', async () => {
+  const db = getManagerAContext().firestore();
+  await assertFails(
+    db.doc('branch_audit_logs/BRANCH_B_log1').update({
+      verified: true,
+      verifiedBy: 'manager_a',
+      verifiedAt: Date.now(),
+    })
+  );
+});
+
+test('38. BranchAuditLogDeleteDenied: Attempting to delete a branch audit log is denied for all users', async () => {
+  const db = getAdminContext().firestore();
+  await assertFails(
+    db.doc('branch_audit_logs/BRANCH_A_log1').delete()
+  );
+});
+
+// ============================================================
+// FINDING 3 — EXPIRY RESCUE LISTING BROAD UPDATE PATH TESTS
+// ============================================================
+
+test('39. ExpiryListingSameBranchStaffUpdateDenied: Ordinary staff in same branch (neither owner nor manager) modifying listing is denied', async () => {
+  // pharm_b is ordinary staff in BRANCH_B, owner is pharm_b... wait, pharm_b is owner of rescue_b1!
+  // Let's test with another ordinary pharmacist in BRANCH_B or manager in BRANCH_A.
+  const db = getPharmAContext().firestore(); // Pharm A is not owner and not in Branch B
+  await assertFails(
+    db.doc('expiry_rescue_listings/rescue_b1').update({
+      notes: 'Unauthorized edit',
+    })
+  );
+});
+
+test('40. ExpiryListingOwnerUpdateAllowed: Owner modifying own listing without changing ownerUid or branchId is allowed', async () => {
+  const db = getPharmBContext().firestore(); // pharm_b is owner of rescue_b1
+  await assertSucceeds(
+    db.doc('expiry_rescue_listings/rescue_b1').update({
+      notes: 'Discounted price applied by owner',
+      quantity: 10,
+    })
+  );
+});
+
+test('41. ExpiryListingManagerUpdateAllowed: Branch manager modifying own branch listing without changing ownerUid or branchId is allowed', async () => {
+  // manager_a context for a listing in BRANCH_A
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await context.firestore().doc('expiry_rescue_listings/rescue_a1').set({
+      listingId: 'rescue_a1',
+      branchId: 'BRANCH_A',
+      ownerUid: 'pharm_a',
+      productName: 'Aspirin 100mg',
+      status: 'Available',
+    });
+  });
+
+  const db = getManagerAContext().firestore();
+  await assertSucceeds(
+    db.doc('expiry_rescue_listings/rescue_a1').update({
+      notes: 'Updated by branch manager',
+      quantity: 5,
+    })
+  );
+});
+
+test('42. ExpiryListingManagerCrossBranchUpdateDenied: Manager from Branch A modifying listing in Branch B is denied', async () => {
+  const db = getManagerAContext().firestore();
+  await assertFails(
+    db.doc('expiry_rescue_listings/rescue_b1').update({
+      notes: 'Cross branch manager update',
+    })
+  );
+});
+
+test('43. ExpiryListingClaimantProductTamperDenied: Claimant modifying productName during claim is denied', async () => {
+  const db = getPharmAContext().firestore();
+  await assertFails(
+    db.doc('expiry_rescue_listings/rescue_b1').update({
+      status: 'Claimed',
+      productName: 'Forged Expensive Drug',
+    })
+  );
+});
+
+test('44. ExpiryListingClaimantOwnerUidTamperDenied: Claimant modifying ownerUid during claim is denied', async () => {
+  const db = getPharmAContext().firestore();
+  await assertFails(
+    db.doc('expiry_rescue_listings/rescue_b1').update({
+      status: 'Claimed',
+      ownerUid: 'pharm_a',
+    })
+  );
+});
+
+test('45. ExpiryListingClaimantBranchIdTamperDenied: Claimant modifying branchId during claim is denied', async () => {
+  const db = getPharmAContext().firestore();
+  await assertFails(
+    db.doc('expiry_rescue_listings/rescue_b1').update({
+      status: 'Claimed',
+      branchId: 'BRANCH_A',
+    })
+  );
+});
+
+test('46. ExpiryListingClaimantUnrelatedMetadataTamperDenied: Claimant modifying unallowed metadata field during claim is denied', async () => {
+  const db = getPharmAContext().firestore();
+  await assertFails(
+    db.doc('expiry_rescue_listings/rescue_b1').update({
+      status: 'Claimed',
+      unrelatedField: 'HACK',
+    })
+  );
+});
+
+test('47. ExpiryListingDeleteAnotherBranchDenied: Pharmacist attempting to delete another branch listing is denied', async () => {
+  const db = getPharmAContext().firestore();
+  await assertFails(
+    db.doc('expiry_rescue_listings/rescue_b1').delete()
+  );
+});
+
+// ============================================================
+// FINDING 4 — CONSENT HANDSHAKE FIELD-LEVEL SECURITY TESTS
+// ============================================================
+
+test('48. ConsentHandshakePatientRebindDenied: Participant attempting to change patientUid on consent handshake is denied', async () => {
+  const db = getPharmAContext().firestore();
+  await assertFails(
+    db.doc('consent_handshakes/BRANCH_A_handshake1').update({
+      patientUid: 'patient_hacked',
+    })
+  );
+});
+
+test('49. ConsentHandshakePharmacistRebindDenied: Participant attempting to change pharmacistUid on consent handshake is denied', async () => {
+  const db = getPharmAContext().firestore();
+  await assertFails(
+    db.doc('consent_handshakes/BRANCH_A_handshake1').update({
+      pharmacistUid: 'pharm_hacked',
+    })
+  );
+});
+
+test('50. ConsentHandshakeBranchRebindDenied: Participant attempting to change branchId on consent handshake is denied', async () => {
+  const db = getPharmAContext().firestore();
+  await assertFails(
+    db.doc('consent_handshakes/BRANCH_A_handshake1').update({
+      branchId: 'BRANCH_B',
+    })
+  );
+});
+
+test('51. ConsentHandshakeCreatorIdentityRebindDenied: Participant attempting to change actorUid/creatorUid on consent handshake is denied', async () => {
+  const db = getPharmAContext().firestore();
+  await assertFails(
+    db.doc('consent_handshakes/BRANCH_A_handshake1').update({
+      actorUid: 'actor_hacked',
+    })
+  );
+});
+
+test('52. ConsentHandshakeCreationTimestampRewriteDenied: Participant attempting to change createdAt on consent handshake is denied', async () => {
+  const db = getPharmAContext().firestore();
+  await assertFails(
+    db.doc('consent_handshakes/BRANCH_A_handshake1').update({
+      createdAt: 0,
+    })
+  );
+});
+
+test('53. ConsentHandshakeParticipantStateUpdateAllowed: Authorized participant updating legitimate state fields is allowed', async () => {
+  const db = getPharmAContext().firestore(); // pharm_a is pharmacistUid / actorUid / branchId in BRANCH_A_handshake1
+  await assertSucceeds(
+    db.doc('consent_handshakes/BRANCH_A_handshake1').update({
+      status: 'ACCEPTED',
+      consentGranted: true,
+      notes: 'Patient provided verbal consent',
+    })
+  );
+});
+
+test('54. ConsentHandshakeUnrelatedBranchUpdateDenied: Unrelated branch user attempting update on consent handshake is denied', async () => {
+  // Create handshake strictly between BRANCH_B and patient_b
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await context.firestore().doc('consent_handshakes/BRANCH_B_handshake_isolated').set({
+      handshakeId: 'BRANCH_B_handshake_isolated',
+      branchId: 'BRANCH_B',
+      targetBranchId: 'BRANCH_B',
+      patientUid: 'patient_b',
+      pharmacistUid: 'pharm_b',
+      actorUid: 'pharm_b',
+      status: 'PENDING',
+    });
+  });
+
+  const db = getPharmAContext().firestore(); // pharm_a is in BRANCH_A
+  await assertFails(
+    db.doc('consent_handshakes/BRANCH_B_handshake_isolated').update({
+      status: 'ACCEPTED',
+    })
+  );
+});
+
+test('55. ConsentHandshakeUnrelatedPatientUpdateDenied: Unrelated patient attempting update on consent handshake is denied', async () => {
+  const unrelatedPatientCtx = testEnv.authenticatedContext('unrelated_patient', {
+    branchId: null,
+    role: 'Patient',
+    isApproved: true,
+  });
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await context.firestore().doc('registered_pharmacists/unrelated_patient').set({
+      uid: 'unrelated_patient',
+      fullName: 'Unrelated Patient',
+      isApproved: true,
+    });
+  });
+
+  const db = unrelatedPatientCtx.firestore();
+  await assertFails(
+    db.doc('consent_handshakes/BRANCH_A_handshake1').update({
+      status: 'ACCEPTED',
+    })
+  );
+});
+
+test('56. ConsentHandshakeUnrelatedPharmacistUpdateDenied: Unrelated pharmacist in another branch attempting update is denied', async () => {
+  const db = getPharmBContext().firestore(); // pharm_b is in BRANCH_B
+  await assertFails(
+    db.doc('consent_handshakes/BRANCH_A_handshake1').update({
+      status: 'REVOKED',
+    })
+  );
+});
+
+test('57. ConsentHandshakeUnauthorizedFieldMutationDenied: Modifying unallowed field on consent handshake is denied', async () => {
+  const db = getPharmAContext().firestore();
+  await assertFails(
+    db.doc('consent_handshakes/BRANCH_A_handshake1').update({
+      unauthorizedField: 'MALICIOUS_DATA',
+    })
+  );
+});
+
+// ============================================================
+// FINDING 5 — DEVICE CONFIG AUTHORIZATION DESIGN TESTS
+// ============================================================
+
+test('58. DeviceConfigCrossBranchReadDenied: Cross-branch read denied even if nodeId prefix matches callers branch', async () => {
+  // DEV_B2 document has nodeId "BRANCH_A_DEV_B2" but belongs to branchId "BRANCH_B"
+  const db = getPharmAContext().firestore(); // pharm_a is in BRANCH_A
+  await assertFails(db.doc('device_configs/BRANCH_A_DEV_B2').get());
+});
+
+test('59. DeviceConfigCrossBranchWriteDenied: Cross-branch device configuration write is denied', async () => {
+  const db = getPharmAContext().firestore();
+  await assertFails(
+    db.doc('device_configs/DEV_B1').update({
+      status: 'TAMPERED',
+    })
+  );
+});
+
+test('60. DeviceConfigOwnerBranchIdTamperDenied: Device owner attempting to alter branchId is denied', async () => {
+  const db = getPharmAContext().firestore(); // owner of DEV_A1
+  await assertFails(
+    db.doc('device_configs/DEV_A1').update({
+      branchId: 'BRANCH_B',
+    })
+  );
+});
+
+test('61. DeviceConfigManagerOwnBranchUpdateAllowed: Branch manager updating device in own branch is allowed', async () => {
+  const db = getManagerAContext().firestore();
+  await assertSucceeds(
+    db.doc('device_configs/DEV_A1').update({
+      status: 'Manager_Verified',
+    })
+  );
+});
+
+test('62. DeviceConfigManagerCrossBranchUpdateDenied: Branch manager updating device in another branch is denied', async () => {
+  const db = getManagerAContext().firestore();
+  await assertFails(
+    db.doc('device_configs/DEV_B1').update({
+      status: 'Manager_Cross_Tamper',
+    })
+  );
+});
+
+test('63. DeviceConfigAdminGlobalAccessAllowed: System administrator reading and updating device config is allowed', async () => {
+  const db = getAdminContext().firestore();
+  await assertSucceeds(db.doc('device_configs/DEV_B1').get());
+  await assertSucceeds(
+    db.doc('device_configs/DEV_B1').update({
+      status: 'Admin_Overridden',
+    })
+  );
+});
+
+test('64. DeviceConfigUnauthenticatedAccessDenied: Unauthenticated read and update on device_configs is denied', async () => {
+  const db = getUnauthContext().firestore();
+  await assertFails(db.doc('device_configs/DEV_A1').get());
+  await assertFails(
+    db.doc('device_configs/DEV_A1').update({
+      status: 'Unauth_Tamper',
+    })
+  );
 });

@@ -219,4 +219,112 @@ class RealRoomMigrationTest {
         dbChain.close()
         helperChain.close()
     }
+
+    @Test
+    fun testRealMigration32To33ExecutesOnSQLiteDatabase() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dbName = "test_migration_32_33.db"
+        context.deleteDatabase(dbName)
+
+        val callback32 = object : SupportSQLiteOpenHelper.Callback(32) {
+            override fun onCreate(db: SupportSQLiteDatabase) {
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `operations_tasks` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `title` TEXT NOT NULL,
+                        `description` TEXT NOT NULL,
+                        `urgency` TEXT NOT NULL,
+                        `category` TEXT NOT NULL,
+                        `isCompleted` INTEGER NOT NULL DEFAULT 0,
+                        `createdAt` INTEGER NOT NULL DEFAULT 0,
+                        `verifiedBy` TEXT,
+                        `verificationNotes` TEXT,
+                        `verificationChannel` TEXT,
+                        `verificationCustomerName` TEXT,
+                        `verifiedAt` INTEGER,
+                        `isApproved` INTEGER NOT NULL DEFAULT 0,
+                        `approvedBy` TEXT,
+                        `approvedAt` INTEGER,
+                        `approvalNotes` TEXT,
+                        `assignedToName` TEXT,
+                        `assignedToUid` TEXT
+                    )
+                """.trimIndent())
+                db.execSQL("""
+                    CREATE TABLE IF NOT EXISTS `receipts` (
+                        `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+                        `timestamp` INTEGER NOT NULL DEFAULT 0,
+                        `customerName` TEXT NOT NULL,
+                        `totalAmount` REAL NOT NULL DEFAULT 0.0,
+                        `imageFileName` TEXT NOT NULL,
+                        `isInvoice` INTEGER NOT NULL DEFAULT 0,
+                        `paymentStatus` TEXT NOT NULL DEFAULT 'Paid',
+                        `orderId` TEXT NOT NULL DEFAULT ''
+                    )
+                """.trimIndent())
+            }
+            override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) {}
+        }
+
+        val config32 = SupportSQLiteOpenHelper.Configuration.builder(context)
+            .name(dbName)
+            .callback(callback32)
+            .build()
+
+        val helper32 = FrameworkSQLiteOpenHelperFactory().create(config32)
+        val db32 = helper32.writableDatabase
+
+        val cvTask = ContentValues().apply {
+            put("title", "Stock Audit Task")
+            put("description", "Audit shelf 3")
+            put("urgency", "High")
+            put("category", "Manual")
+        }
+        val taskId = db32.insert("operations_tasks", SQLiteDatabase.CONFLICT_NONE, cvTask)
+        assertTrue(taskId > 0)
+
+        val cvReceipt = ContentValues().apply {
+            put("customerName", "John Doe")
+            put("totalAmount", 2500.0)
+            put("imageFileName", "receipt_001.jpg")
+        }
+        val receiptId = db32.insert("receipts", SQLiteDatabase.CONFLICT_NONE, cvReceipt)
+        assertTrue(receiptId > 0)
+
+        db32.close()
+        helper32.close()
+
+        // Execute MIGRATION_32_33
+        val callbackMigrate = object : SupportSQLiteOpenHelper.Callback(33) {
+            override fun onCreate(db: SupportSQLiteDatabase) {}
+            override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) {
+                if (oldVersion == 32 && newVersion == 33) {
+                    PharmacyDatabase.MIGRATION_32_33.migrate(db)
+                }
+            }
+        }
+
+        val configMigrate = SupportSQLiteOpenHelper.Configuration.builder(context)
+            .name(dbName)
+            .callback(callbackMigrate)
+            .build()
+
+        val helperMigrate = FrameworkSQLiteOpenHelperFactory().create(configMigrate)
+        val db33 = helperMigrate.writableDatabase
+
+        val taskCursor = db33.query("SELECT * FROM operations_tasks WHERE id = ?", arrayOf(taskId))
+        assertTrue(taskCursor.moveToFirst())
+        assertTrue("branchId column must exist on operations_tasks", taskCursor.getColumnIndex("branchId") >= 0)
+        assertTrue("originatingUserUid column must exist on operations_tasks", taskCursor.getColumnIndex("originatingUserUid") >= 0)
+        taskCursor.close()
+
+        val receiptCursor = db33.query("SELECT * FROM receipts WHERE id = ?", arrayOf(receiptId))
+        assertTrue(receiptCursor.moveToFirst())
+        assertTrue("branchId column must exist on receipts", receiptCursor.getColumnIndex("branchId") >= 0)
+        assertTrue("originatingUserUid column must exist on receipts", receiptCursor.getColumnIndex("originatingUserUid") >= 0)
+        receiptCursor.close()
+
+        db33.close()
+        helperMigrate.close()
+    }
 }

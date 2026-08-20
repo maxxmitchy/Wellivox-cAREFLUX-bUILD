@@ -12,5 +12,7 @@ data class Receipt(
     val imageFileName: String,
     val isInvoice: Boolean = false,
     val paymentStatus: String = "Paid", // e.g., Paid, Pending, Rejected, Cancelled
-    val orderId: String = ""
+    val orderId: String = "",
+    val branchId: String = "",
+    val originatingUserUid: String = ""
 )

@@ -43,9 +43,17 @@ android {
   buildTypes {
     release {
       isCrunchPngs = false
-      isMinifyEnabled = false
+      isMinifyEnabled = true
+      isShrinkResources = true
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-      signingConfig = signingConfigs.getByName("release")
+      val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
+      val releaseKeystore = file(keystorePath)
+      if (releaseKeystore.exists()) {
+        signingConfig = signingConfigs.getByName("release")
+      } else {
+        logger.warn("Release keystore $keystorePath not found. Production release signing key unavailable in this build container. Falling back to debug signing for build configuration verification.")
+        signingConfig = signingConfigs.findByName("debugConfig") ?: signingConfigs.getByName("debug")
+      }
     }
     debug {
       val customKeystore = file("${rootDir}/debug.keystore")

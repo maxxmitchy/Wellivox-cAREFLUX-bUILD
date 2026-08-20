@@ -127,16 +127,12 @@ class FirestoreRemoteDataSourceImpl(
 
     override fun observeBranchInventory(branchId: String): Flow<List<Map<String, Any>>> = callbackFlow {
         val fs = firestore
-        if (fs == null) {
+        if (fs == null || branchId.isBlank()) {
             trySend(emptyList())
             awaitClose { }
             return@callbackFlow
         }
-        val query = if (branchId.isBlank()) {
-            fs.collection("branch_inventory")
-        } else {
-            fs.collection("branch_inventory").whereEqualTo("branchId", branchId)
-        }
+        val query = fs.collection("branch_inventory").whereEqualTo("branchId", branchId)
         val listener = try {
             query.addSnapshotListener { snapshot, error ->
                 if (error != null) {
@@ -159,16 +155,12 @@ class FirestoreRemoteDataSourceImpl(
 
     override fun observeBranchCustomers(branchId: String): Flow<List<Map<String, Any>>> = callbackFlow {
         val fs = firestore
-        if (fs == null) {
+        if (fs == null || branchId.isBlank()) {
             trySend(emptyList())
             awaitClose { }
             return@callbackFlow
         }
-        val query = if (branchId.isBlank()) {
-            fs.collection("branch_customers")
-        } else {
-            fs.collection("branch_customers").whereEqualTo("branchId", branchId)
-        }
+        val query = fs.collection("branch_customers").whereEqualTo("branchId", branchId)
         val listener = try {
             query.addSnapshotListener { snapshot, error ->
                 if (error != null) {
@@ -191,16 +183,12 @@ class FirestoreRemoteDataSourceImpl(
 
     override fun observeBranchCustomerMedications(branchId: String): Flow<List<Map<String, Any>>> = callbackFlow {
         val fs = firestore
-        if (fs == null) {
+        if (fs == null || branchId.isBlank()) {
             trySend(emptyList())
             awaitClose { }
             return@callbackFlow
         }
-        val query = if (branchId.isBlank()) {
-            fs.collection("branch_customer_medications")
-        } else {
-            fs.collection("branch_customer_medications").whereEqualTo("branchId", branchId)
-        }
+        val query = fs.collection("branch_customer_medications").whereEqualTo("branchId", branchId)
         val listener = try {
             query.addSnapshotListener { snapshot, error ->
                 if (error != null) {
@@ -223,16 +211,12 @@ class FirestoreRemoteDataSourceImpl(
 
     override fun observeBranchInterventions(branchId: String): Flow<List<Map<String, Any>>> = callbackFlow {
         val fs = firestore
-        if (fs == null) {
+        if (fs == null || branchId.isBlank()) {
             trySend(emptyList())
             awaitClose { }
             return@callbackFlow
         }
-        val query = if (branchId.isBlank()) {
-            fs.collection("branch_interventions")
-        } else {
-            fs.collection("branch_interventions").whereEqualTo("branchId", branchId)
-        }
+        val query = fs.collection("branch_interventions").whereEqualTo("branchId", branchId)
         val listener = try {
             query.addSnapshotListener { snapshot, error ->
                 if (error != null) {

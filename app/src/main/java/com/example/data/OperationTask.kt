@@ -31,5 +31,7 @@ data class OperationTask(
     val approvedAt: Long? = null,
     val approvalNotes: String? = null,
     val assignedToName: String? = null,
-    val assignedToUid: String? = null
+    val assignedToUid: String? = null,
+    val branchId: String = "",
+    val originatingUserUid: String = ""
 )

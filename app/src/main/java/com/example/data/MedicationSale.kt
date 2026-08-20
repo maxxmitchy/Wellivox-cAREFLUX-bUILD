@@ -21,5 +21,6 @@ data class MedicationSale(
     val salePrice: Double = 0.0,
     val batchNumber: String = "",
     val clientTransactionId: String = "",
-    val branchId: String = ""
+    val branchId: String = "",
+    val originatingUserUid: String = ""
 )

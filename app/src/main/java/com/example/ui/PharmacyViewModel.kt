@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.cancelAndJoin
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
 import com.squareup.moshi.Types
@@ -306,7 +307,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
     private val _isProcurementEnabled = kotlinx.coroutines.flow.MutableStateFlow(true)
     val isProcurementEnabled: StateFlow<Boolean> = _isProcurementEnabled.asStateFlow()
 
-    private val _isSuspended = kotlinx.coroutines.flow.MutableStateFlow(false)
+    private val _isSuspended = kotlinx.coroutines.flow.MutableStateFlow(prefs.getBoolean("user_suspended", false))
     val isSuspended: StateFlow<Boolean> = _isSuspended.asStateFlow()
 
     private val _isInventoryLoading = kotlinx.coroutines.flow.MutableStateFlow(true)
@@ -319,6 +320,20 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
 
     private val _currentPharmacistBranchId = kotlinx.coroutines.flow.MutableStateFlow<String?>(prefs.getString("cached_branch_id", null))
     val currentPharmacistBranchId: StateFlow<String?> = _currentPharmacistBranchId.asStateFlow()
+
+    val branchGenerationToken = java.util.concurrent.atomic.AtomicInteger(0)
+
+    fun getActiveBranchId(): String {
+        return _currentPharmacistBranchId.value?.takeIf { it.isNotBlank() }
+            ?: prefs.getString("cached_branch_id", null)?.takeIf { it.isNotBlank() }
+            ?: ""
+    }
+
+    fun getCurrentUserUid(): String {
+        return authRepository.getCurrentUser()?.uid?.takeIf { it.isNotBlank() }
+            ?: prefs.getString("cached_uid", null)?.takeIf { it.isNotBlank() }
+            ?: "LocalNode"
+    }
 
     private val _currentPharmacistRole = kotlinx.coroutines.flow.MutableStateFlow<String?>(prefs.getString("cached_role", "Pharmacist"))
     val currentPharmacistRole: StateFlow<String?> = _currentPharmacistRole.asStateFlow()
@@ -784,6 +799,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                         _isAiContentEnabled.value = aiContent
                         _isCarefluxAiEnabled.value = carefluxAi
                         _isSuspended.value = suspended
+                        prefs.edit().putBoolean("user_suspended", suspended).apply()
 
                         val customGemini = map["customGeminiApiKey"] as? String
                         if (!customGemini.isNullOrBlank()) {
@@ -2213,7 +2229,9 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                         testResults = "Follow-up complete via phone/care note update",
                         recommendation = "Marked care follow-up alert as resolved. Patient care notes updated.",
                         currentStatus = "Feeling Better",
-                        dateAdded = System.currentTimeMillis()
+                        dateAdded = System.currentTimeMillis(),
+                        branchId = getActiveBranchId(),
+                        originatingUserUid = getCurrentUserUid()
                     )
                 )
             }
@@ -2242,7 +2260,9 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 category = category, 
                 isCompleted = false,
                 assignedToName = assignedToName,
-                assignedToUid = assignedToUid
+                assignedToUid = assignedToUid,
+                branchId = getActiveBranchId(),
+                originatingUserUid = getCurrentUserUid()
             )
             repository.insertOperationTask(task)
             
@@ -2877,7 +2897,9 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                     totalAmount = totalAmount,
                     imageFileName = imageFileName,
                     isInvoice = isInvoice,
-                    paymentStatus = paymentStatus
+                    paymentStatus = paymentStatus,
+                    branchId = getActiveBranchId(),
+                    originatingUserUid = getCurrentUserUid()
                 )
             )
         }
@@ -3000,7 +3022,9 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                         consentSmsRefills = false,
                         consentCloudSync = true,
                         consentChannel = "Auto Handshake",
-                        consentLastUpdated = System.currentTimeMillis()
+                        consentLastUpdated = System.currentTimeMillis(),
+                        branchId = getActiveBranchId(),
+                        originatingUserUid = getCurrentUserUid()
                     )
                     val insertedId = repository.insertCustomer(newCust)
                     val resolvedLocalId = insertedId.toInt()
@@ -3023,7 +3047,9 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                             customDosage = mDosage,
                             cost = mCost,
                             cycleDays = mCycle,
-                            nextRefillDate = mNext
+                            nextRefillDate = mNext,
+                            branchId = getActiveBranchId(),
+                            originatingUserUid = getCurrentUserUid()
                         )
                         repository.insertCustomerMedication(newMed)
                     }
@@ -3044,7 +3070,9 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                             followUpDay3Sent = doc2["followUpDay3Sent"] as? Boolean ?: false,
                             followUpDay7Sent = doc2["followUpDay7Sent"] as? Boolean ?: false,
                             followUpDay14Sent = doc2["followUpDay14Sent"] as? Boolean ?: false,
-                            dateAdded = (doc2["dateAdded"] as? Number)?.toLong() ?: System.currentTimeMillis()
+                            dateAdded = (doc2["dateAdded"] as? Number)?.toLong() ?: System.currentTimeMillis(),
+                            branchId = getActiveBranchId(),
+                            originatingUserUid = getCurrentUserUid()
                         )
                         repository.insertClinicalIntervention(newInt)
                     }
@@ -3100,7 +3128,9 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 consentSmsRefills = consentSmsRefills,
                 consentCloudSync = consentCloudSync,
                 consentChannel = consentChannel,
-                consentLastUpdated = System.currentTimeMillis()
+                consentLastUpdated = System.currentTimeMillis(),
+                branchId = getActiveBranchId(),
+                originatingUserUid = getCurrentUserUid()
             )
             val insertedId = repository.insertCustomer(newCust)
             val finalCust = newCust.copy(id = insertedId)
@@ -3120,9 +3150,13 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 ).show()
                 return@launch
             }
-            repository.updateCustomer(customer) 
-            parseCustomerNotesForAlerts(customer)
-            syncCustomerToBranch(customer)
+            val updatedCust = customer.copy(
+                branchId = customer.branchId.ifBlank { getActiveBranchId() },
+                originatingUserUid = customer.originatingUserUid.ifBlank { getCurrentUserUid() }
+            )
+            repository.updateCustomer(updatedCust) 
+            parseCustomerNotesForAlerts(updatedCust)
+            syncCustomerToBranch(updatedCust)
             triggerImmediateSync()
         }
     }
@@ -3167,7 +3201,9 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 cost = cost,
                 cycleDays = cycleDays,
                 nextRefillDate = nextRefill,
-                dateAdded = dateAdded
+                dateAdded = dateAdded,
+                branchId = getActiveBranchId(),
+                originatingUserUid = getCurrentUserUid()
             )
             val insertedId = repository.insertCustomerMedication(med)
             syncCustomerMedicationToBranch(med.copy(id = insertedId))
@@ -3177,8 +3213,12 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
     
     fun updateCustomerMedication(med: CustomerMedication) {
         viewModelScope.launch { 
-            repository.updateCustomerMedication(med) 
-            syncCustomerMedicationToBranch(med)
+            val updatedMed = med.copy(
+                branchId = med.branchId.ifBlank { getActiveBranchId() },
+                originatingUserUid = med.originatingUserUid.ifBlank { getCurrentUserUid() }
+            )
+            repository.updateCustomerMedication(updatedMed) 
+            syncCustomerMedicationToBranch(updatedMed)
             triggerImmediateSync()
         }
     }
@@ -3198,7 +3238,9 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 customerId = customerId,
                 presentation = presentation,
                 testResults = testResults,
-                recommendation = recommendation
+                recommendation = recommendation,
+                branchId = getActiveBranchId(),
+                originatingUserUid = getCurrentUserUid()
             )
             val insertedId = repository.insertClinicalIntervention(inter)
             val finalInter = inter.copy(id = insertedId)
@@ -3292,7 +3334,9 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                             consentSmsRefills = true, // Opt-in for triage follow-ups
                             consentCloudSync = true,
                             consentChannel = "Verbal Consent",
-                            consentLastUpdated = System.currentTimeMillis()
+                            consentLastUpdated = System.currentTimeMillis(),
+                            branchId = getActiveBranchId(),
+                            originatingUserUid = getCurrentUserUid()
                         )
                         val insertedId = repository.insertCustomer(newCust)
                         finalCustomerId = insertedId
@@ -3308,7 +3352,9 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                     customerId = finalCustomerId,
                     presentation = "Triage: $conditionName",
                     testResults = checkedSymptoms,
-                    recommendation = "Recommended Care Plan: $recommendedMed. Follow-up scheduled in $followUpDays days."
+                    recommendation = "Recommended Care Plan: $recommendedMed. Follow-up scheduled in $followUpDays days.",
+                    branchId = getActiveBranchId(),
+                    originatingUserUid = getCurrentUserUid()
                 )
                 val insertedInterId = repository.insertClinicalIntervention(inter)
                 syncClinicalInterventionToBranch(inter.copy(id = insertedInterId))
@@ -3323,7 +3369,9 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                         customDosage = "As directed by pharmacist",
                         cost = 0.0,
                         cycleDays = followUpDays,
-                        nextRefillDate = nextRefill
+                        nextRefillDate = nextRefill,
+                        branchId = getActiveBranchId(),
+                        originatingUserUid = getCurrentUserUid()
                     )
                     val insertedMedId = repository.insertCustomerMedication(med)
                     syncCustomerMedicationToBranch(med.copy(id = insertedMedId))
@@ -3742,7 +3790,8 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 salePrice = inv.price * cartItem.quantity,
                 batchNumber = inv.batchNumber,
                 clientTransactionId = clientTxId,
-                branchId = activeBranchId
+                branchId = activeBranchId,
+                originatingUserUid = getCurrentUserUid()
             )
 
             val branchName = _currentPharmacistBranchName.value ?: "Careflux"
@@ -3783,7 +3832,8 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                     "salePrice" to sale.salePrice,
                     "batchNumber" to sale.batchNumber,
                     "clientTransactionId" to clientTxId,
-                    "branchId" to activeBranchId
+                    "branchId" to activeBranchId,
+                    "originatingUserUid" to getCurrentUserUid()
                 )
                 repository.upsertRemoteDocument("medication_sales", clientTxId, saleMap)
             } catch (e: Exception) {
@@ -4534,6 +4584,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
 
     private fun setupBranchRealtimeSync(userBranchId: String) {
         try {
+            val currentGen = branchGenerationToken.get()
             // Run self-healing local deduplication immediately on sync setup
             deduplicateLocalInventory()
 
@@ -4546,16 +4597,20 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 repository.observeBranchSettings(userBranchId)
                     .catch { e -> android.util.Log.w("PharmacyViewModel", "observeBranchSettings failed: ${e.localizedMessage}") }
                     .collect { snapshot ->
-                    if (snapshot != null) {
-                        _isAiContentEnabled.value = snapshot["aiContentEnabled"] as? Boolean ?: true
-                        _isCarefluxAiEnabled.value = snapshot["carefluxAiEnabled"] as? Boolean ?: true
-                        _isClinicalEnabled.value = snapshot["clinicalEnabled"] as? Boolean ?: true
-                        _isMessagingEnabled.value = snapshot["messagingEnabled"] as? Boolean ?: true
-                        _isTriageEnabled.value = snapshot["triageEnabled"] as? Boolean ?: true
-                        _isMarketplaceEnabled.value = snapshot["marketplaceEnabled"] as? Boolean ?: true
-                        _isProcurementEnabled.value = snapshot["procurementEnabled"] as? Boolean ?: true
+                        if (branchGenerationToken.get() != currentGen) {
+                            android.util.Log.d("PharmacyViewModel", "Stale generation ($currentGen vs ${branchGenerationToken.get()}), ignoring observeBranchSettings")
+                            return@collect
+                        }
+                        if (snapshot != null) {
+                            _isAiContentEnabled.value = snapshot["aiContentEnabled"] as? Boolean ?: true
+                            _isCarefluxAiEnabled.value = snapshot["carefluxAiEnabled"] as? Boolean ?: true
+                            _isClinicalEnabled.value = snapshot["clinicalEnabled"] as? Boolean ?: true
+                            _isMessagingEnabled.value = snapshot["messagingEnabled"] as? Boolean ?: true
+                            _isTriageEnabled.value = snapshot["triageEnabled"] as? Boolean ?: true
+                            _isMarketplaceEnabled.value = snapshot["marketplaceEnabled"] as? Boolean ?: true
+                            _isProcurementEnabled.value = snapshot["procurementEnabled"] as? Boolean ?: true
+                        }
                     }
-                }
             }
             activeSyncJobs.add(job0)
 
@@ -4564,8 +4619,12 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 repository.observeStaffMembers(userBranchId)
                     .catch { e -> android.util.Log.w("PharmacyViewModel", "observeStaffMembers failed: ${e.localizedMessage}") }
                     .collect { list ->
-                    _branchStaffList.value = list
-                }
+                        if (branchGenerationToken.get() != currentGen) {
+                            android.util.Log.d("PharmacyViewModel", "Stale generation ($currentGen vs ${branchGenerationToken.get()}), ignoring observeStaffMembers")
+                            return@collect
+                        }
+                        _branchStaffList.value = list
+                    }
             }
             activeSyncJobs.add(job1)
 
@@ -4574,6 +4633,10 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 repository.observeBranchInventory(userBranchId)
                     .catch { e -> android.util.Log.w("PharmacyViewModel", "observeBranchInventory failed: ${e.localizedMessage}") }
                     .collect { rawList ->
+                        if (branchGenerationToken.get() != currentGen) {
+                            android.util.Log.d("PharmacyViewModel", "Stale generation ($currentGen vs ${branchGenerationToken.get()}), ignoring observeBranchInventory")
+                            return@collect
+                        }
                     try {
                         val remoteItems = rawList.mapNotNull { data ->
                             val id = (data["id"] as? Number)?.toInt() ?: return@mapNotNull null
@@ -4615,7 +4678,9 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                                 brand = brand,
                                 salesStrategy = salesStrategy,
                                 lastUpdated = lastUpdated,
-                                lastReconciledAt = lastReconciledAt
+                                lastReconciledAt = lastReconciledAt,
+                                branchId = data["branchId"] as? String ?: userBranchId,
+                                originatingUserUid = data["originatingUserUid"] as? String ?: ""
                             )
                         }
 
@@ -4642,6 +4707,10 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
             // Job 3: Realtime Branch Customers Sync
             val job3 = viewModelScope.launch {
                 repository.observeBranchCustomers(userBranchId).collect { rawList ->
+                    if (branchGenerationToken.get() != currentGen) {
+                        android.util.Log.d("PharmacyViewModel", "Stale generation ($currentGen vs ${branchGenerationToken.get()}), ignoring observeBranchCustomers")
+                        return@collect
+                    }
                     try {
                         val remoteList = rawList.mapNotNull { data ->
                             val id = (data["id"] as? Number)?.toInt() ?: return@mapNotNull null
@@ -4671,7 +4740,9 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                                 gender = gender,
                                 state = state,
                                 lga = lga,
-                                city = city
+                                city = city,
+                                branchId = data["branchId"] as? String ?: userBranchId,
+                                originatingUserUid = data["originatingUserUid"] as? String ?: ""
                             )
                         }
                         remoteList.forEach { remote ->
@@ -4690,6 +4761,10 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
             // Job 3b: Realtime Branch Customer Medications Sync
             val job3b = viewModelScope.launch {
                 repository.observeBranchCustomerMedications(userBranchId).collect { rawList ->
+                    if (branchGenerationToken.get() != currentGen) {
+                        android.util.Log.d("PharmacyViewModel", "Stale generation ($currentGen vs ${branchGenerationToken.get()}), ignoring observeBranchCustomerMedications")
+                        return@collect
+                    }
                     try {
                         rawList.forEach { data ->
                             val id = (data["id"] as? Number)?.toInt() ?: return@forEach
@@ -4709,7 +4784,9 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                                 customDosage = customDosage,
                                 cost = cost,
                                 cycleDays = cycleDays,
-                                nextRefillDate = if (nextRefillDate > 0L) nextRefillDate else System.currentTimeMillis()
+                                nextRefillDate = if (nextRefillDate > 0L) nextRefillDate else System.currentTimeMillis(),
+                                branchId = data["branchId"] as? String ?: userBranchId,
+                                originatingUserUid = data["originatingUserUid"] as? String ?: ""
                             )
                             repository.insertCustomerMedication(remoteMed)
                         }
@@ -4723,6 +4800,10 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
             // Job 3c: Realtime Branch Clinical Interventions Sync
             val job3c = viewModelScope.launch {
                 repository.observeBranchInterventions(userBranchId).collect { rawList ->
+                    if (branchGenerationToken.get() != currentGen) {
+                        android.util.Log.d("PharmacyViewModel", "Stale generation ($currentGen vs ${branchGenerationToken.get()}), ignoring observeBranchInterventions")
+                        return@collect
+                    }
                     try {
                         rawList.forEach { data ->
                             val id = (data["id"] as? Number)?.toInt() ?: return@forEach
@@ -4747,7 +4828,9 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                                     followUpDay3Sent = followUpDay3Sent,
                                     followUpDay7Sent = followUpDay7Sent,
                                     followUpDay14Sent = followUpDay14Sent,
-                                    dateAdded = if (dateAdded > 0L) dateAdded else System.currentTimeMillis()
+                                    dateAdded = if (dateAdded > 0L) dateAdded else System.currentTimeMillis(),
+                                    branchId = data["branchId"] as? String ?: userBranchId,
+                                    originatingUserUid = data["originatingUserUid"] as? String ?: ""
                                 )
                             )
                         }
@@ -4761,6 +4844,10 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
             // Job 4: Realtime Branch Operations Tasks
             val job4 = viewModelScope.launch {
                 repository.observeBranchOperationTasks(userBranchId).collect { rawList ->
+                    if (branchGenerationToken.get() != currentGen) {
+                        android.util.Log.d("PharmacyViewModel", "Stale generation ($currentGen vs ${branchGenerationToken.get()}), ignoring observeBranchOperationTasks")
+                        return@collect
+                    }
                     try {
                         val remoteList = rawList.mapNotNull { data ->
                             val id = (data["id"] as? Number)?.toInt() ?: return@mapNotNull null
@@ -4805,7 +4892,9 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                                 approvedAt = approvedAt,
                                 approvalNotes = if (approvalNotes.isNullOrEmpty()) null else approvalNotes,
                                 assignedToName = if (assignedToName.isNullOrEmpty()) null else assignedToName,
-                                assignedToUid = if (assignedToUid.isNullOrEmpty()) null else assignedToUid
+                                assignedToUid = if (assignedToUid.isNullOrEmpty()) null else assignedToUid,
+                                branchId = data["branchId"] as? String ?: userBranchId,
+                                originatingUserUid = data["originatingUserUid"] as? String ?: ""
                             )
                         }
 
@@ -4912,6 +5001,10 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
             // Job 5: Realtime Branch Receipts Sync
             val job5 = viewModelScope.launch {
                 repository.observeBranchReceipts(userBranchId).collect { rawList ->
+                    if (branchGenerationToken.get() != currentGen) {
+                        android.util.Log.d("PharmacyViewModel", "Stale generation ($currentGen vs ${branchGenerationToken.get()}), ignoring observeBranchReceipts")
+                        return@collect
+                    }
                     try {
                         rawList.forEach { data ->
                             val id = (data["id"] as? Number)?.toInt() ?: return@forEach
@@ -4932,7 +5025,9 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                                     imageFileName = imageFileName,
                                     isInvoice = isInvoice,
                                     paymentStatus = paymentStatus,
-                                    orderId = orderId
+                                    orderId = orderId,
+                                    branchId = data["branchId"] as? String ?: userBranchId,
+                                    originatingUserUid = data["originatingUserUid"] as? String ?: ""
                                 )
                             )
                         }
@@ -4948,6 +5043,10 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
             val auditBranch = if (isManagerOrAdmin) "" else userBranchId
             val job6 = viewModelScope.launch {
                 repository.observeBranchAuditLogs(auditBranch).collect { logs ->
+                    if (branchGenerationToken.get() != currentGen) {
+                        android.util.Log.d("PharmacyViewModel", "Stale generation ($currentGen vs ${branchGenerationToken.get()}), ignoring observeBranchAuditLogs")
+                        return@collect
+                    }
                     _branchTransfers.value = logs
                 }
             }
@@ -4959,6 +5058,10 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 repository.observeMedicationSales(salesBranch)
                     .catch { e -> android.util.Log.w("PharmacyViewModel", "observeMedicationSales failed: ${e.localizedMessage}") }
                     .collect { list ->
+                        if (branchGenerationToken.get() != currentGen) {
+                            android.util.Log.d("PharmacyViewModel", "Stale generation ($currentGen vs ${branchGenerationToken.get()}), ignoring observeMedicationSales")
+                            return@collect
+                        }
                         for (data in list) {
                             val name = data["productName"] as? String ?: ""
                             val brand = data["brand"] as? String ?: ""
@@ -4992,7 +5095,10 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                                         patientLga = lgaName,
                                         patientCity = city,
                                         salePrice = price,
-                                        batchNumber = batchNum
+                                        batchNumber = batchNum,
+                                        clientTransactionId = data["clientTransactionId"] as? String ?: "",
+                                        branchId = data["branchId"] as? String ?: userBranchId,
+                                        originatingUserUid = data["originatingUserUid"] as? String ?: ""
                                     )
                                 )
                             }
@@ -5797,10 +5903,27 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
             .putString("cached_branch_name", branchName)
             .apply()
             
-        setupBranchRealtimeSync(branchId)
-        triggerImmediateSync()
-        
         viewModelScope.launch {
+            val gen = branchGenerationToken.incrementAndGet()
+            try {
+                // Cancel active listeners deterministically before clearing old branch local database data
+                val jobsToCancel = activeSyncJobs.toList()
+                activeSyncJobs.clear()
+                jobsToCancel.forEach { job ->
+                    try {
+                        job.cancelAndJoin()
+                    } catch (e: Exception) {
+                        // ignore cancellation exceptions
+                    }
+                }
+                repository.clearAllData()
+            } catch (e: Exception) {
+                android.util.Log.w("PharmacyViewModel", "Data wipe on branch switch failed: ${e.localizedMessage}")
+            }
+
+            setupBranchRealtimeSync(branchId)
+            triggerImmediateSync()
+
             if (user != null) {
                 val result = repository.switchActiveBranch(user.uid, branchId, branchName)
                 result.fold(

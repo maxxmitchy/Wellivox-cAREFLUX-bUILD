@@ -25,7 +25,9 @@ data class InventoryItem(
     val globalId: String = java.util.UUID.randomUUID().toString(),
     val syncStatus: String = "SYNCED",
     val lastUpdated: Long = System.currentTimeMillis(),
-    val lastReconciledAt: Long = 0L
+    val lastReconciledAt: Long = 0L,
+    val branchId: String = "",
+    val originatingUserUid: String = ""
 ) {
     val isLowStock: Boolean
         get() = stockQuantity <= minRequiredStock
