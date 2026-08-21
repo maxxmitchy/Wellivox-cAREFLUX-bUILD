@@ -52,6 +52,11 @@ class CloudSyncWorker(
                 try {
                     val remoteCustDocs = repository.getRemoteDocumentsWhereEquals("branch_customers", "branchId", branchId).getOrDefault(emptyList())
                     for (doc in remoteCustDocs) {
+                        val docBranchId = doc["branchId"] as? String
+                        if (docBranchId.isNullOrBlank() || docBranchId != branchId) {
+                            android.util.Log.w("CloudSyncWorker", "Skipping customer doc ingestion: branchId mismatch ($docBranchId vs $branchId)")
+                            continue
+                        }
                         val id = (doc["id"] as? Number)?.toInt()
                             ?: (doc["id"] as? String)?.toIntOrNull()
                             ?: continue
@@ -94,7 +99,7 @@ class CloudSyncWorker(
                                 consentCloudSync = consentCloudSync,
                                 consentLastUpdated = consentLastUpdated,
                                 consentChannel = consentChannel,
-                                branchId = doc["branchId"] as? String ?: branchId,
+                                branchId = docBranchId,
                                 originatingUserUid = doc["originatingUserUid"] as? String ?: ""
                             )
                             dao.insertCustomer(newLocalCust)
@@ -149,6 +154,11 @@ class CloudSyncWorker(
                 try {
                     val remoteMedDocs = repository.getRemoteDocumentsWhereEquals("branch_customer_medications", "branchId", branchId).getOrDefault(emptyList())
                     for (doc in remoteMedDocs) {
+                        val docBranchId = doc["branchId"] as? String
+                        if (docBranchId.isNullOrBlank() || docBranchId != branchId) {
+                            android.util.Log.w("CloudSyncWorker", "Skipping medication doc ingestion: branchId mismatch ($docBranchId vs $branchId)")
+                            continue
+                        }
                         val id = (doc["id"] as? Number)?.toInt() ?: continue
                         val customerId = (doc["customerId"] as? Number)?.toInt() ?: continue
                         val inventoryItemId = (doc["inventoryItemId"] as? Number)?.toInt() ?: 0
@@ -170,7 +180,7 @@ class CloudSyncWorker(
                                 cost = cost,
                                 cycleDays = cycleDays,
                                 nextRefillDate = if (nextRefillDate > 0L) nextRefillDate else syncTime,
-                                branchId = doc["branchId"] as? String ?: branchId,
+                                branchId = docBranchId,
                                 originatingUserUid = doc["originatingUserUid"] as? String ?: ""
                             )
                             dao.insertCustomerMedication(newLocalMed)
@@ -216,6 +226,11 @@ class CloudSyncWorker(
                 try {
                     val remoteIntDocs = repository.getRemoteDocumentsWhereEquals("branch_interventions", "branchId", branchId).getOrDefault(emptyList())
                     for (doc in remoteIntDocs) {
+                        val docBranchId = doc["branchId"] as? String
+                        if (docBranchId.isNullOrBlank() || docBranchId != branchId) {
+                            android.util.Log.w("CloudSyncWorker", "Skipping intervention doc ingestion: branchId mismatch ($docBranchId vs $branchId)")
+                            continue
+                        }
                         val id = (doc["id"] as? Number)?.toInt() ?: continue
                         val customerId = (doc["customerId"] as? Number)?.toInt() ?: continue
                         val presentation = doc["presentation"] as? String ?: ""
@@ -240,7 +255,7 @@ class CloudSyncWorker(
                                 followUpDay7Sent = followUpDay7Sent,
                                 followUpDay14Sent = followUpDay14Sent,
                                 dateAdded = if (dateAdded > 0L) dateAdded else syncTime,
-                                branchId = doc["branchId"] as? String ?: branchId,
+                                branchId = docBranchId,
                                 originatingUserUid = doc["originatingUserUid"] as? String ?: ""
                             )
                             dao.insertClinicalIntervention(newLocalInt)
@@ -289,6 +304,11 @@ class CloudSyncWorker(
                 try {
                     remoteInvDocs = repository.getRemoteDocumentsWhereEquals("branch_inventory", "branchId", branchId).getOrDefault(emptyList())
                     for (doc in remoteInvDocs) {
+                        val docBranchId = doc["branchId"] as? String
+                        if (docBranchId.isNullOrBlank() || docBranchId != branchId) {
+                            android.util.Log.w("CloudSyncWorker", "Skipping inventory doc ingestion: branchId mismatch ($docBranchId vs $branchId)")
+                            continue
+                        }
                         val id = (doc["id"] as? Number)?.toInt() ?: continue
                         if (id == 0) continue // Skip placeholder corrupt ID
                         val name = doc["name"] as? String ?: ""
@@ -328,7 +348,7 @@ class CloudSyncWorker(
                                 brand = brand,
                                 salesStrategy = salesStrategy,
                                 lastUpdated = lastUpdated,
-                                branchId = doc["branchId"] as? String ?: branchId,
+                                branchId = docBranchId,
                                 originatingUserUid = doc["originatingUserUid"] as? String ?: ""
                             )
                             dao.insertInventoryItem(newLocalItem)

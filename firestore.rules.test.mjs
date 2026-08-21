@@ -226,6 +226,14 @@ beforeEach(async () => {
       actionPerformed: 'SELF_AUDIT',
       timestamp: 1700000000000,
     });
+
+    // Prefix collision seed document: docId starts with BRANCH_A but branchId is BRANCH_ABC
+    await db.doc('branch_inventory/BRANCH_A_prefix_attack').set({
+      id: 'inv_attack',
+      branchId: 'BRANCH_ABC',
+      name: 'Prefix Attack Item',
+      stockQuantity: 10,
+    });
   });
 });
 
@@ -962,6 +970,76 @@ test('64. DeviceConfigUnauthenticatedAccessDenied: Unauthenticated read and upda
   await assertFails(
     db.doc('device_configs/DEV_A1').update({
       status: 'Unauth_Tamper',
+    })
+  );
+});
+
+// ============================================================
+// PHASE 25 — DEEP ARCHITECTURE ADVERSARIAL REMEDIATION TESTS
+// ============================================================
+
+test('65. PrefixCollisionReadDenied: Branch A user cannot read inventory item with docId starting with BRANCH_A if branchId is BRANCH_ABC', async () => {
+  const db = getPharmAContext().firestore(); // pharm_a has branchId "BRANCH_A"
+  await assertFails(db.doc('branch_inventory/BRANCH_A_prefix_attack').get());
+});
+
+test('66. MaliciousDocIdTenantIsolation: Malicious docId crafted with target branch prefix cannot bypass tenant isolation', async () => {
+  const pharmB = getPharmBContext().firestore(); // pharm_b in BRANCH_B
+  // pharm_b creates customer with docId starting with BRANCH_A but branchId BRANCH_B
+  await assertSucceeds(
+    pharmB.doc('branch_customers/BRANCH_A_malicious_cust').set({
+      id: 'cust_malicious',
+      branchId: 'BRANCH_B',
+      fullName: 'Trap Customer',
+    })
+  );
+
+  const pharmA = getPharmAContext().firestore(); // pharm_a in BRANCH_A
+  // pharm_a must NOT be able to read BRANCH_A_malicious_cust because its branchId is BRANCH_B
+  await assertFails(pharmA.doc('branch_customers/BRANCH_A_malicious_cust').get());
+});
+
+test('67. CrossBranchStaffProfileReadDenied: Ordinary staff in Branch A cannot read staff profile in Branch B', async () => {
+  const db = getPharmAContext().firestore(); // pharm_a in BRANCH_A
+  await assertFails(db.doc('registered_pharmacists/pharm_b').get());
+});
+
+test('68. StaffProfileReadSelfAndSameBranchManagerAllowed: Self profile read and same branch manager read are allowed', async () => {
+  const pharmA = getPharmAContext().firestore();
+  await assertSucceeds(pharmA.doc('registered_pharmacists/pharm_a').get());
+
+  const managerA = getManagerAContext().firestore();
+  await assertSucceeds(managerA.doc('registered_pharmacists/pharm_a').get());
+});
+
+test('69. CrossBranchMedicationSalesReadDenied: Staff in Branch A cannot read sales from Branch B', async () => {
+  const db = getPharmAContext().firestore();
+  await assertFails(db.doc('medication_sales/sale1_b').get());
+});
+
+test('70. MedicationSalesUpdateDeniedForStaff: Ordinary staff cannot update completed sales record', async () => {
+  const db = getPharmAContext().firestore();
+  await assertFails(
+    db.doc('medication_sales/sale1_a').update({
+      totalAmount: 0.0,
+    })
+  );
+});
+
+test('71. CrossBranchInventoryMutationDenied: Staff in Branch B cannot update inventory in Branch A', async () => {
+  const db = getPharmBContext().firestore();
+  await assertFails(
+    db.doc('branch_inventory/BRANCH_A_inv1').update({
+      stockQuantity: 0,
+    })
+  );
+});
+
+test('72. BranchIdRebindMutationDenied: Staff cannot mutate branchId on existing inventory item', async () => {
+  const db = getPharmAContext().firestore();
+  await assertFails(
+    db.doc('branch_inventory/BRANCH_A_inv1').update({
+      branchId: 'BRANCH_B',
     })
   );
 });

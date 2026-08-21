@@ -64,7 +64,11 @@ service cloud.firestore {
 
     match /registered_pharmacists/{uid} {
 
-      allow read: if isAuth();
+      allow read: if isAuth() && (
+        isAdmin() ||
+        request.auth.uid == uid ||
+        (userExists() && getBranchId() != null && resource.data.branchId == getBranchId())
+      );
 
       // Creation (Sign up / Initial registration)
       allow create: if isAuth() && (
@@ -278,10 +282,7 @@ service cloud.firestore {
       allow read: if isAuth() &&
         userExists() &&
         getBranchId() != null &&
-        (
-          resource.data.branchId == getBranchId() ||
-          logId.startsWith(getBranchId())
-        );
+        resource.data.branchId == getBranchId();
 
       allow create: if isAuth() &&
         userExists() &&
@@ -289,7 +290,7 @@ service cloud.firestore {
           isAdmin() ||
           (
             getBranchId() != null &&
-            (request.resource.data.branchId == getBranchId() || logId.startsWith(getBranchId())) &&
+            request.resource.data.branchId == getBranchId() &&
             (!('actorUid' in request.resource.data) || request.resource.data.actorUid == request.auth.uid)
           )
         );
@@ -317,49 +318,49 @@ service cloud.firestore {
     // ============================================================
 
     match /branch_inventory/{docId} {
-      allow read: if isAuth() && (isAdmin() || (getBranchId() != null && (resource.data.branchId == getBranchId() || docId.startsWith(getBranchId()))));
+      allow read: if isAuth() && (isAdmin() || (getBranchId() != null && resource.data.branchId == getBranchId()));
       allow create: if isAuth() && (isAdmin() || (getBranchId() != null && request.resource.data.branchId == getBranchId()));
       allow update: if isAuth() && (isAdmin() || (getBranchId() != null && resource.data.branchId == getBranchId() && request.resource.data.branchId == resource.data.branchId));
       allow delete: if isAuth() && (isAdmin() || (getBranchId() != null && resource.data.branchId == getBranchId()));
     }
 
     match /branch_customers/{docId} {
-      allow read: if isAuth() && (isAdmin() || (getBranchId() != null && (resource.data.branchId == getBranchId() || docId.startsWith(getBranchId()))));
+      allow read: if isAuth() && (isAdmin() || (getBranchId() != null && resource.data.branchId == getBranchId()));
       allow create: if isAuth() && (isAdmin() || (getBranchId() != null && request.resource.data.branchId == getBranchId()));
       allow update: if isAuth() && (isAdmin() || (getBranchId() != null && resource.data.branchId == getBranchId() && request.resource.data.branchId == resource.data.branchId));
       allow delete: if isAuth() && (isAdmin() || (getBranchId() != null && resource.data.branchId == getBranchId()));
     }
 
     match /branch_customer_medications/{docId} {
-      allow read: if isAuth() && (isAdmin() || (getBranchId() != null && (resource.data.branchId == getBranchId() || docId.startsWith(getBranchId()))));
+      allow read: if isAuth() && (isAdmin() || (getBranchId() != null && resource.data.branchId == getBranchId()));
       allow create: if isAuth() && (isAdmin() || (getBranchId() != null && request.resource.data.branchId == getBranchId()));
       allow update: if isAuth() && (isAdmin() || (getBranchId() != null && resource.data.branchId == getBranchId() && request.resource.data.branchId == resource.data.branchId));
       allow delete: if isAuth() && (isAdmin() || (getBranchId() != null && resource.data.branchId == getBranchId()));
     }
 
     match /branch_interventions/{docId} {
-      allow read: if isAuth() && (isAdmin() || (getBranchId() != null && (resource.data.branchId == getBranchId() || docId.startsWith(getBranchId()))));
+      allow read: if isAuth() && (isAdmin() || (getBranchId() != null && resource.data.branchId == getBranchId()));
       allow create: if isAuth() && (isAdmin() || (getBranchId() != null && request.resource.data.branchId == getBranchId()));
       allow update: if isAuth() && (isAdmin() || (getBranchId() != null && resource.data.branchId == getBranchId() && request.resource.data.branchId == resource.data.branchId));
       allow delete: if isAuth() && (isAdmin() || (getBranchId() != null && resource.data.branchId == getBranchId()));
     }
 
     match /branch_operation_tasks/{docId} {
-      allow read: if isAuth() && (isAdmin() || (getBranchId() != null && (resource.data.branchId == getBranchId() || docId.startsWith(getBranchId()))));
+      allow read: if isAuth() && (isAdmin() || (getBranchId() != null && resource.data.branchId == getBranchId()));
       allow create: if isAuth() && (isAdmin() || (getBranchId() != null && request.resource.data.branchId == getBranchId()));
       allow update: if isAuth() && (isAdmin() || (getBranchId() != null && resource.data.branchId == getBranchId() && request.resource.data.branchId == resource.data.branchId));
       allow delete: if isAuth() && (isAdmin() || (getBranchId() != null && resource.data.branchId == getBranchId()));
     }
 
     match /branch_receipts/{docId} {
-      allow read: if isAuth() && (isAdmin() || (getBranchId() != null && (resource.data.branchId == getBranchId() || docId.startsWith(getBranchId()))));
+      allow read: if isAuth() && (isAdmin() || (getBranchId() != null && resource.data.branchId == getBranchId()));
       allow create: if isAuth() && (isAdmin() || (getBranchId() != null && request.resource.data.branchId == getBranchId()));
       allow update: if isAuth() && (isAdmin() || (getBranchId() != null && resource.data.branchId == getBranchId() && request.resource.data.branchId == resource.data.branchId));
       allow delete: if isAuth() && (isAdmin() || (getBranchId() != null && resource.data.branchId == getBranchId()));
     }
 
     match /branch_outbound_logs/{docId} {
-      allow read: if isAuth() && (isAdmin() || (getBranchId() != null && (resource.data.branchId == getBranchId() || docId.startsWith(getBranchId()))));
+      allow read: if isAuth() && (isAdmin() || (getBranchId() != null && resource.data.branchId == getBranchId()));
       allow create: if isAuth() && (isAdmin() || (getBranchId() != null && request.resource.data.branchId == getBranchId()));
       allow update: if isAuth() && (isAdmin() || (getBranchId() != null && resource.data.branchId == getBranchId() && request.resource.data.branchId == resource.data.branchId));
       allow delete: if isAuth() && (isAdmin() || (getBranchId() != null && resource.data.branchId == getBranchId()));
@@ -421,7 +422,6 @@ service cloud.firestore {
           (
             getBranchId() != null &&
             request.resource.data.branchId == getBranchId() &&
-            nodeId.startsWith(getBranchId()) &&
             (!('ownerUid' in request.resource.data) || request.resource.data.ownerUid == request.auth.uid)
           )
         );
@@ -497,8 +497,7 @@ service cloud.firestore {
             resource.data.targetBranchId == getBranchId() ||
             resource.data.patientUid == request.auth.uid ||
             resource.data.pharmacistUid == request.auth.uid ||
-            resource.data.actorUid == request.auth.uid ||
-            handshakeId.startsWith(getBranchId())
+            resource.data.actorUid == request.auth.uid
           )
         )
       );

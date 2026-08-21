@@ -50,6 +50,8 @@ android {
       val releaseKeystore = file(keystorePath)
       if (releaseKeystore.exists()) {
         signingConfig = signingConfigs.getByName("release")
+      } else if (System.getenv("STRICT_RELEASE_BUILD") == "true" || System.getenv("CI") == "true") {
+        throw GradleException("FATAL: Release keystore $keystorePath not found. Production release build failed closed.")
       } else {
         logger.warn("Release keystore $keystorePath not found. Production release signing key unavailable in this build container. Falling back to debug signing for build configuration verification.")
         signingConfig = signingConfigs.findByName("debugConfig") ?: signingConfigs.getByName("debug")

@@ -4639,6 +4639,8 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                         }
                     try {
                         val remoteItems = rawList.mapNotNull { data ->
+                            val docBranchId = data["branchId"] as? String
+                            if (docBranchId.isNullOrBlank() || docBranchId != userBranchId) return@mapNotNull null
                             val id = (data["id"] as? Number)?.toInt() ?: return@mapNotNull null
                             if (id == 0) return@mapNotNull null // Ignore corrupt ID 0 items
 
@@ -4679,7 +4681,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                                 salesStrategy = salesStrategy,
                                 lastUpdated = lastUpdated,
                                 lastReconciledAt = lastReconciledAt,
-                                branchId = data["branchId"] as? String ?: userBranchId,
+                                branchId = docBranchId,
                                 originatingUserUid = data["originatingUserUid"] as? String ?: ""
                             )
                         }
@@ -4713,6 +4715,8 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                     }
                     try {
                         val remoteList = rawList.mapNotNull { data ->
+                            val docBranchId = data["branchId"] as? String
+                            if (docBranchId.isNullOrBlank() || docBranchId != userBranchId) return@mapNotNull null
                             val id = (data["id"] as? Number)?.toInt() ?: return@mapNotNull null
                             val name = data["name"] as? String ?: ""
                             val phoneNumber = data["phoneNumber"] as? String ?: ""
@@ -4741,7 +4745,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                                 state = state,
                                 lga = lga,
                                 city = city,
-                                branchId = data["branchId"] as? String ?: userBranchId,
+                                branchId = docBranchId,
                                 originatingUserUid = data["originatingUserUid"] as? String ?: ""
                             )
                         }
@@ -4767,6 +4771,8 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                     }
                     try {
                         rawList.forEach { data ->
+                            val docBranchId = data["branchId"] as? String
+                            if (docBranchId.isNullOrBlank() || docBranchId != userBranchId) return@forEach
                             val id = (data["id"] as? Number)?.toInt() ?: return@forEach
                             val customerId = (data["customerId"] as? Number)?.toInt() ?: return@forEach
                             val inventoryItemId = (data["inventoryItemId"] as? Number)?.toInt() ?: 0
@@ -4785,7 +4791,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                                 cost = cost,
                                 cycleDays = cycleDays,
                                 nextRefillDate = if (nextRefillDate > 0L) nextRefillDate else System.currentTimeMillis(),
-                                branchId = data["branchId"] as? String ?: userBranchId,
+                                branchId = docBranchId,
                                 originatingUserUid = data["originatingUserUid"] as? String ?: ""
                             )
                             repository.insertCustomerMedication(remoteMed)
@@ -4806,6 +4812,8 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                     }
                     try {
                         rawList.forEach { data ->
+                            val docBranchId = data["branchId"] as? String
+                            if (docBranchId.isNullOrBlank() || docBranchId != userBranchId) return@forEach
                             val id = (data["id"] as? Number)?.toInt() ?: return@forEach
                             val customerId = (data["customerId"] as? Number)?.toInt() ?: return@forEach
                             val presentation = data["presentation"] as? String ?: ""
@@ -4829,7 +4837,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                                     followUpDay7Sent = followUpDay7Sent,
                                     followUpDay14Sent = followUpDay14Sent,
                                     dateAdded = if (dateAdded > 0L) dateAdded else System.currentTimeMillis(),
-                                    branchId = data["branchId"] as? String ?: userBranchId,
+                                    branchId = docBranchId,
                                     originatingUserUid = data["originatingUserUid"] as? String ?: ""
                                 )
                             )
