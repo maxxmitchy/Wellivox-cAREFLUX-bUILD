@@ -72,7 +72,9 @@ class CloudSyncWorker(
                         // Skip without altering status until user authenticates
                         continue
                     }
-                    if (branchId != null && branchId != record.branchId) {
+                    val userEmail = repository.getCurrentUserEmail()
+                    val isSystemAdmin = userEmail == "maduemeziachinedu6@gmail.com"
+                    if (!isSystemAdmin && branchId != null && branchId != record.branchId) {
                         android.util.Log.w(
                             "CloudSyncWorker",
                             "Outbox record ${record.id} branch (${record.branchId}) differs from active user branch ($branchId). Marking BLOCKED."
@@ -93,7 +95,7 @@ class CloudSyncWorker(
                     )
                     dao.updateOutboxRecord(inProgressRecord)
 
-                    // Process Outbox Record based on entityType
+                    // Process Outbox Record based on entityType and operationType
                     try {
                         var uploadResult: kotlin.Result<Unit> = kotlin.Result.failure(Exception("Unknown entityType"))
                         val payloadMap = try {
@@ -110,47 +112,68 @@ class CloudSyncWorker(
                             emptyMap<String, Any?>()
                         }
 
-                        when (inProgressRecord.entityType) {
-                            "SALE" -> {
-                                val saleDocId = if (inProgressRecord.clientTransactionId.isNotBlank()) inProgressRecord.clientTransactionId else inProgressRecord.entityId
-                                if (saleDocId.isNotBlank() && payloadMap.isNotEmpty()) {
-                                    uploadResult = repository.upsertRemoteDocument("medication_sales", saleDocId, payloadMap)
-                                }
+                        if (inProgressRecord.operationType == "DELETE") {
+                            val targetCollection = when (inProgressRecord.entityType) {
+                                "CUSTOMER" -> "branch_customers"
+                                "INVENTORY" -> "branch_inventory"
+                                "CUSTOMER_MEDICATION" -> "branch_customer_medications"
+                                "INTERVENTION" -> "branch_interventions"
+                                "TASK" -> "branch_operation_tasks"
+                                "RECEIPT" -> "branch_receipts"
+                                "SALE" -> "medication_sales"
+                                else -> null
                             }
-                            "CUSTOMER" -> {
-                                val docId = "${inProgressRecord.branchId}_${inProgressRecord.entityId}"
-                                if (payloadMap.isNotEmpty()) {
-                                    uploadResult = repository.upsertRemoteDocument("branch_customers", docId, payloadMap)
+                            if (targetCollection != null) {
+                                val docId = if (inProgressRecord.entityType == "SALE" && inProgressRecord.clientTransactionId.isNotBlank()) {
+                                    inProgressRecord.clientTransactionId
+                                } else {
+                                    "${inProgressRecord.branchId}_${inProgressRecord.entityId}"
                                 }
+                                uploadResult = repository.deleteRemoteDocument(targetCollection, docId)
                             }
-                            "INVENTORY" -> {
-                                val docId = "${inProgressRecord.branchId}_${inProgressRecord.entityId}"
-                                if (payloadMap.isNotEmpty()) {
-                                    uploadResult = repository.upsertRemoteDocument("branch_inventory", docId, payloadMap)
+                        } else {
+                            when (inProgressRecord.entityType) {
+                                "SALE" -> {
+                                    val saleDocId = if (inProgressRecord.clientTransactionId.isNotBlank()) inProgressRecord.clientTransactionId else inProgressRecord.entityId
+                                    if (saleDocId.isNotBlank() && payloadMap.isNotEmpty()) {
+                                        uploadResult = repository.upsertRemoteDocument("medication_sales", saleDocId, payloadMap)
+                                    }
                                 }
-                            }
-                            "CUSTOMER_MEDICATION" -> {
-                                val docId = "${inProgressRecord.branchId}_${inProgressRecord.entityId}"
-                                if (payloadMap.isNotEmpty()) {
-                                    uploadResult = repository.upsertRemoteDocument("branch_customer_medications", docId, payloadMap)
+                                "CUSTOMER" -> {
+                                    val docId = "${inProgressRecord.branchId}_${inProgressRecord.entityId}"
+                                    if (payloadMap.isNotEmpty()) {
+                                        uploadResult = repository.upsertRemoteDocument("branch_customers", docId, payloadMap)
+                                    }
                                 }
-                            }
-                            "INTERVENTION" -> {
-                                val docId = "${inProgressRecord.branchId}_${inProgressRecord.entityId}"
-                                if (payloadMap.isNotEmpty()) {
-                                    uploadResult = repository.upsertRemoteDocument("branch_interventions", docId, payloadMap)
+                                "INVENTORY" -> {
+                                    val docId = "${inProgressRecord.branchId}_${inProgressRecord.entityId}"
+                                    if (payloadMap.isNotEmpty()) {
+                                        uploadResult = repository.upsertRemoteDocument("branch_inventory", docId, payloadMap)
+                                    }
                                 }
-                            }
-                            "TASK" -> {
-                                val docId = "${inProgressRecord.branchId}_${inProgressRecord.entityId}"
-                                if (payloadMap.isNotEmpty()) {
-                                    uploadResult = repository.upsertRemoteDocument("branch_operation_tasks", docId, payloadMap)
+                                "CUSTOMER_MEDICATION" -> {
+                                    val docId = "${inProgressRecord.branchId}_${inProgressRecord.entityId}"
+                                    if (payloadMap.isNotEmpty()) {
+                                        uploadResult = repository.upsertRemoteDocument("branch_customer_medications", docId, payloadMap)
+                                    }
                                 }
-                            }
-                            "RECEIPT" -> {
-                                val docId = "${inProgressRecord.branchId}_${inProgressRecord.entityId}"
-                                if (payloadMap.isNotEmpty()) {
-                                    uploadResult = repository.upsertRemoteDocument("branch_receipts", docId, payloadMap)
+                                "INTERVENTION" -> {
+                                    val docId = "${inProgressRecord.branchId}_${inProgressRecord.entityId}"
+                                    if (payloadMap.isNotEmpty()) {
+                                        uploadResult = repository.upsertRemoteDocument("branch_interventions", docId, payloadMap)
+                                    }
+                                }
+                                "TASK" -> {
+                                    val docId = "${inProgressRecord.branchId}_${inProgressRecord.entityId}"
+                                    if (payloadMap.isNotEmpty()) {
+                                        uploadResult = repository.upsertRemoteDocument("branch_operation_tasks", docId, payloadMap)
+                                    }
+                                }
+                                "RECEIPT" -> {
+                                    val docId = "${inProgressRecord.branchId}_${inProgressRecord.entityId}"
+                                    if (payloadMap.isNotEmpty()) {
+                                        uploadResult = repository.upsertRemoteDocument("branch_receipts", docId, payloadMap)
+                                    }
                                 }
                             }
                         }

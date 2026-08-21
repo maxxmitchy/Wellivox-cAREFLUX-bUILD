@@ -68,11 +68,17 @@ class PharmacyRepository(
     suspend fun updateCustomerAndOutbox(customer: Customer, outbox: com.example.data.sync.SyncOutboxRecord) =
         pharmacyDao.updateCustomerAndOutbox(customer, outbox)
 
+    suspend fun deleteCustomerAndOutbox(customer: Customer, outbox: com.example.data.sync.SyncOutboxRecord) =
+        pharmacyDao.deleteCustomerAndOutbox(customer, outbox)
+
     suspend fun insertCustomerMedicationAndOutbox(medication: CustomerMedication, outbox: com.example.data.sync.SyncOutboxRecord): Long =
         pharmacyDao.insertCustomerMedicationAndOutbox(medication, outbox)
 
     suspend fun updateCustomerMedicationAndOutbox(medication: CustomerMedication, outbox: com.example.data.sync.SyncOutboxRecord) =
         pharmacyDao.updateCustomerMedicationAndOutbox(medication, outbox)
+
+    suspend fun deleteCustomerMedicationAndOutbox(medication: CustomerMedication, outbox: com.example.data.sync.SyncOutboxRecord) =
+        pharmacyDao.deleteCustomerMedicationAndOutbox(medication, outbox)
 
     suspend fun insertClinicalInterventionAndOutbox(intervention: ClinicalIntervention, outbox: com.example.data.sync.SyncOutboxRecord): Long =
         pharmacyDao.insertClinicalInterventionAndOutbox(intervention, outbox)
@@ -80,11 +86,17 @@ class PharmacyRepository(
     suspend fun updateClinicalInterventionAndOutbox(intervention: ClinicalIntervention, outbox: com.example.data.sync.SyncOutboxRecord) =
         pharmacyDao.updateClinicalInterventionAndOutbox(intervention, outbox)
 
+    suspend fun deleteClinicalInterventionAndOutbox(intervention: ClinicalIntervention, outbox: com.example.data.sync.SyncOutboxRecord) =
+        pharmacyDao.deleteClinicalInterventionAndOutbox(intervention, outbox)
+
     suspend fun insertInventoryItemAndOutbox(item: InventoryItem, outbox: com.example.data.sync.SyncOutboxRecord): Long =
         pharmacyDao.insertInventoryItemAndOutbox(item, outbox)
 
     suspend fun updateInventoryItemAndOutbox(item: InventoryItem, outbox: com.example.data.sync.SyncOutboxRecord) =
         pharmacyDao.updateInventoryItemAndOutbox(item, outbox)
+
+    suspend fun deleteInventoryItemAndOutbox(item: InventoryItem, outbox: com.example.data.sync.SyncOutboxRecord) =
+        pharmacyDao.deleteInventoryItemAndOutbox(item, outbox)
 
     suspend fun insertOperationTaskAndOutbox(task: OperationTask, outbox: com.example.data.sync.SyncOutboxRecord) =
         pharmacyDao.insertOperationTaskAndOutbox(task, outbox)
@@ -92,11 +104,17 @@ class PharmacyRepository(
     suspend fun updateOperationTaskAndOutbox(task: OperationTask, outbox: com.example.data.sync.SyncOutboxRecord) =
         pharmacyDao.updateOperationTaskAndOutbox(task, outbox)
 
+    suspend fun deleteOperationTaskAndOutbox(task: OperationTask, outbox: com.example.data.sync.SyncOutboxRecord) =
+        pharmacyDao.deleteOperationTaskAndOutbox(task, outbox)
+
     suspend fun insertReceiptAndOutbox(receipt: Receipt, outbox: com.example.data.sync.SyncOutboxRecord) =
         pharmacyDao.insertReceiptAndOutbox(receipt, outbox)
 
     suspend fun updateReceiptAndOutbox(receipt: Receipt, outbox: com.example.data.sync.SyncOutboxRecord) =
         pharmacyDao.updateReceiptAndOutbox(receipt, outbox)
+
+    suspend fun deleteReceiptAndOutbox(receipt: Receipt, outbox: com.example.data.sync.SyncOutboxRecord) =
+        pharmacyDao.deleteReceiptAndOutbox(receipt, outbox)
 
     suspend fun addRemoteDocument(collection: String, data: Map<String, Any?>): Result<String> =
         remoteDataSource.addDocument(collection, data)

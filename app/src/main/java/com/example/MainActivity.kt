@@ -5242,7 +5242,36 @@ fun importCustomersFromCsv(context: android.content.Context, uri: android.net.Ur
                         } else false
 
                         if (!isDuplicate) {
-                            viewModel.repository.insertCustomer(customerToSave)
+                            val custMap = mapOf(
+                                "name" to customerToSave.name,
+                                "phoneNumber" to customerToSave.phoneNumber,
+                                "email" to customerToSave.email,
+                                "notes" to customerToSave.notes,
+                                "loyaltyPoints" to customerToSave.loyaltyPoints,
+                                "refillStreak" to customerToSave.refillStreak,
+                                "dateAdded" to customerToSave.dateAdded,
+                                "age" to customerToSave.age,
+                                "gender" to customerToSave.gender,
+                                "state" to customerToSave.state,
+                                "lga" to customerToSave.lga,
+                                "city" to customerToSave.city,
+                                "consentPrescriptionTracking" to customerToSave.consentPrescriptionTracking,
+                                "consentSmsRefills" to customerToSave.consentSmsRefills,
+                                "consentCloudSync" to customerToSave.consentCloudSync,
+                                "consentChannel" to customerToSave.consentChannel,
+                                "consentLastUpdated" to customerToSave.consentLastUpdated,
+                                "branchId" to customerToSave.branchId,
+                                "originatingUserUid" to customerToSave.originatingUserUid
+                            )
+                            val outboxRecord = com.example.data.sync.SyncOutboxRecord(
+                                branchId = customerToSave.branchId,
+                                entityType = "CUSTOMER",
+                                entityId = if (customerToSave.id != 0) customerToSave.id.toString() else "0",
+                                operationType = "UPSERT",
+                                payloadJson = org.json.JSONObject(custMap).toString(),
+                                originatingUserUid = customerToSave.originatingUserUid
+                            )
+                            viewModel.repository.insertCustomerAndOutbox(customerToSave, outboxRecord)
                             importedCount++
                         }
                     }

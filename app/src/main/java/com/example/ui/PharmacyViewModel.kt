@@ -1237,42 +1237,51 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
 
     private suspend fun saveAndSyncInventoryItemDirectly(item: InventoryItem): Int {
         val now = System.currentTimeMillis()
+        val itemBranchId = if (item.branchId.isNotBlank()) item.branchId else getActiveBranchId()
+        val itemUserUid = if (item.originatingUserUid.isNotBlank()) item.originatingUserUid else getCurrentUserUid()
         val updated = item.copy(
-            lastUpdated = now
+            lastUpdated = now,
+            branchId = itemBranchId,
+            originatingUserUid = itemUserUid
         )
-        val generatedId = repository.insertInventoryItem(updated)
-        val finalItem = if (updated.id == 0) updated.copy(id = generatedId.toInt()) else updated
-        
-        val branchId = _currentPharmacistBranchId.value
-        if (!branchId.isNullOrBlank()) {
-            val map = mapOf(
-                "id" to finalItem.id,
-                "name" to finalItem.name,
-                "dosage" to finalItem.dosage,
-                "stockQuantity" to finalItem.stockQuantity,
-                "minRequiredStock" to finalItem.minRequiredStock,
-                "category" to finalItem.category,
-                "price" to finalItem.price,
-                "expiryDate" to finalItem.expiryDate,
-                "batchNumber" to finalItem.batchNumber,
-                "supplier" to finalItem.supplier,
-                "unitForm" to finalItem.unitForm,
-                "lastSoldDate" to finalItem.lastSoldDate,
-                "totalSoldQuantity" to finalItem.totalSoldQuantity,
-                "brand" to finalItem.brand,
-                "salesStrategy" to finalItem.salesStrategy,
-                "lastUpdated" to finalItem.lastUpdated,
-                "lastReconciledAt" to finalItem.lastReconciledAt,
-                "branchId" to branchId,
-                "imageUri" to (finalItem.imageUri ?: "")
-            )
-            syncEntityToFirestore("branch_inventory", finalItem.id.toString(), map)
-            
-            // Clean up any old, legacy corrupted "id = 0" documents if this was a new item creation
-            if (item.id == 0) {
-                deleteEntityFromFirestore("branch_inventory", "0")
-            }
+        val map = mapOf(
+            "id" to updated.id,
+            "name" to updated.name,
+            "dosage" to updated.dosage,
+            "stockQuantity" to updated.stockQuantity,
+            "minRequiredStock" to updated.minRequiredStock,
+            "category" to updated.category,
+            "price" to updated.price,
+            "expiryDate" to updated.expiryDate,
+            "batchNumber" to updated.batchNumber,
+            "supplier" to updated.supplier,
+            "unitForm" to updated.unitForm,
+            "lastSoldDate" to updated.lastSoldDate,
+            "totalSoldQuantity" to updated.totalSoldQuantity,
+            "brand" to updated.brand,
+            "salesStrategy" to updated.salesStrategy,
+            "lastUpdated" to updated.lastUpdated,
+            "lastReconciledAt" to updated.lastReconciledAt,
+            "branchId" to itemBranchId,
+            "originatingUserUid" to itemUserUid,
+            "imageUri" to (updated.imageUri ?: "")
+        )
+        val outboxRecord = com.example.data.sync.SyncOutboxRecord(
+            branchId = itemBranchId,
+            entityType = "INVENTORY",
+            entityId = if (updated.id != 0) updated.id.toString() else "0",
+            operationType = "UPSERT",
+            payloadJson = org.json.JSONObject(map).toString(),
+            originatingUserUid = itemUserUid
+        )
+        val finalId = if (updated.id == 0) {
+            repository.insertInventoryItemAndOutbox(updated, outboxRecord).toInt()
+        } else {
+            repository.updateInventoryItemAndOutbox(updated, outboxRecord)
+            updated.id
         }
+        val finalItem = updated.copy(id = finalId)
+        syncEntityToFirestore("branch_inventory", finalItem.id.toString(), map)
         return finalItem.id
     }
 
@@ -1603,8 +1612,17 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
 
     fun deleteInventory(item: InventoryItem, reason: String = "Discontinued / Removed") {
         viewModelScope.launch {
-            repository.deleteInventoryItem(item)
-            deleteEntityFromFirestore("branch_inventory", item.id.toString())
+            val itemBranchId = item.branchId.ifBlank { getActiveBranchId() }
+            val itemUserUid = item.originatingUserUid.ifBlank { getCurrentUserUid() }
+            val outboxRecord = com.example.data.sync.SyncOutboxRecord(
+                branchId = itemBranchId,
+                entityType = "INVENTORY",
+                entityId = item.id.toString(),
+                operationType = "DELETE",
+                payloadJson = "{}",
+                originatingUserUid = itemUserUid
+            )
+            repository.deleteInventoryItemAndOutbox(item, outboxRecord)
 
             val isManager = _currentPharmacistRole.value == "Branch Manager" || isCurrentUserAdmin()
             val userName = _currentPharmacistName.value ?: "Staff Pharmacist"
@@ -2281,6 +2299,8 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
     ) {
         viewModelScope.launch {
             val localId = (100000..999999).random()
+            val branchId = getActiveBranchId()
+            val userUid = getCurrentUserUid()
             val task = OperationTask(
                 id = localId, 
                 title = title, 
@@ -2290,10 +2310,31 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 isCompleted = false,
                 assignedToName = assignedToName,
                 assignedToUid = assignedToUid,
-                branchId = getActiveBranchId(),
-                originatingUserUid = getCurrentUserUid()
+                branchId = branchId,
+                originatingUserUid = userUid
             )
-            repository.insertOperationTask(task)
+            val map = mapOf(
+                "id" to localId,
+                "title" to title,
+                "description" to description,
+                "urgency" to urgency,
+                "category" to category,
+                "isCompleted" to false,
+                "createdAt" to task.createdAt,
+                "branchId" to branchId,
+                "originatingUserUid" to userUid,
+                "assignedToName" to (assignedToName ?: ""),
+                "assignedToUid" to (assignedToUid ?: "")
+            )
+            val outbox = com.example.data.sync.SyncOutboxRecord(
+                branchId = branchId,
+                entityType = "TASK",
+                entityId = localId.toString(),
+                operationType = "UPSERT",
+                payloadJson = org.json.JSONObject(map).toString(),
+                originatingUserUid = userUid
+            )
+            repository.insertOperationTaskAndOutbox(task, outbox)
             
             if (!assignedToName.isNullOrBlank() && assignedToName != "All Staff") {
                 showLocalNotification(
@@ -2305,27 +2346,12 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 )
             }
             
-            val branchId = _currentPharmacistBranchId.value
-            if (!branchId.isNullOrBlank()) {
-                val map = mapOf(
-                    "id" to localId,
-                    "title" to title,
-                    "description" to description,
-                    "urgency" to urgency,
-                    "category" to category,
-                    "isCompleted" to false,
-                    "createdAt" to task.createdAt,
-                    "branchId" to branchId,
-                    "assignedToName" to (assignedToName ?: ""),
-                    "assignedToUid" to (assignedToUid ?: "")
-                )
-                syncEntityToFirestore("branch_operation_tasks", localId.toString(), map)
-                logAuditTrail(
-                    action = "DELEGATE_TASK",
-                    details = "Delegated task '$title' to ${assignedToName ?: "Staff"} inside category '$category' ($urgency urgency level).",
-                    affectedId = localId.toString()
-                )
-            }
+            syncEntityToFirestore("branch_operation_tasks", localId.toString(), map)
+            logAuditTrail(
+                action = "DELEGATE_TASK",
+                details = "Delegated task '$title' to ${assignedToName ?: "Staff"} inside category '$category' ($urgency urgency level).",
+                affectedId = localId.toString()
+            )
         }
     }
 
@@ -2826,16 +2852,22 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
 
     fun deleteOperationTask(task: OperationTask) {
         viewModelScope.launch {
-            repository.deleteOperationTask(task)
-            val branchId = _currentPharmacistBranchId.value
-            if (!branchId.isNullOrBlank()) {
-                deleteEntityFromFirestore("branch_operation_tasks", task.id.toString())
-                logAuditTrail(
-                    action = "DELETE_TASK",
-                    details = "Deleted task '${task.title}'",
-                    affectedId = task.id.toString()
-                )
-            }
+            val taskBranchId = task.branchId.ifBlank { getActiveBranchId() }
+            val taskUserUid = task.originatingUserUid.ifBlank { getCurrentUserUid() }
+            val outbox = com.example.data.sync.SyncOutboxRecord(
+                branchId = taskBranchId,
+                entityType = "TASK",
+                entityId = task.id.toString(),
+                operationType = "DELETE",
+                payloadJson = "{}",
+                originatingUserUid = taskUserUid
+            )
+            repository.deleteOperationTaskAndOutbox(task, outbox)
+            logAuditTrail(
+                action = "DELETE_TASK",
+                details = "Deleted task '${task.title}'",
+                affectedId = task.id.toString()
+            )
         }
     }
 
@@ -2920,29 +2952,81 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
     // --- Receipt Actions ---
     fun addReceipt(customerName: String, totalAmount: Double, imageFileName: String, isInvoice: Boolean = false, paymentStatus: String = "Paid") {
         viewModelScope.launch {
-            repository.insertReceipt(
-                Receipt(
-                    customerName = customerName,
-                    totalAmount = totalAmount,
-                    imageFileName = imageFileName,
-                    isInvoice = isInvoice,
-                    paymentStatus = paymentStatus,
-                    branchId = getActiveBranchId(),
-                    originatingUserUid = getCurrentUserUid()
-                )
+            val branchId = getActiveBranchId()
+            val userUid = getCurrentUserUid()
+            val receipt = Receipt(
+                customerName = customerName,
+                totalAmount = totalAmount,
+                imageFileName = imageFileName,
+                isInvoice = isInvoice,
+                paymentStatus = paymentStatus,
+                branchId = branchId,
+                originatingUserUid = userUid
             )
+            val map = mapOf(
+                "customerName" to customerName,
+                "totalAmount" to totalAmount,
+                "imageFileName" to imageFileName,
+                "isInvoice" to isInvoice,
+                "paymentStatus" to paymentStatus,
+                "timestamp" to receipt.timestamp,
+                "branchId" to branchId,
+                "originatingUserUid" to userUid
+            )
+            val outbox = com.example.data.sync.SyncOutboxRecord(
+                branchId = branchId,
+                entityType = "RECEIPT",
+                entityId = "0",
+                operationType = "UPSERT",
+                payloadJson = org.json.JSONObject(map).toString(),
+                originatingUserUid = userUid
+            )
+            repository.insertReceiptAndOutbox(receipt, outbox)
         }
     }
 
     fun updateReceipt(receipt: Receipt) {
         viewModelScope.launch {
-            repository.updateReceipt(receipt)
+            if (receipt.branchId.isBlank() || receipt.originatingUserUid.isBlank()) {
+                android.util.Log.w("PharmacyViewModel", "Cannot update receipt ${receipt.id}: missing immutable branchId or originatingUserUid lineage.")
+                return@launch
+            }
+            val map = mapOf(
+                "id" to receipt.id,
+                "customerName" to receipt.customerName,
+                "totalAmount" to receipt.totalAmount,
+                "imageFileName" to receipt.imageFileName,
+                "isInvoice" to receipt.isInvoice,
+                "paymentStatus" to receipt.paymentStatus,
+                "timestamp" to receipt.timestamp,
+                "branchId" to receipt.branchId,
+                "originatingUserUid" to receipt.originatingUserUid
+            )
+            val outbox = com.example.data.sync.SyncOutboxRecord(
+                branchId = receipt.branchId,
+                entityType = "RECEIPT",
+                entityId = receipt.id.toString(),
+                operationType = "UPSERT",
+                payloadJson = org.json.JSONObject(map).toString(),
+                originatingUserUid = receipt.originatingUserUid
+            )
+            repository.updateReceiptAndOutbox(receipt, outbox)
         }
     }
 
     fun deleteReceipt(receipt: Receipt) {
         viewModelScope.launch {
-            repository.deleteReceipt(receipt)
+            val recBranchId = receipt.branchId.ifBlank { getActiveBranchId() }
+            val recUserUid = receipt.originatingUserUid.ifBlank { getCurrentUserUid() }
+            val outbox = com.example.data.sync.SyncOutboxRecord(
+                branchId = recBranchId,
+                entityType = "RECEIPT",
+                entityId = receipt.id.toString(),
+                operationType = "DELETE",
+                payloadJson = "{}",
+                originatingUserUid = recUserUid
+            )
+            repository.deleteReceiptAndOutbox(receipt, outbox)
         }
     }
 
@@ -3037,6 +3121,9 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                     val lga = targetCust["lga"] as? String ?: "Ikeja"
                     val city = targetCust["city"] as? String ?: "Ikeja"
 
+                    val activeBranch = getActiveBranchId()
+                    val userUid = getCurrentUserUid()
+
                     val newCust = com.example.data.Customer(
                         name = name,
                         phoneNumber = pPhone,
@@ -3052,10 +3139,36 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                         consentCloudSync = true,
                         consentChannel = "Auto Handshake",
                         consentLastUpdated = System.currentTimeMillis(),
-                        branchId = getActiveBranchId(),
-                        originatingUserUid = getCurrentUserUid()
+                        branchId = activeBranch,
+                        originatingUserUid = userUid
                     )
-                    val insertedId = repository.insertCustomer(newCust)
+                    val custMap = mapOf(
+                        "name" to newCust.name,
+                        "phoneNumber" to newCust.phoneNumber,
+                        "email" to newCust.email,
+                        "notes" to newCust.notes,
+                        "age" to newCust.age,
+                        "gender" to newCust.gender,
+                        "state" to newCust.state,
+                        "lga" to newCust.lga,
+                        "city" to newCust.city,
+                        "consentPrescriptionTracking" to newCust.consentPrescriptionTracking,
+                        "consentSmsRefills" to newCust.consentSmsRefills,
+                        "consentCloudSync" to newCust.consentCloudSync,
+                        "consentChannel" to newCust.consentChannel,
+                        "consentLastUpdated" to newCust.consentLastUpdated,
+                        "branchId" to activeBranch,
+                        "originatingUserUid" to userUid
+                    )
+                    val custOutbox = com.example.data.sync.SyncOutboxRecord(
+                        branchId = activeBranch,
+                        entityType = "CUSTOMER",
+                        entityId = "0",
+                        operationType = "UPSERT",
+                        payloadJson = org.json.JSONObject(custMap).toString(),
+                        originatingUserUid = userUid
+                    )
+                    val insertedId = repository.insertCustomerAndOutbox(newCust, custOutbox)
                     val resolvedLocalId = insertedId.toInt()
 
                     val targetId = targetCust["id"] as? String ?: ""
@@ -3077,10 +3190,29 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                             cost = mCost,
                             cycleDays = mCycle,
                             nextRefillDate = mNext,
-                            branchId = getActiveBranchId(),
-                            originatingUserUid = getCurrentUserUid()
+                            branchId = activeBranch,
+                            originatingUserUid = userUid
                         )
-                        repository.insertCustomerMedication(newMed)
+                        val medMap = mapOf(
+                            "customerId" to newMed.customerId,
+                            "inventoryItemId" to newMed.inventoryItemId,
+                            "medicationName" to newMed.medicationName,
+                            "customDosage" to newMed.customDosage,
+                            "cost" to newMed.cost,
+                            "cycleDays" to newMed.cycleDays,
+                            "nextRefillDate" to newMed.nextRefillDate,
+                            "branchId" to activeBranch,
+                            "originatingUserUid" to userUid
+                        )
+                        val medOutbox = com.example.data.sync.SyncOutboxRecord(
+                            branchId = activeBranch,
+                            entityType = "CUSTOMER_MEDICATION",
+                            entityId = "0",
+                            operationType = "UPSERT",
+                            payloadJson = org.json.JSONObject(medMap).toString(),
+                            originatingUserUid = userUid
+                        )
+                        repository.insertCustomerMedicationAndOutbox(newMed, medOutbox)
                     }
 
                     // Sync interventions
@@ -3100,10 +3232,27 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                             followUpDay7Sent = doc2["followUpDay7Sent"] as? Boolean ?: false,
                             followUpDay14Sent = doc2["followUpDay14Sent"] as? Boolean ?: false,
                             dateAdded = (doc2["dateAdded"] as? Number)?.toLong() ?: System.currentTimeMillis(),
-                            branchId = getActiveBranchId(),
-                            originatingUserUid = getCurrentUserUid()
+                            branchId = activeBranch,
+                            originatingUserUid = userUid
                         )
-                        repository.insertClinicalIntervention(newInt)
+                        val intMap = mapOf(
+                            "customerId" to newInt.customerId,
+                            "presentation" to newInt.presentation,
+                            "testResults" to newInt.testResults,
+                            "recommendation" to newInt.recommendation,
+                            "currentStatus" to newInt.currentStatus,
+                            "branchId" to activeBranch,
+                            "originatingUserUid" to userUid
+                        )
+                        val intOutbox = com.example.data.sync.SyncOutboxRecord(
+                            branchId = activeBranch,
+                            entityType = "INTERVENTION",
+                            entityId = "0",
+                            operationType = "UPSERT",
+                            payloadJson = org.json.JSONObject(intMap).toString(),
+                            originatingUserUid = userUid
+                        )
+                        repository.insertClinicalInterventionAndOutbox(newInt, intOutbox)
                     }
 
                     android.widget.Toast.makeText(
@@ -3205,62 +3354,83 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 ).show()
                 return@launch
             }
-            val custBranchId = customer.branchId.ifBlank { getActiveBranchId() }
-            val userUid = customer.originatingUserUid.ifBlank { getCurrentUserUid() }
-            val updatedCust = customer.copy(
-                branchId = custBranchId,
-                originatingUserUid = userUid
-            )
+            if (customer.branchId.isBlank() || customer.originatingUserUid.isBlank()) {
+                android.util.Log.w("PharmacyViewModel", "Cannot update customer ${customer.id}: missing immutable branchId or originatingUserUid lineage.")
+                android.widget.Toast.makeText(getApplication(), "Cannot update record missing branch lineage", android.widget.Toast.LENGTH_LONG).show()
+                return@launch
+            }
+            val custBranchId = customer.branchId
+            val userUid = customer.originatingUserUid
             val custMap = mapOf(
-                "id" to updatedCust.id,
-                "name" to updatedCust.name,
-                "phoneNumber" to updatedCust.phoneNumber,
-                "email" to updatedCust.email,
-                "notes" to updatedCust.notes,
-                "age" to updatedCust.age,
-                "gender" to updatedCust.gender,
-                "state" to updatedCust.state,
-                "lga" to updatedCust.lga,
-                "city" to updatedCust.city,
-                "consentPrescriptionTracking" to updatedCust.consentPrescriptionTracking,
-                "consentSmsRefills" to updatedCust.consentSmsRefills,
-                "consentCloudSync" to updatedCust.consentCloudSync,
-                "consentChannel" to updatedCust.consentChannel,
-                "consentLastUpdated" to updatedCust.consentLastUpdated,
+                "id" to customer.id,
+                "name" to customer.name,
+                "phoneNumber" to customer.phoneNumber,
+                "email" to customer.email,
+                "notes" to customer.notes,
+                "age" to customer.age,
+                "gender" to customer.gender,
+                "state" to customer.state,
+                "lga" to customer.lga,
+                "city" to customer.city,
+                "consentPrescriptionTracking" to customer.consentPrescriptionTracking,
+                "consentSmsRefills" to customer.consentSmsRefills,
+                "consentCloudSync" to customer.consentCloudSync,
+                "consentChannel" to customer.consentChannel,
+                "consentLastUpdated" to customer.consentLastUpdated,
                 "branchId" to custBranchId,
                 "originatingUserUid" to userUid
             )
             val outboxRecord = com.example.data.sync.SyncOutboxRecord(
                 branchId = custBranchId,
                 entityType = "CUSTOMER",
-                entityId = updatedCust.id.toString(),
+                entityId = customer.id.toString(),
                 operationType = "UPSERT",
                 payloadJson = org.json.JSONObject(custMap).toString(),
                 originatingUserUid = userUid
             )
-            repository.updateCustomerAndOutbox(updatedCust, outboxRecord) 
-            parseCustomerNotesForAlerts(updatedCust)
-            syncCustomerToBranch(updatedCust)
+            repository.updateCustomerAndOutbox(customer, outboxRecord) 
+            parseCustomerNotesForAlerts(customer)
+            syncCustomerToBranch(customer)
             triggerImmediateSync()
         }
     }
     
     fun deleteCustomer(customer: Customer) {
         viewModelScope.launch { 
-            repository.deleteCustomer(customer)
+            val branchId = customer.branchId.ifBlank { getActiveBranchId() }
+            val userUid = customer.originatingUserUid.ifBlank { getCurrentUserUid() }
+            val outboxRecord = com.example.data.sync.SyncOutboxRecord(
+                branchId = branchId,
+                entityType = "CUSTOMER",
+                entityId = customer.id.toString(),
+                operationType = "DELETE",
+                payloadJson = "{}",
+                originatingUserUid = userUid
+            )
+            repository.deleteCustomerAndOutbox(customer, outboxRecord)
             // Cleanup orphans since no ForeignKeys cascade
             customerMedications.value.filter { it.customerId == customer.id }.forEach { med ->
-                repository.deleteCustomerMedication(med)
-                deleteEntityFromFirestore("branch_customer_medications", med.id.toString())
-                repository.deleteRemoteDocument("customer_medications", "${deviceId}_${med.id}")
+                val medOutbox = com.example.data.sync.SyncOutboxRecord(
+                    branchId = med.branchId.ifBlank { branchId },
+                    entityType = "CUSTOMER_MEDICATION",
+                    entityId = med.id.toString(),
+                    operationType = "DELETE",
+                    payloadJson = "{}",
+                    originatingUserUid = med.originatingUserUid.ifBlank { userUid }
+                )
+                repository.deleteCustomerMedicationAndOutbox(med, medOutbox)
             }
             clinicalInterventions.value.filter { it.customerId == customer.id }.forEach { inter ->
-                repository.deleteClinicalIntervention(inter)
-                deleteEntityFromFirestore("branch_interventions", inter.id.toString())
-                repository.deleteRemoteDocument("interventions", "${deviceId}_${inter.id}")
+                val interOutbox = com.example.data.sync.SyncOutboxRecord(
+                    branchId = inter.branchId.ifBlank { branchId },
+                    entityType = "INTERVENTION",
+                    entityId = inter.id.toString(),
+                    operationType = "DELETE",
+                    payloadJson = "{}",
+                    originatingUserUid = inter.originatingUserUid.ifBlank { userUid }
+                )
+                repository.deleteClinicalInterventionAndOutbox(inter, interOutbox)
             }
-            deleteEntityFromFirestore("branch_customers", customer.id.toString())
-            repository.deleteRemoteDocument("customers", "${deviceId}_${customer.id}")
             triggerImmediateSync()
         }
     }
@@ -3318,42 +3488,52 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
     
     fun updateCustomerMedication(med: CustomerMedication) {
         viewModelScope.launch { 
-            val medBranchId = med.branchId.ifBlank { getActiveBranchId() }
-            val userUid = med.originatingUserUid.ifBlank { getCurrentUserUid() }
-            val updatedMed = med.copy(
-                branchId = medBranchId,
-                originatingUserUid = userUid
-            )
+            if (med.branchId.isBlank() || med.originatingUserUid.isBlank()) {
+                android.util.Log.w("PharmacyViewModel", "Cannot update medication ${med.id}: missing immutable branchId or originatingUserUid lineage.")
+                android.widget.Toast.makeText(getApplication(), "Cannot update record missing branch lineage", android.widget.Toast.LENGTH_LONG).show()
+                return@launch
+            }
+            val medBranchId = med.branchId
+            val userUid = med.originatingUserUid
             val medMap = mapOf(
-                "id" to updatedMed.id,
-                "customerId" to updatedMed.customerId,
-                "inventoryItemId" to updatedMed.inventoryItemId,
-                "medicationName" to updatedMed.medicationName,
-                "customDosage" to updatedMed.customDosage,
-                "cost" to updatedMed.cost,
-                "cycleDays" to updatedMed.cycleDays,
-                "nextRefillDate" to updatedMed.nextRefillDate,
+                "id" to med.id,
+                "customerId" to med.customerId,
+                "inventoryItemId" to med.inventoryItemId,
+                "medicationName" to med.medicationName,
+                "customDosage" to med.customDosage,
+                "cost" to med.cost,
+                "cycleDays" to med.cycleDays,
+                "nextRefillDate" to med.nextRefillDate,
                 "branchId" to medBranchId,
                 "originatingUserUid" to userUid
             )
             val outboxRecord = com.example.data.sync.SyncOutboxRecord(
                 branchId = medBranchId,
                 entityType = "CUSTOMER_MEDICATION",
-                entityId = updatedMed.id.toString(),
+                entityId = med.id.toString(),
                 operationType = "UPSERT",
                 payloadJson = org.json.JSONObject(medMap).toString(),
                 originatingUserUid = userUid
             )
-            repository.updateCustomerMedicationAndOutbox(updatedMed, outboxRecord) 
-            syncCustomerMedicationToBranch(updatedMed)
+            repository.updateCustomerMedicationAndOutbox(med, outboxRecord) 
+            syncCustomerMedicationToBranch(med)
             triggerImmediateSync()
         }
     }
 
     fun deleteCustomerMedication(med: CustomerMedication) {
         viewModelScope.launch { 
-            repository.deleteCustomerMedication(med) 
-            deleteEntityFromFirestore("branch_customer_medications", med.id.toString())
+            val branchId = med.branchId.ifBlank { getActiveBranchId() }
+            val userUid = med.originatingUserUid.ifBlank { getCurrentUserUid() }
+            val outboxRecord = com.example.data.sync.SyncOutboxRecord(
+                branchId = branchId,
+                entityType = "CUSTOMER_MEDICATION",
+                entityId = med.id.toString(),
+                operationType = "DELETE",
+                payloadJson = "{}",
+                originatingUserUid = userUid
+            )
+            repository.deleteCustomerMedicationAndOutbox(med, outboxRecord)
             triggerImmediateSync()
         }
     }
@@ -3437,8 +3617,30 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
 
     fun updateClinicalInterventionStatus(intervention: ClinicalIntervention, newStatus: String) {
         viewModelScope.launch {
+            if (intervention.branchId.isBlank() || intervention.originatingUserUid.isBlank()) {
+                android.util.Log.w("PharmacyViewModel", "Cannot update intervention ${intervention.id}: missing immutable branchId or originatingUserUid lineage.")
+                return@launch
+            }
             val updated = intervention.copy(currentStatus = newStatus)
-            repository.updateClinicalIntervention(updated)
+            val interMap = mapOf(
+                "id" to updated.id,
+                "customerId" to updated.customerId,
+                "presentation" to updated.presentation,
+                "testResults" to updated.testResults,
+                "recommendation" to updated.recommendation,
+                "currentStatus" to updated.currentStatus,
+                "branchId" to updated.branchId,
+                "originatingUserUid" to updated.originatingUserUid
+            )
+            val outboxRecord = com.example.data.sync.SyncOutboxRecord(
+                branchId = updated.branchId,
+                entityType = "INTERVENTION",
+                entityId = updated.id.toString(),
+                operationType = "UPSERT",
+                payloadJson = org.json.JSONObject(interMap).toString(),
+                originatingUserUid = updated.originatingUserUid
+            )
+            repository.updateClinicalInterventionAndOutbox(updated, outboxRecord)
             syncClinicalInterventionToBranch(updated)
         }
     }
@@ -3456,6 +3658,9 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             try {
                 val finalCustomerId: Int
+                val activeBranch = getActiveBranchId()
+                val userUid = getCurrentUserUid()
+
                 if (customerId == null || customerId == 0) {
                     // Create new customer
                     val finalPhone = customerPhone.trim()
@@ -3481,12 +3686,37 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                             consentCloudSync = true,
                             consentChannel = "Verbal Consent",
                             consentLastUpdated = System.currentTimeMillis(),
-                            branchId = getActiveBranchId(),
-                            originatingUserUid = getCurrentUserUid()
+                            branchId = activeBranch,
+                            originatingUserUid = userUid
                         )
-                        val insertedId = repository.insertCustomer(newCust)
+                        val custMap = mapOf(
+                            "name" to newCust.name,
+                            "phoneNumber" to newCust.phoneNumber,
+                            "email" to newCust.email,
+                            "notes" to newCust.notes,
+                            "age" to newCust.age,
+                            "gender" to newCust.gender,
+                            "state" to newCust.state,
+                            "lga" to newCust.lga,
+                            "city" to newCust.city,
+                            "consentPrescriptionTracking" to newCust.consentPrescriptionTracking,
+                            "consentSmsRefills" to newCust.consentSmsRefills,
+                            "consentCloudSync" to newCust.consentCloudSync,
+                            "consentChannel" to newCust.consentChannel,
+                            "consentLastUpdated" to newCust.consentLastUpdated,
+                            "branchId" to activeBranch,
+                            "originatingUserUid" to userUid
+                        )
+                        val custOutbox = com.example.data.sync.SyncOutboxRecord(
+                            branchId = activeBranch,
+                            entityType = "CUSTOMER",
+                            entityId = "0",
+                            operationType = "UPSERT",
+                            payloadJson = org.json.JSONObject(custMap).toString(),
+                            originatingUserUid = userUid
+                        )
+                        val insertedId = repository.insertCustomerAndOutbox(newCust, custOutbox).toInt()
                         finalCustomerId = insertedId
-                        // Sync
                         syncCustomerToBranch(newCust.copy(id = insertedId))
                     }
                 } else {
@@ -3499,10 +3729,27 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                     presentation = "Triage: $conditionName",
                     testResults = checkedSymptoms,
                     recommendation = "Recommended Care Plan: $recommendedMed. Follow-up scheduled in $followUpDays days.",
-                    branchId = getActiveBranchId(),
-                    originatingUserUid = getCurrentUserUid()
+                    branchId = activeBranch,
+                    originatingUserUid = userUid
                 )
-                val insertedInterId = repository.insertClinicalIntervention(inter)
+                val interMap = mapOf(
+                    "customerId" to inter.customerId,
+                    "presentation" to inter.presentation,
+                    "testResults" to inter.testResults,
+                    "recommendation" to inter.recommendation,
+                    "currentStatus" to inter.currentStatus,
+                    "branchId" to activeBranch,
+                    "originatingUserUid" to userUid
+                )
+                val interOutbox = com.example.data.sync.SyncOutboxRecord(
+                    branchId = activeBranch,
+                    entityType = "INTERVENTION",
+                    entityId = "0",
+                    operationType = "UPSERT",
+                    payloadJson = org.json.JSONObject(interMap).toString(),
+                    originatingUserUid = userUid
+                )
+                val insertedInterId = repository.insertClinicalInterventionAndOutbox(inter, interOutbox).toInt()
                 syncClinicalInterventionToBranch(inter.copy(id = insertedInterId))
 
                 // Create Customer Medication (Follow-up Schedule)
@@ -3516,10 +3763,29 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                         cost = 0.0,
                         cycleDays = followUpDays,
                         nextRefillDate = nextRefill,
-                        branchId = getActiveBranchId(),
-                        originatingUserUid = getCurrentUserUid()
+                        branchId = activeBranch,
+                        originatingUserUid = userUid
                     )
-                    val insertedMedId = repository.insertCustomerMedication(med)
+                    val medMap = mapOf(
+                        "customerId" to med.customerId,
+                        "inventoryItemId" to med.inventoryItemId,
+                        "medicationName" to med.medicationName,
+                        "customDosage" to med.customDosage,
+                        "cost" to med.cost,
+                        "cycleDays" to med.cycleDays,
+                        "nextRefillDate" to med.nextRefillDate,
+                        "branchId" to activeBranch,
+                        "originatingUserUid" to userUid
+                    )
+                    val medOutbox = com.example.data.sync.SyncOutboxRecord(
+                        branchId = activeBranch,
+                        entityType = "CUSTOMER_MEDICATION",
+                        entityId = "0",
+                        operationType = "UPSERT",
+                        payloadJson = org.json.JSONObject(medMap).toString(),
+                        originatingUserUid = userUid
+                    )
+                    val insertedMedId = repository.insertCustomerMedicationAndOutbox(med, medOutbox).toInt()
                     syncCustomerMedicationToBranch(med.copy(id = insertedMedId))
                 }
 

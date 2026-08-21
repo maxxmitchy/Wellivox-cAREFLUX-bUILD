@@ -372,7 +372,17 @@ interface PharmacyDao {
     @Transaction
     suspend fun insertCustomerAndOutbox(customer: Customer, outbox: com.example.data.sync.SyncOutboxRecord): Long {
         val id = insertCustomer(customer)
-        val updatedOutbox = if (outbox.entityId.isBlank() || outbox.entityId == "0") outbox.copy(entityId = id.toString()) else outbox
+        val updatedPayload = try {
+            val jsonObj = org.json.JSONObject(outbox.payloadJson)
+            jsonObj.put("id", id)
+            jsonObj.toString()
+        } catch (e: Exception) {
+            outbox.payloadJson
+        }
+        val updatedOutbox = outbox.copy(
+            entityId = if (outbox.entityId.isBlank() || outbox.entityId == "0") id.toString() else outbox.entityId,
+            payloadJson = updatedPayload
+        )
         insertOutboxRecord(updatedOutbox)
         return id
     }
@@ -384,9 +394,25 @@ interface PharmacyDao {
     }
 
     @Transaction
+    suspend fun deleteCustomerAndOutbox(customer: Customer, outbox: com.example.data.sync.SyncOutboxRecord) {
+        deleteCustomer(customer)
+        insertOutboxRecord(outbox)
+    }
+
+    @Transaction
     suspend fun insertCustomerMedicationAndOutbox(medication: CustomerMedication, outbox: com.example.data.sync.SyncOutboxRecord): Long {
         val id = insertCustomerMedication(medication)
-        val updatedOutbox = if (outbox.entityId.isBlank() || outbox.entityId == "0") outbox.copy(entityId = id.toString()) else outbox
+        val updatedPayload = try {
+            val jsonObj = org.json.JSONObject(outbox.payloadJson)
+            jsonObj.put("id", id)
+            jsonObj.toString()
+        } catch (e: Exception) {
+            outbox.payloadJson
+        }
+        val updatedOutbox = outbox.copy(
+            entityId = if (outbox.entityId.isBlank() || outbox.entityId == "0") id.toString() else outbox.entityId,
+            payloadJson = updatedPayload
+        )
         insertOutboxRecord(updatedOutbox)
         return id
     }
@@ -398,9 +424,25 @@ interface PharmacyDao {
     }
 
     @Transaction
+    suspend fun deleteCustomerMedicationAndOutbox(medication: CustomerMedication, outbox: com.example.data.sync.SyncOutboxRecord) {
+        deleteCustomerMedication(medication)
+        insertOutboxRecord(outbox)
+    }
+
+    @Transaction
     suspend fun insertClinicalInterventionAndOutbox(intervention: ClinicalIntervention, outbox: com.example.data.sync.SyncOutboxRecord): Long {
         val id = insertClinicalIntervention(intervention)
-        val updatedOutbox = if (outbox.entityId.isBlank() || outbox.entityId == "0") outbox.copy(entityId = id.toString()) else outbox
+        val updatedPayload = try {
+            val jsonObj = org.json.JSONObject(outbox.payloadJson)
+            jsonObj.put("id", id)
+            jsonObj.toString()
+        } catch (e: Exception) {
+            outbox.payloadJson
+        }
+        val updatedOutbox = outbox.copy(
+            entityId = if (outbox.entityId.isBlank() || outbox.entityId == "0") id.toString() else outbox.entityId,
+            payloadJson = updatedPayload
+        )
         insertOutboxRecord(updatedOutbox)
         return id
     }
@@ -412,9 +454,25 @@ interface PharmacyDao {
     }
 
     @Transaction
+    suspend fun deleteClinicalInterventionAndOutbox(intervention: ClinicalIntervention, outbox: com.example.data.sync.SyncOutboxRecord) {
+        deleteClinicalIntervention(intervention)
+        insertOutboxRecord(outbox)
+    }
+
+    @Transaction
     suspend fun insertInventoryItemAndOutbox(item: InventoryItem, outbox: com.example.data.sync.SyncOutboxRecord): Long {
         val id = insertInventoryItem(item)
-        val updatedOutbox = if (outbox.entityId.isBlank() || outbox.entityId == "0") outbox.copy(entityId = id.toString()) else outbox
+        val updatedPayload = try {
+            val jsonObj = org.json.JSONObject(outbox.payloadJson)
+            jsonObj.put("id", id)
+            jsonObj.toString()
+        } catch (e: Exception) {
+            outbox.payloadJson
+        }
+        val updatedOutbox = outbox.copy(
+            entityId = if (outbox.entityId.isBlank() || outbox.entityId == "0") id.toString() else outbox.entityId,
+            payloadJson = updatedPayload
+        )
         insertOutboxRecord(updatedOutbox)
         return id
     }
@@ -422,6 +480,12 @@ interface PharmacyDao {
     @Transaction
     suspend fun updateInventoryItemAndOutbox(item: InventoryItem, outbox: com.example.data.sync.SyncOutboxRecord) {
         updateInventoryItem(item)
+        insertOutboxRecord(outbox)
+    }
+
+    @Transaction
+    suspend fun deleteInventoryItemAndOutbox(item: InventoryItem, outbox: com.example.data.sync.SyncOutboxRecord) {
+        deleteInventoryItem(item)
         insertOutboxRecord(outbox)
     }
 
@@ -438,6 +502,12 @@ interface PharmacyDao {
     }
 
     @Transaction
+    suspend fun deleteOperationTaskAndOutbox(task: OperationTask, outbox: com.example.data.sync.SyncOutboxRecord) {
+        deleteOperationTask(task)
+        insertOutboxRecord(outbox)
+    }
+
+    @Transaction
     suspend fun insertReceiptAndOutbox(receipt: Receipt, outbox: com.example.data.sync.SyncOutboxRecord) {
         insertReceipt(receipt)
         insertOutboxRecord(outbox)
@@ -446,6 +516,12 @@ interface PharmacyDao {
     @Transaction
     suspend fun updateReceiptAndOutbox(receipt: Receipt, outbox: com.example.data.sync.SyncOutboxRecord) {
         updateReceipt(receipt)
+        insertOutboxRecord(outbox)
+    }
+
+    @Transaction
+    suspend fun deleteReceiptAndOutbox(receipt: Receipt, outbox: com.example.data.sync.SyncOutboxRecord) {
+        deleteReceipt(receipt)
         insertOutboxRecord(outbox)
     }
 
