@@ -351,7 +351,8 @@ interface PharmacyDao {
         updatedItem: InventoryItem,
         updatedBatches: List<InventoryBatch>,
         sale: MedicationSale,
-        ledgerEntry: InventoryLedgerEntry
+        ledgerEntry: InventoryLedgerEntry,
+        outboxRecord: com.example.data.sync.SyncOutboxRecord? = null
     ) {
         for (batch in updatedBatches) {
             if (batch.id == 0) {
@@ -363,6 +364,89 @@ interface PharmacyDao {
         updateInventoryItem(updatedItem)
         insertMedicationSale(sale)
         insertInventoryLedgerEntry(ledgerEntry)
+        if (outboxRecord != null) {
+            insertOutboxRecord(outboxRecord)
+        }
+    }
+
+    @Transaction
+    suspend fun insertCustomerAndOutbox(customer: Customer, outbox: com.example.data.sync.SyncOutboxRecord): Long {
+        val id = insertCustomer(customer)
+        val updatedOutbox = if (outbox.entityId.isBlank() || outbox.entityId == "0") outbox.copy(entityId = id.toString()) else outbox
+        insertOutboxRecord(updatedOutbox)
+        return id
+    }
+
+    @Transaction
+    suspend fun updateCustomerAndOutbox(customer: Customer, outbox: com.example.data.sync.SyncOutboxRecord) {
+        updateCustomer(customer)
+        insertOutboxRecord(outbox)
+    }
+
+    @Transaction
+    suspend fun insertCustomerMedicationAndOutbox(medication: CustomerMedication, outbox: com.example.data.sync.SyncOutboxRecord): Long {
+        val id = insertCustomerMedication(medication)
+        val updatedOutbox = if (outbox.entityId.isBlank() || outbox.entityId == "0") outbox.copy(entityId = id.toString()) else outbox
+        insertOutboxRecord(updatedOutbox)
+        return id
+    }
+
+    @Transaction
+    suspend fun updateCustomerMedicationAndOutbox(medication: CustomerMedication, outbox: com.example.data.sync.SyncOutboxRecord) {
+        updateCustomerMedication(medication)
+        insertOutboxRecord(outbox)
+    }
+
+    @Transaction
+    suspend fun insertClinicalInterventionAndOutbox(intervention: ClinicalIntervention, outbox: com.example.data.sync.SyncOutboxRecord): Long {
+        val id = insertClinicalIntervention(intervention)
+        val updatedOutbox = if (outbox.entityId.isBlank() || outbox.entityId == "0") outbox.copy(entityId = id.toString()) else outbox
+        insertOutboxRecord(updatedOutbox)
+        return id
+    }
+
+    @Transaction
+    suspend fun updateClinicalInterventionAndOutbox(intervention: ClinicalIntervention, outbox: com.example.data.sync.SyncOutboxRecord) {
+        updateClinicalIntervention(intervention)
+        insertOutboxRecord(outbox)
+    }
+
+    @Transaction
+    suspend fun insertInventoryItemAndOutbox(item: InventoryItem, outbox: com.example.data.sync.SyncOutboxRecord): Long {
+        val id = insertInventoryItem(item)
+        val updatedOutbox = if (outbox.entityId.isBlank() || outbox.entityId == "0") outbox.copy(entityId = id.toString()) else outbox
+        insertOutboxRecord(updatedOutbox)
+        return id
+    }
+
+    @Transaction
+    suspend fun updateInventoryItemAndOutbox(item: InventoryItem, outbox: com.example.data.sync.SyncOutboxRecord) {
+        updateInventoryItem(item)
+        insertOutboxRecord(outbox)
+    }
+
+    @Transaction
+    suspend fun insertOperationTaskAndOutbox(task: OperationTask, outbox: com.example.data.sync.SyncOutboxRecord) {
+        insertOperationTask(task)
+        insertOutboxRecord(outbox)
+    }
+
+    @Transaction
+    suspend fun updateOperationTaskAndOutbox(task: OperationTask, outbox: com.example.data.sync.SyncOutboxRecord) {
+        updateOperationTask(task)
+        insertOutboxRecord(outbox)
+    }
+
+    @Transaction
+    suspend fun insertReceiptAndOutbox(receipt: Receipt, outbox: com.example.data.sync.SyncOutboxRecord) {
+        insertReceipt(receipt)
+        insertOutboxRecord(outbox)
+    }
+
+    @Transaction
+    suspend fun updateReceiptAndOutbox(receipt: Receipt, outbox: com.example.data.sync.SyncOutboxRecord) {
+        updateReceipt(receipt)
+        insertOutboxRecord(outbox)
     }
 
     // --- Sync Outbox Operations ---
@@ -375,8 +459,8 @@ interface PharmacyDao {
     @Query("DELETE FROM sync_outbox WHERE id = :id")
     suspend fun deleteOutboxRecordById(id: Int)
 
-    @Query("SELECT * FROM sync_outbox WHERE status = 'PENDING' OR status = 'FAILED' ORDER BY createdAt ASC")
-    suspend fun getPendingOutboxRecords(): List<com.example.data.sync.SyncOutboxRecord>
+    @Query("SELECT * FROM sync_outbox WHERE status = 'PENDING' OR status = 'FAILED' OR (status = 'IN_PROGRESS' AND lastAttemptAt < :stuckThresholdMs) ORDER BY createdAt ASC")
+    suspend fun getPendingOutboxRecords(stuckThresholdMs: Long = 0L): List<com.example.data.sync.SyncOutboxRecord>
 
     @Query("SELECT * FROM sync_outbox WHERE branchId = :branchId ORDER BY createdAt ASC")
     fun getOutboxRecordsForBranch(branchId: String): Flow<List<com.example.data.sync.SyncOutboxRecord>>

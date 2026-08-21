@@ -895,7 +895,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
 
         receipts = @OptIn(ExperimentalCoroutinesApi::class) _currentPharmacistBranchId.flatMapLatest { branch ->
             val b = branch ?: ""
-            if (b.isBlank()) repository.allReceipts else repository.getReceiptsForBranch(b)
+            if (b.isBlank()) kotlinx.coroutines.flow.flowOf(emptyList()) else repository.getReceiptsForBranch(b)
         }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -904,7 +904,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
 
         operationTasks = @OptIn(ExperimentalCoroutinesApi::class) _currentPharmacistBranchId.flatMapLatest { branch ->
             val b = branch ?: ""
-            if (b.isBlank()) repository.allOperationTasks else repository.getOperationTasksForBranch(b)
+            if (b.isBlank()) kotlinx.coroutines.flow.flowOf(emptyList()) else repository.getOperationTasksForBranch(b)
         }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -913,7 +913,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
 
         inventoryItems = @OptIn(ExperimentalCoroutinesApi::class) _currentPharmacistBranchId.flatMapLatest { branch ->
             val b = branch ?: ""
-            if (b.isBlank()) repository.allInventoryItems else repository.getInventoryForBranch(b)
+            if (b.isBlank()) kotlinx.coroutines.flow.flowOf(emptyList()) else repository.getInventoryForBranch(b)
         }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -922,7 +922,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
 
         lowStockItems = @OptIn(ExperimentalCoroutinesApi::class) _currentPharmacistBranchId.flatMapLatest { branch ->
             val b = branch ?: ""
-            if (b.isBlank()) repository.lowStockItems else repository.getLowStockItemsForBranch(b)
+            if (b.isBlank()) kotlinx.coroutines.flow.flowOf(emptyList()) else repository.getLowStockItemsForBranch(b)
         }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -930,7 +930,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
         )
 
         val cutoff14Days = System.currentTimeMillis() - (14L * 24 * 60 * 60 * 1000L)
-        reconciled14DaysRatio = repository.allInventoryItems.map { items ->
+        reconciled14DaysRatio = inventoryItems.map { items ->
             if (items.isEmpty()) 1.0f
             else {
                 val cutoff = System.currentTimeMillis() - (14L * 24 * 60 * 60 * 1000L)
@@ -939,12 +939,12 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
             }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 1.0f)
 
-        unreconciled14DaysCount = repository.allInventoryItems.map { items ->
+        unreconciled14DaysCount = inventoryItems.map { items ->
             val cutoff = System.currentTimeMillis() - (14L * 24 * 60 * 60 * 1000L)
             items.count { it.lastReconciledAt < cutoff }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
-        overdueReconciliationItems = repository.allInventoryItems.map { items ->
+        overdueReconciliationItems = inventoryItems.map { items ->
             val cutoff = System.currentTimeMillis() - (14L * 24 * 60 * 60 * 1000L)
             items.filter { it.lastReconciledAt < cutoff }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -963,7 +963,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
 
         customers = @OptIn(ExperimentalCoroutinesApi::class) _currentPharmacistBranchId.flatMapLatest { branch ->
             val b = branch ?: ""
-            if (b.isBlank()) repository.allCustomers else repository.getCustomersForBranch(b)
+            if (b.isBlank()) kotlinx.coroutines.flow.flowOf(emptyList()) else repository.getCustomersForBranch(b)
         }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -972,7 +972,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
 
         customerMedications = @OptIn(ExperimentalCoroutinesApi::class) _currentPharmacistBranchId.flatMapLatest { branch ->
             val b = branch ?: ""
-            if (b.isBlank()) repository.allCustomerMedications else repository.getCustomerMedicationsForBranch(b)
+            if (b.isBlank()) kotlinx.coroutines.flow.flowOf(emptyList()) else repository.getCustomerMedicationsForBranch(b)
         }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -981,7 +981,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
 
         clinicalInterventions = @OptIn(ExperimentalCoroutinesApi::class) _currentPharmacistBranchId.flatMapLatest { branch ->
             val b = branch ?: ""
-            if (b.isBlank()) repository.allClinicalInterventions else repository.getClinicalInterventionsForBranch(b)
+            if (b.isBlank()) kotlinx.coroutines.flow.flowOf(emptyList()) else repository.getClinicalInterventionsForBranch(b)
         }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -990,7 +990,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
 
         medicationSales = @OptIn(ExperimentalCoroutinesApi::class) _currentPharmacistBranchId.flatMapLatest { branch ->
             val b = branch ?: ""
-            if (b.isBlank()) repository.allMedicationSales else repository.getMedicationSalesForBranch(b)
+            if (b.isBlank()) kotlinx.coroutines.flow.flowOf(emptyList()) else repository.getMedicationSalesForBranch(b)
         }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
@@ -1039,7 +1039,10 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
             initialValue = emptyList()
         )
 
-        inventoryLedgerEntries = repository.allInventoryLedgerEntries.stateIn(
+        inventoryLedgerEntries = @OptIn(ExperimentalCoroutinesApi::class) _currentPharmacistBranchId.flatMapLatest { branch ->
+            val b = branch ?: ""
+            if (b.isBlank()) kotlinx.coroutines.flow.flowOf(emptyList()) else repository.getInventoryLedgerEntriesForBranch(b)
+        }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
@@ -3158,8 +3161,34 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 branchId = getActiveBranchId(),
                 originatingUserUid = getCurrentUserUid()
             )
-            val insertedId = repository.insertCustomer(newCust)
-            val finalCust = newCust.copy(id = insertedId)
+            val custMap = mapOf(
+                "name" to newCust.name,
+                "phoneNumber" to newCust.phoneNumber,
+                "email" to newCust.email,
+                "notes" to newCust.notes,
+                "age" to newCust.age,
+                "gender" to newCust.gender,
+                "state" to newCust.state,
+                "lga" to newCust.lga,
+                "city" to newCust.city,
+                "consentPrescriptionTracking" to newCust.consentPrescriptionTracking,
+                "consentSmsRefills" to newCust.consentSmsRefills,
+                "consentCloudSync" to newCust.consentCloudSync,
+                "consentChannel" to newCust.consentChannel,
+                "consentLastUpdated" to newCust.consentLastUpdated,
+                "branchId" to newCust.branchId,
+                "originatingUserUid" to newCust.originatingUserUid
+            )
+            val outboxRecord = com.example.data.sync.SyncOutboxRecord(
+                branchId = newCust.branchId,
+                entityType = "CUSTOMER",
+                entityId = "0",
+                operationType = "UPSERT",
+                payloadJson = org.json.JSONObject(custMap).toString(),
+                originatingUserUid = newCust.originatingUserUid
+            )
+            val insertedId = repository.insertCustomerAndOutbox(newCust, outboxRecord)
+            val finalCust = newCust.copy(id = insertedId.toInt())
             parseCustomerNotesForAlerts(finalCust)
             syncCustomerToBranch(finalCust)
             triggerImmediateSync()
@@ -3176,11 +3205,40 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 ).show()
                 return@launch
             }
+            val custBranchId = customer.branchId.ifBlank { getActiveBranchId() }
+            val userUid = customer.originatingUserUid.ifBlank { getCurrentUserUid() }
             val updatedCust = customer.copy(
-                branchId = customer.branchId.ifBlank { getActiveBranchId() },
-                originatingUserUid = customer.originatingUserUid.ifBlank { getCurrentUserUid() }
+                branchId = custBranchId,
+                originatingUserUid = userUid
             )
-            repository.updateCustomer(updatedCust) 
+            val custMap = mapOf(
+                "id" to updatedCust.id,
+                "name" to updatedCust.name,
+                "phoneNumber" to updatedCust.phoneNumber,
+                "email" to updatedCust.email,
+                "notes" to updatedCust.notes,
+                "age" to updatedCust.age,
+                "gender" to updatedCust.gender,
+                "state" to updatedCust.state,
+                "lga" to updatedCust.lga,
+                "city" to updatedCust.city,
+                "consentPrescriptionTracking" to updatedCust.consentPrescriptionTracking,
+                "consentSmsRefills" to updatedCust.consentSmsRefills,
+                "consentCloudSync" to updatedCust.consentCloudSync,
+                "consentChannel" to updatedCust.consentChannel,
+                "consentLastUpdated" to updatedCust.consentLastUpdated,
+                "branchId" to custBranchId,
+                "originatingUserUid" to userUid
+            )
+            val outboxRecord = com.example.data.sync.SyncOutboxRecord(
+                branchId = custBranchId,
+                entityType = "CUSTOMER",
+                entityId = updatedCust.id.toString(),
+                operationType = "UPSERT",
+                payloadJson = org.json.JSONObject(custMap).toString(),
+                originatingUserUid = userUid
+            )
+            repository.updateCustomerAndOutbox(updatedCust, outboxRecord) 
             parseCustomerNotesForAlerts(updatedCust)
             syncCustomerToBranch(updatedCust)
             triggerImmediateSync()
@@ -3219,6 +3277,8 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                     }
                 }
             }
+            val medBranchId = getActiveBranchId()
+            val userUid = getCurrentUserUid()
             val med = CustomerMedication(
                 customerId = customerId,
                 inventoryItemId = invItemId,
@@ -3228,22 +3288,63 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 cycleDays = cycleDays,
                 nextRefillDate = nextRefill,
                 dateAdded = dateAdded,
-                branchId = getActiveBranchId(),
-                originatingUserUid = getCurrentUserUid()
+                branchId = medBranchId,
+                originatingUserUid = userUid
             )
-            val insertedId = repository.insertCustomerMedication(med)
-            syncCustomerMedicationToBranch(med.copy(id = insertedId))
+            val medMap = mapOf(
+                "customerId" to med.customerId,
+                "inventoryItemId" to med.inventoryItemId,
+                "medicationName" to med.medicationName,
+                "customDosage" to med.customDosage,
+                "cost" to med.cost,
+                "cycleDays" to med.cycleDays,
+                "nextRefillDate" to med.nextRefillDate,
+                "branchId" to medBranchId,
+                "originatingUserUid" to userUid
+            )
+            val outboxRecord = com.example.data.sync.SyncOutboxRecord(
+                branchId = medBranchId,
+                entityType = "CUSTOMER_MEDICATION",
+                entityId = "0",
+                operationType = "UPSERT",
+                payloadJson = org.json.JSONObject(medMap).toString(),
+                originatingUserUid = userUid
+            )
+            val insertedId = repository.insertCustomerMedicationAndOutbox(med, outboxRecord)
+            syncCustomerMedicationToBranch(med.copy(id = insertedId.toInt()))
             triggerImmediateSync()
         }
     }
     
     fun updateCustomerMedication(med: CustomerMedication) {
         viewModelScope.launch { 
+            val medBranchId = med.branchId.ifBlank { getActiveBranchId() }
+            val userUid = med.originatingUserUid.ifBlank { getCurrentUserUid() }
             val updatedMed = med.copy(
-                branchId = med.branchId.ifBlank { getActiveBranchId() },
-                originatingUserUid = med.originatingUserUid.ifBlank { getCurrentUserUid() }
+                branchId = medBranchId,
+                originatingUserUid = userUid
             )
-            repository.updateCustomerMedication(updatedMed) 
+            val medMap = mapOf(
+                "id" to updatedMed.id,
+                "customerId" to updatedMed.customerId,
+                "inventoryItemId" to updatedMed.inventoryItemId,
+                "medicationName" to updatedMed.medicationName,
+                "customDosage" to updatedMed.customDosage,
+                "cost" to updatedMed.cost,
+                "cycleDays" to updatedMed.cycleDays,
+                "nextRefillDate" to updatedMed.nextRefillDate,
+                "branchId" to medBranchId,
+                "originatingUserUid" to userUid
+            )
+            val outboxRecord = com.example.data.sync.SyncOutboxRecord(
+                branchId = medBranchId,
+                entityType = "CUSTOMER_MEDICATION",
+                entityId = updatedMed.id.toString(),
+                operationType = "UPSERT",
+                payloadJson = org.json.JSONObject(medMap).toString(),
+                originatingUserUid = userUid
+            )
+            repository.updateCustomerMedicationAndOutbox(updatedMed, outboxRecord) 
             syncCustomerMedicationToBranch(updatedMed)
             triggerImmediateSync()
         }
@@ -3260,16 +3361,35 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
     // --- Clinical Intervention Actions ---
     fun addClinicalIntervention(customerId: Int, presentation: String, testResults: String, recommendation: String) {
         viewModelScope.launch {
+            val interBranchId = getActiveBranchId()
+            val userUid = getCurrentUserUid()
             val inter = ClinicalIntervention(
                 customerId = customerId,
                 presentation = presentation,
                 testResults = testResults,
                 recommendation = recommendation,
-                branchId = getActiveBranchId(),
-                originatingUserUid = getCurrentUserUid()
+                branchId = interBranchId,
+                originatingUserUid = userUid
             )
-            val insertedId = repository.insertClinicalIntervention(inter)
-            val finalInter = inter.copy(id = insertedId)
+            val interMap = mapOf(
+                "customerId" to inter.customerId,
+                "presentation" to inter.presentation,
+                "testResults" to inter.testResults,
+                "recommendation" to inter.recommendation,
+                "currentStatus" to inter.currentStatus,
+                "branchId" to interBranchId,
+                "originatingUserUid" to userUid
+            )
+            val outboxRecord = com.example.data.sync.SyncOutboxRecord(
+                branchId = interBranchId,
+                entityType = "INTERVENTION",
+                entityId = "0",
+                operationType = "UPSERT",
+                payloadJson = org.json.JSONObject(interMap).toString(),
+                originatingUserUid = userUid
+            )
+            val insertedId = repository.insertClinicalInterventionAndOutbox(inter, outboxRecord)
+            val finalInter = inter.copy(id = insertedId.toInt())
             syncClinicalInterventionToBranch(finalInter)
             triggerImmediateSync()
 
@@ -3837,31 +3957,49 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 timestamp = dateSoldMs
             )
 
-            // Execute local checkout as ONE atomic Room transaction
-            repository.executeCheckoutTransaction(updatedItem, updatedBatches, sale, ledgerEntry)
+            val saleMap = mapOf(
+                "productName" to sale.productName,
+                "brand" to sale.brand,
+                "genericName" to sale.genericName,
+                "category" to sale.category,
+                "quantitySold" to sale.quantitySold,
+                "dateSold" to sale.dateSold,
+                "pharmacyNode" to sale.pharmacyNode,
+                "patientAge" to sale.patientAge,
+                "patientGender" to sale.patientGender,
+                "patientState" to sale.patientState,
+                "patientLga" to sale.patientLga,
+                "patientCity" to sale.patientCity,
+                "salePrice" to sale.salePrice,
+                "batchNumber" to sale.batchNumber,
+                "clientTransactionId" to clientTxId,
+                "branchId" to activeBranchId,
+                "originatingUserUid" to getCurrentUserUid()
+            )
+
+            val payloadJson = org.json.JSONObject(saleMap).toString()
+            val outboxRecord = com.example.data.sync.SyncOutboxRecord(
+                branchId = activeBranchId,
+                entityType = "SALE",
+                entityId = clientTxId,
+                operationType = "SALE_SYNC",
+                payloadJson = payloadJson,
+                clientTransactionId = clientTxId,
+                originatingUserUid = getCurrentUserUid()
+            )
+
+            // Execute local checkout as ONE atomic Room transaction (sale + inventory + ledger + outbox)
+            repository.executeCheckoutTransaction(updatedItem, updatedBatches, sale, ledgerEntry, outboxRecord)
 
             // Sync to Remote Data Source
             try {
-                val saleMap = mapOf(
-                    "productName" to sale.productName,
-                    "brand" to sale.brand,
-                    "genericName" to sale.genericName,
-                    "category" to sale.category,
-                    "quantitySold" to sale.quantitySold,
-                    "dateSold" to sale.dateSold,
-                    "pharmacyNode" to sale.pharmacyNode,
-                    "patientAge" to sale.patientAge,
-                    "patientGender" to sale.patientGender,
-                    "patientState" to sale.patientState,
-                    "patientLga" to sale.patientLga,
-                    "patientCity" to sale.patientCity,
-                    "salePrice" to sale.salePrice,
-                    "batchNumber" to sale.batchNumber,
-                    "clientTransactionId" to clientTxId,
-                    "branchId" to activeBranchId,
-                    "originatingUserUid" to getCurrentUserUid()
-                )
-                repository.upsertRemoteDocument("medication_sales", clientTxId, saleMap)
+                val remoteRes = repository.upsertRemoteDocument("medication_sales", clientTxId, saleMap)
+                if (remoteRes.isSuccess) {
+                    val existingOutbox = repository.getOutboxRecordByClientTxId(clientTxId)
+                    if (existingOutbox != null) {
+                        repository.updateOutboxRecord(existingOutbox.copy(status = "SYNCED", lastAttemptAt = System.currentTimeMillis()))
+                    }
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
             }
