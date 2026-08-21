@@ -16,6 +16,7 @@ class PharmacyRepository(
     fun getCurrentUserEmail(): String? = remoteDataSource.getCurrentUserEmail()
 
     suspend fun getPharmacistBranchId(uid: String): String? = remoteDataSource.getPharmacistBranchId(uid)
+    suspend fun getPharmacistRole(uid: String): String? = remoteDataSource.getPharmacistRole(uid)
 
     fun observePharmacist(uid: String): Flow<Map<String, Any>?> = remoteDataSource.observePharmacist(uid)
     fun observeBranchSettings(branchId: String): Flow<Map<String, Any>?> = remoteDataSource.observeBranchSettings(branchId)
@@ -61,6 +62,9 @@ class PharmacyRepository(
     ) {
         pharmacyDao.executeCheckoutTransaction(updatedItem, updatedBatches, sale, ledgerEntry, outboxRecord)
     }
+
+    suspend fun insertMedicationSaleAndOutbox(sale: MedicationSale, outbox: com.example.data.sync.SyncOutboxRecord) =
+        pharmacyDao.insertMedicationSaleAndOutbox(sale, outbox)
 
     suspend fun insertCustomerAndOutbox(customer: Customer, outbox: com.example.data.sync.SyncOutboxRecord): Long =
         pharmacyDao.insertCustomerAndOutbox(customer, outbox)

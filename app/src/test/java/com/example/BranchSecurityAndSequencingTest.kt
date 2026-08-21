@@ -272,6 +272,7 @@ class RecordingRemoteDataSource : RemoteDataSource {
     override fun getCurrentUserUid(): String? = null
     override fun getCurrentUserEmail(): String? = null
     override suspend fun getPharmacistBranchId(uid: String): String? = null
+    override suspend fun getPharmacistRole(uid: String): String? = "Pharmacist"
 
     override fun observePharmacist(uid: String): kotlinx.coroutines.flow.Flow<Map<String, Any>?> = kotlinx.coroutines.flow.emptyFlow()
     override fun observeBranchSettings(branchId: String): kotlinx.coroutines.flow.Flow<Map<String, Any>?> = kotlinx.coroutines.flow.emptyFlow()

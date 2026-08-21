@@ -334,7 +334,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
     fun getCurrentUserUid(): String {
         return authRepository.getCurrentUser()?.uid?.takeIf { it.isNotBlank() }
             ?: prefs.getString("cached_uid", null)?.takeIf { it.isNotBlank() }
-            ?: "LocalNode"
+            ?: ""
     }
 
     private val _currentPharmacistRole = kotlinx.coroutines.flow.MutableStateFlow<String?>(prefs.getString("cached_role", "Pharmacist"))
@@ -568,8 +568,8 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun isCurrentUserAdmin(): Boolean {
-        val email = authRepository.getCurrentUser()?.email?.lowercase() ?: ""
-        return email == "maduemeziachinedu6@gmail.com" || _currentPharmacistRole.value == "Admin" || _currentPharmacistRole.value == "Branch Manager"
+        val role = _currentPharmacistRole.value?.lowercase() ?: ""
+        return role == "admin" || role == "superadmin" || role == "systemadmin" || role == "system administrator" || role == "branch manager"
     }
 
     // --- Cooperative Location Preferences & Matching Engine ---
@@ -1532,7 +1532,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 val isManager = _currentPharmacistRole.value == "Branch Manager" || isCurrentUserAdmin()
                 val userName = _currentPharmacistName.value ?: "Staff Pharmacist"
                 val userRole = _currentPharmacistRole.value ?: "Pharmacist"
-                val userUid = authRepository.getCurrentUser()?.uid ?: "LocalNode"
+                val userUid = authRepository.getCurrentUser()?.uid ?: getCurrentUserUid()
                 val branchId = _currentPharmacistBranchId.value ?: "Self"
                 
                 val finalReason = if (previousExisting == null) "Initial Stock Intake" else reason
@@ -1627,7 +1627,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
             val isManager = _currentPharmacistRole.value == "Branch Manager" || isCurrentUserAdmin()
             val userName = _currentPharmacistName.value ?: "Staff Pharmacist"
             val userRole = _currentPharmacistRole.value ?: "Pharmacist"
-            val userUid = authRepository.getCurrentUser()?.uid ?: "LocalNode"
+            val userUid = authRepository.getCurrentUser()?.uid ?: getCurrentUserUid()
             val branchId = _currentPharmacistBranchId.value ?: "Self"
             
             val auditMap = hashMapOf(
@@ -4257,19 +4257,6 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
             // Execute local checkout as ONE atomic Room transaction (sale + inventory + ledger + outbox)
             repository.executeCheckoutTransaction(updatedItem, updatedBatches, sale, ledgerEntry, outboxRecord)
 
-            // Sync to Remote Data Source
-            try {
-                val remoteRes = repository.upsertRemoteDocument("medication_sales", clientTxId, saleMap)
-                if (remoteRes.isSuccess) {
-                    val existingOutbox = repository.getOutboxRecordByClientTxId(clientTxId)
-                    if (existingOutbox != null) {
-                        repository.updateOutboxRecord(existingOutbox.copy(status = "SYNCED", lastAttemptAt = System.currentTimeMillis()))
-                    }
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-
             // Secure IPC Broadcast to UBA Savings App
             sendSaleIPCBroadcast(
                 context = getApplication(),
@@ -4525,10 +4512,20 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                     "salePrice" to totalSaleRevenue,
                     "batchNumber" to listing.batchNumber,
                     "clientTransactionId" to rescueClientTxId,
-                    "branchId" to rescueActiveBranchId
+                    "branchId" to rescueActiveBranchId,
+                    "originatingUserUid" to getCurrentUserUid()
                 )
-                repository.insertMedicationSale(sale)
-                repository.upsertRemoteDocument("medication_sales", rescueClientTxId, saleMap)
+                val payloadJson = org.json.JSONObject(saleMap).toString()
+                val outboxRecord = com.example.data.sync.SyncOutboxRecord(
+                    branchId = rescueActiveBranchId,
+                    entityType = "SALE",
+                    entityId = rescueClientTxId,
+                    operationType = "SALE_SYNC",
+                    payloadJson = payloadJson,
+                    clientTransactionId = rescueClientTxId,
+                    originatingUserUid = getCurrentUserUid()
+                )
+                repository.insertMedicationSaleAndOutbox(sale, outboxRecord)
 
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -5553,92 +5550,19 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
     private var syncStateJob: kotlinx.coroutines.Job? = null
 
     fun syncEntityToFirestore(collectionName: String, docId: String, dataMap: Map<String, Any?>) {
-        val branchId = _currentPharmacistBranchId.value ?: return
-        pendingSyncCount.incrementAndGet()
-        _syncState.value = SyncState.Syncing
-        viewModelScope.launch {
-            try {
-                val mutableMap = dataMap.toMutableMap()
-                mutableMap["branchId"] = branchId
-                mutableMap["syncedAt"] = System.currentTimeMillis()
-                
-                // Set remote document with a 3-second timeout
-                kotlinx.coroutines.withTimeoutOrNull(3000) {
-                    try {
-                        repository.upsertRemoteDocument(collectionName, "${branchId}_$docId", mutableMap)
-                    } catch (e: Exception) {
-                        // ignore and proceed
-                    }
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            } finally {
-                val remaining = pendingSyncCount.decrementAndGet()
-                if (remaining <= 0) {
-                    pendingSyncCount.set(0)
-                    syncStateJob?.cancel()
-                    syncStateJob = viewModelScope.launch {
-                        kotlinx.coroutines.delay(400)
-                        _syncState.value = SyncState.Synced
-                        _lastSyncedTime.value = System.currentTimeMillis()
-                    }
-                }
-            }
-        }
+        // No-op: Local mutations write to Room + sync_outbox. CloudSyncWorker drains outbox authoritatively.
     }
 
     private fun syncCustomerToBranch(customer: com.example.data.Customer) {
-        val map = hashMapOf(
-            "id" to customer.id,
-            "name" to customer.name,
-            "phoneNumber" to customer.phoneNumber,
-            "email" to customer.email,
-            "notes" to customer.notes,
-            "loyaltyPoints" to customer.loyaltyPoints,
-            "refillStreak" to customer.refillStreak,
-            "dateAdded" to customer.dateAdded,
-            "age" to customer.age,
-            "gender" to customer.gender,
-            "state" to customer.state,
-            "lga" to customer.lga,
-            "city" to customer.city,
-            "consentPrescriptionTracking" to customer.consentPrescriptionTracking,
-            "consentSmsRefills" to customer.consentSmsRefills,
-            "consentCloudSync" to customer.consentCloudSync,
-            "consentLastUpdated" to customer.consentLastUpdated,
-            "consentChannel" to customer.consentChannel
-        )
-        syncEntityToFirestore("branch_customers", customer.id.toString(), map)
+        // No-op: Handled via insertCustomerAndOutbox
     }
 
     private fun syncCustomerMedicationToBranch(med: com.example.data.CustomerMedication) {
-        val map = hashMapOf(
-            "id" to med.id,
-            "customerId" to med.customerId,
-            "inventoryItemId" to med.inventoryItemId,
-            "medicationName" to med.medicationName,
-            "customDosage" to med.customDosage,
-            "cost" to med.cost,
-            "cycleDays" to med.cycleDays,
-            "nextRefillDate" to med.nextRefillDate
-        )
-        syncEntityToFirestore("branch_customer_medications", med.id.toString(), map)
+        // No-op: Handled via insertCustomerMedicationAndOutbox
     }
 
     private fun syncClinicalInterventionToBranch(inter: com.example.data.ClinicalIntervention) {
-        val map = hashMapOf(
-            "id" to inter.id,
-            "customerId" to inter.customerId,
-            "presentation" to inter.presentation,
-            "testResults" to inter.testResults,
-            "recommendation" to inter.recommendation,
-            "currentStatus" to inter.currentStatus,
-            "followUpDay3Sent" to inter.followUpDay3Sent,
-            "followUpDay7Sent" to inter.followUpDay7Sent,
-            "followUpDay14Sent" to inter.followUpDay14Sent,
-            "dateAdded" to inter.dateAdded
-        )
-        syncEntityToFirestore("branch_interventions", inter.id.toString(), map)
+        // No-op: Handled via insertClinicalInterventionAndOutbox
     }
 
     fun deleteEntityFromFirestore(collectionName: String, docId: String) {

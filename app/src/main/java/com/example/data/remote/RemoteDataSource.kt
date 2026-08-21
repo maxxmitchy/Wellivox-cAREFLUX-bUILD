@@ -9,6 +9,7 @@ interface RemoteDataSource {
     fun getCurrentUserEmail(): String?
 
     suspend fun getPharmacistBranchId(uid: String): String?
+    suspend fun getPharmacistRole(uid: String): String?
 
     // Real-time flow streams
     fun observePharmacist(uid: String): Flow<Map<String, Any>?>

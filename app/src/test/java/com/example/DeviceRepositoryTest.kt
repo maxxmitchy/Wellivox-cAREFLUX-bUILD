@@ -342,6 +342,7 @@ class FakeDeviceRemoteDataSource : RemoteDataSource {
     override fun getCurrentUserUid(): String? = null
     override fun getCurrentUserEmail(): String? = null
     override suspend fun getPharmacistBranchId(uid: String): String? = null
+    override suspend fun getPharmacistRole(uid: String): String? = "Pharmacist"
 
     override fun observePharmacist(uid: String): Flow<Map<String, Any>?> = emptyFlow()
     override fun observeBranchSettings(branchId: String): Flow<Map<String, Any>?> = emptyFlow()

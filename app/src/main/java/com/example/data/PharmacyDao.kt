@@ -370,18 +370,20 @@ interface PharmacyDao {
     }
 
     @Transaction
+    suspend fun insertMedicationSaleAndOutbox(sale: MedicationSale, outbox: com.example.data.sync.SyncOutboxRecord) {
+        if (outbox.payloadJson.isNotBlank()) org.json.JSONObject(outbox.payloadJson)
+        insertMedicationSale(sale)
+        insertOutboxRecord(outbox)
+    }
+
+    @Transaction
     suspend fun insertCustomerAndOutbox(customer: Customer, outbox: com.example.data.sync.SyncOutboxRecord): Long {
+        val jsonObj = org.json.JSONObject(outbox.payloadJson)
         val id = insertCustomer(customer)
-        val updatedPayload = try {
-            val jsonObj = org.json.JSONObject(outbox.payloadJson)
-            jsonObj.put("id", id)
-            jsonObj.toString()
-        } catch (e: Exception) {
-            outbox.payloadJson
-        }
+        jsonObj.put("id", id)
         val updatedOutbox = outbox.copy(
             entityId = if (outbox.entityId.isBlank() || outbox.entityId == "0") id.toString() else outbox.entityId,
-            payloadJson = updatedPayload
+            payloadJson = jsonObj.toString()
         )
         insertOutboxRecord(updatedOutbox)
         return id
@@ -389,29 +391,26 @@ interface PharmacyDao {
 
     @Transaction
     suspend fun updateCustomerAndOutbox(customer: Customer, outbox: com.example.data.sync.SyncOutboxRecord) {
+        if (outbox.payloadJson.isNotBlank()) org.json.JSONObject(outbox.payloadJson)
         updateCustomer(customer)
         insertOutboxRecord(outbox)
     }
 
     @Transaction
     suspend fun deleteCustomerAndOutbox(customer: Customer, outbox: com.example.data.sync.SyncOutboxRecord) {
+        if (outbox.payloadJson.isNotBlank()) org.json.JSONObject(outbox.payloadJson)
         deleteCustomer(customer)
         insertOutboxRecord(outbox)
     }
 
     @Transaction
     suspend fun insertCustomerMedicationAndOutbox(medication: CustomerMedication, outbox: com.example.data.sync.SyncOutboxRecord): Long {
+        val jsonObj = org.json.JSONObject(outbox.payloadJson)
         val id = insertCustomerMedication(medication)
-        val updatedPayload = try {
-            val jsonObj = org.json.JSONObject(outbox.payloadJson)
-            jsonObj.put("id", id)
-            jsonObj.toString()
-        } catch (e: Exception) {
-            outbox.payloadJson
-        }
+        jsonObj.put("id", id)
         val updatedOutbox = outbox.copy(
             entityId = if (outbox.entityId.isBlank() || outbox.entityId == "0") id.toString() else outbox.entityId,
-            payloadJson = updatedPayload
+            payloadJson = jsonObj.toString()
         )
         insertOutboxRecord(updatedOutbox)
         return id
@@ -419,29 +418,26 @@ interface PharmacyDao {
 
     @Transaction
     suspend fun updateCustomerMedicationAndOutbox(medication: CustomerMedication, outbox: com.example.data.sync.SyncOutboxRecord) {
+        if (outbox.payloadJson.isNotBlank()) org.json.JSONObject(outbox.payloadJson)
         updateCustomerMedication(medication)
         insertOutboxRecord(outbox)
     }
 
     @Transaction
     suspend fun deleteCustomerMedicationAndOutbox(medication: CustomerMedication, outbox: com.example.data.sync.SyncOutboxRecord) {
+        if (outbox.payloadJson.isNotBlank()) org.json.JSONObject(outbox.payloadJson)
         deleteCustomerMedication(medication)
         insertOutboxRecord(outbox)
     }
 
     @Transaction
     suspend fun insertClinicalInterventionAndOutbox(intervention: ClinicalIntervention, outbox: com.example.data.sync.SyncOutboxRecord): Long {
+        val jsonObj = org.json.JSONObject(outbox.payloadJson)
         val id = insertClinicalIntervention(intervention)
-        val updatedPayload = try {
-            val jsonObj = org.json.JSONObject(outbox.payloadJson)
-            jsonObj.put("id", id)
-            jsonObj.toString()
-        } catch (e: Exception) {
-            outbox.payloadJson
-        }
+        jsonObj.put("id", id)
         val updatedOutbox = outbox.copy(
             entityId = if (outbox.entityId.isBlank() || outbox.entityId == "0") id.toString() else outbox.entityId,
-            payloadJson = updatedPayload
+            payloadJson = jsonObj.toString()
         )
         insertOutboxRecord(updatedOutbox)
         return id
@@ -449,29 +445,26 @@ interface PharmacyDao {
 
     @Transaction
     suspend fun updateClinicalInterventionAndOutbox(intervention: ClinicalIntervention, outbox: com.example.data.sync.SyncOutboxRecord) {
+        if (outbox.payloadJson.isNotBlank()) org.json.JSONObject(outbox.payloadJson)
         updateClinicalIntervention(intervention)
         insertOutboxRecord(outbox)
     }
 
     @Transaction
     suspend fun deleteClinicalInterventionAndOutbox(intervention: ClinicalIntervention, outbox: com.example.data.sync.SyncOutboxRecord) {
+        if (outbox.payloadJson.isNotBlank()) org.json.JSONObject(outbox.payloadJson)
         deleteClinicalIntervention(intervention)
         insertOutboxRecord(outbox)
     }
 
     @Transaction
     suspend fun insertInventoryItemAndOutbox(item: InventoryItem, outbox: com.example.data.sync.SyncOutboxRecord): Long {
+        val jsonObj = org.json.JSONObject(outbox.payloadJson)
         val id = insertInventoryItem(item)
-        val updatedPayload = try {
-            val jsonObj = org.json.JSONObject(outbox.payloadJson)
-            jsonObj.put("id", id)
-            jsonObj.toString()
-        } catch (e: Exception) {
-            outbox.payloadJson
-        }
+        jsonObj.put("id", id)
         val updatedOutbox = outbox.copy(
             entityId = if (outbox.entityId.isBlank() || outbox.entityId == "0") id.toString() else outbox.entityId,
-            payloadJson = updatedPayload
+            payloadJson = jsonObj.toString()
         )
         insertOutboxRecord(updatedOutbox)
         return id
@@ -479,48 +472,56 @@ interface PharmacyDao {
 
     @Transaction
     suspend fun updateInventoryItemAndOutbox(item: InventoryItem, outbox: com.example.data.sync.SyncOutboxRecord) {
+        if (outbox.payloadJson.isNotBlank()) org.json.JSONObject(outbox.payloadJson)
         updateInventoryItem(item)
         insertOutboxRecord(outbox)
     }
 
     @Transaction
     suspend fun deleteInventoryItemAndOutbox(item: InventoryItem, outbox: com.example.data.sync.SyncOutboxRecord) {
+        if (outbox.payloadJson.isNotBlank()) org.json.JSONObject(outbox.payloadJson)
         deleteInventoryItem(item)
         insertOutboxRecord(outbox)
     }
 
     @Transaction
     suspend fun insertOperationTaskAndOutbox(task: OperationTask, outbox: com.example.data.sync.SyncOutboxRecord) {
+        if (outbox.payloadJson.isNotBlank()) org.json.JSONObject(outbox.payloadJson)
         insertOperationTask(task)
         insertOutboxRecord(outbox)
     }
 
     @Transaction
     suspend fun updateOperationTaskAndOutbox(task: OperationTask, outbox: com.example.data.sync.SyncOutboxRecord) {
+        if (outbox.payloadJson.isNotBlank()) org.json.JSONObject(outbox.payloadJson)
         updateOperationTask(task)
         insertOutboxRecord(outbox)
     }
 
     @Transaction
     suspend fun deleteOperationTaskAndOutbox(task: OperationTask, outbox: com.example.data.sync.SyncOutboxRecord) {
+        if (outbox.payloadJson.isNotBlank()) org.json.JSONObject(outbox.payloadJson)
         deleteOperationTask(task)
         insertOutboxRecord(outbox)
     }
 
     @Transaction
     suspend fun insertReceiptAndOutbox(receipt: Receipt, outbox: com.example.data.sync.SyncOutboxRecord) {
+        if (outbox.payloadJson.isNotBlank()) org.json.JSONObject(outbox.payloadJson)
         insertReceipt(receipt)
         insertOutboxRecord(outbox)
     }
 
     @Transaction
     suspend fun updateReceiptAndOutbox(receipt: Receipt, outbox: com.example.data.sync.SyncOutboxRecord) {
+        if (outbox.payloadJson.isNotBlank()) org.json.JSONObject(outbox.payloadJson)
         updateReceipt(receipt)
         insertOutboxRecord(outbox)
     }
 
     @Transaction
     suspend fun deleteReceiptAndOutbox(receipt: Receipt, outbox: com.example.data.sync.SyncOutboxRecord) {
+        if (outbox.payloadJson.isNotBlank()) org.json.JSONObject(outbox.payloadJson)
         deleteReceipt(receipt)
         insertOutboxRecord(outbox)
     }

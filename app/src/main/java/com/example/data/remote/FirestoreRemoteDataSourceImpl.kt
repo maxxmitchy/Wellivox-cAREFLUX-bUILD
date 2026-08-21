@@ -34,6 +34,15 @@ class FirestoreRemoteDataSourceImpl(
         }
     }
 
+    override suspend fun getPharmacistRole(uid: String): String? {
+        return try {
+            val doc = firestore.collection("registered_pharmacists").document(uid).get().await()
+            doc.getString("role")
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     override fun observePharmacist(uid: String): Flow<Map<String, Any>?> = callbackFlow {
         val fs = firestore
         if (fs == null) {

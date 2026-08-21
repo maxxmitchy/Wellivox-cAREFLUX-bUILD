@@ -72,8 +72,14 @@ class CloudSyncWorker(
                         // Skip without altering status until user authenticates
                         continue
                     }
-                    val userEmail = repository.getCurrentUserEmail()
-                    val isSystemAdmin = userEmail == "maduemeziachinedu6@gmail.com"
+                    val userRole = repository.getPharmacistRole(currentUserUid)
+                    val isSystemAdmin = userRole != null && (
+                        userRole.equals("Admin", ignoreCase = true) ||
+                        userRole.equals("SuperAdmin", ignoreCase = true) ||
+                        userRole.equals("SystemAdmin", ignoreCase = true) ||
+                        userRole.equals("System Administrator", ignoreCase = true) ||
+                        userRole.equals("Branch Manager", ignoreCase = true)
+                    )
                     if (!isSystemAdmin && branchId != null && branchId != record.branchId) {
                         android.util.Log.w(
                             "CloudSyncWorker",
@@ -280,47 +286,8 @@ class CloudSyncWorker(
                     e.printStackTrace()
                 }
 
-                // Sync Local Customers to Cloud
-                val localCustomers = dao.getAllCustomers().firstOrNull() ?: emptyList()
-                for (c in localCustomers) {
-                    val targetBranchId = c.branchId
-                    if (targetBranchId.isBlank()) {
-                        android.util.Log.w("CloudSyncWorker", "Skipping customer ${c.id} upload: missing branchId lineage.")
-                        continue
-                    }
-                    val customerMap = hashMapOf(
-                        "id" to c.id,
-                        "name" to c.name,
-                        "phoneNumber" to c.phoneNumber,
-                        "email" to c.email,
-                        "notes" to c.notes,
-                        "loyaltyPoints" to c.loyaltyPoints,
-                        "refillStreak" to c.refillStreak,
-                        "dateAdded" to c.dateAdded,
-                        "age" to c.age,
-                        "gender" to c.gender,
-                        "state" to c.state,
-                        "lga" to c.lga,
-                        "city" to c.city,
-                        "syncedFromDevice" to deviceId,
-                        "deviceModel" to deviceModel,
-                        "lastSyncedAt" to syncTime,
-                        "branchId" to targetBranchId,
-                        "originatingUserUid" to c.originatingUserUid,
-                        "consentPrescriptionTracking" to c.consentPrescriptionTracking,
-                        "consentSmsRefills" to c.consentSmsRefills,
-                        "consentCloudSync" to c.consentCloudSync,
-                        "consentLastUpdated" to c.consentLastUpdated,
-                        "consentChannel" to c.consentChannel
-                    )
-                    
-                    val globalDocId = "${deviceId}_${c.id}"
-                    repository.upsertRemoteDocument("customers", globalDocId, customerMap)
-                    repository.upsertRemoteDocument("branch_customers", "${targetBranchId}_${c.id}", customerMap)
-                }
-
                 // ==========================================
-                // 2. Bi-directional Customer Medications Sync
+                // 2. Bi-directional Customer Medications Sync (Remote Ingestion)
                 // ==========================================
                 try {
                     val remoteMedDocs = repository.getRemoteDocumentsWhereEquals("branch_customer_medications", "branchId", branchId).getOrDefault(emptyList())
@@ -361,38 +328,8 @@ class CloudSyncWorker(
                     e.printStackTrace()
                 }
 
-                // Sync Local Medications to Cloud
-                val localMedications = dao.getAllCustomerMedications().firstOrNull() ?: emptyList()
-                for (m in localMedications) {
-                    val targetBranchId = m.branchId
-                    if (targetBranchId.isBlank()) {
-                        android.util.Log.w("CloudSyncWorker", "Skipping medication ${m.id} upload: missing branchId lineage.")
-                        continue
-                    }
-                    val medMap = hashMapOf(
-                        "id" to m.id,
-                        "customerId" to m.customerId,
-                        "inventoryItemId" to m.inventoryItemId,
-                        "medicationName" to m.medicationName,
-                        "customDosage" to m.customDosage,
-                        "cost" to m.cost,
-                        "cycleDays" to m.cycleDays,
-                        "nextRefillDate" to m.nextRefillDate,
-                        "syncedFromDevice" to deviceId,
-                        "deviceModel" to deviceModel,
-                        "lastSyncedAt" to syncTime,
-                        "branchId" to targetBranchId,
-                        "originatingUserUid" to m.originatingUserUid,
-                        "globalCustomerDocId" to "${deviceId}_${m.customerId}"
-                    )
-                    
-                    val globalMedDocId = "${deviceId}_${m.id}"
-                    repository.upsertRemoteDocument("customer_medications", globalMedDocId, medMap)
-                    repository.upsertRemoteDocument("branch_customer_medications", "${targetBranchId}_${m.id}", medMap)
-                }
-
                 // ==========================================
-                // 3. Bi-directional Clinical Interventions Sync
+                // 3. Bi-directional Clinical Interventions Sync (Remote Ingestion)
                 // ==========================================
                 try {
                     val remoteIntDocs = repository.getRemoteDocumentsWhereEquals("branch_interventions", "branchId", branchId).getOrDefault(emptyList())
@@ -436,44 +373,11 @@ class CloudSyncWorker(
                     e.printStackTrace()
                 }
 
-                // Sync Local Interventions to Cloud
-                val localInterventions = dao.getAllClinicalInterventions().firstOrNull() ?: emptyList()
-                for (i in localInterventions) {
-                    val targetBranchId = i.branchId
-                    if (targetBranchId.isBlank()) {
-                        android.util.Log.w("CloudSyncWorker", "Skipping intervention ${i.id} upload: missing branchId lineage.")
-                        continue
-                    }
-                    val interventionMap = hashMapOf(
-                        "id" to i.id,
-                        "customerId" to i.customerId,
-                        "presentation" to i.presentation,
-                        "testResults" to i.testResults,
-                        "recommendation" to i.recommendation,
-                        "currentStatus" to i.currentStatus,
-                        "followUpDay3Sent" to i.followUpDay3Sent,
-                        "followUpDay7Sent" to i.followUpDay7Sent,
-                        "followUpDay14Sent" to i.followUpDay14Sent,
-                        "dateAdded" to i.dateAdded,
-                        "syncedFromDevice" to deviceId,
-                        "deviceModel" to deviceModel,
-                        "lastSyncedAt" to syncTime,
-                        "branchId" to targetBranchId,
-                        "originatingUserUid" to i.originatingUserUid,
-                        "globalCustomerDocId" to "${deviceId}_${i.customerId}"
-                    )
-                    
-                    val globalIntDocId = "${deviceId}_${i.id}"
-                    repository.upsertRemoteDocument("interventions", globalIntDocId, interventionMap)
-                    repository.upsertRemoteDocument("branch_interventions", "${targetBranchId}_${i.id}", interventionMap)
-                }
-
                 // ==========================================
-                // 4. Bi-directional Inventory (Products) Sync
+                // 4. Bi-directional Inventory (Products) Sync (Remote Ingestion)
                 // ==========================================
-                var remoteInvDocs: List<Map<String, Any>> = emptyList()
                 try {
-                    remoteInvDocs = repository.getRemoteDocumentsWhereEquals("branch_inventory", "branchId", branchId).getOrDefault(emptyList())
+                    val remoteInvDocs = repository.getRemoteDocumentsWhereEquals("branch_inventory", "branchId", branchId).getOrDefault(emptyList())
                     for (doc in remoteInvDocs) {
                         val docBranchId = doc["branchId"] as? String
                         if (docBranchId.isNullOrBlank() || docBranchId != branchId) {
@@ -529,104 +433,50 @@ class CloudSyncWorker(
                     e.printStackTrace()
                 }
 
-                // Sync Local Inventory Items to Cloud (if local metadata is newer; never overwrite stock unconditionally)
-                val localInventory = dao.getAllInventoryItems().firstOrNull() ?: emptyList()
-                val remoteDocsMap = remoteInvDocs.associateBy { (it["id"] as? Number)?.toInt() ?: 0 }
-
-                for (item in localInventory) {
-                    if (item.id == 0) continue // Skip corrupt placeholder
-                    
-                    val targetBranchId = item.branchId
-                    if (targetBranchId.isBlank()) {
-                        android.util.Log.w("CloudSyncWorker", "Skipping inventory item ${item.id} upload: missing branchId lineage.")
-                        continue
-                    }
-                    val remoteDoc = remoteDocsMap[item.id]
-                    if (remoteDoc == null) {
-                        // New local item: push initial document with stock quantity
-                        val invMap = hashMapOf(
-                            "id" to item.id,
-                            "name" to item.name,
-                            "dosage" to item.dosage,
-                            "stockQuantity" to item.stockQuantity,
-                            "minRequiredStock" to item.minRequiredStock,
-                            "category" to item.category,
-                            "price" to item.price,
-                            "expiryDate" to item.expiryDate,
-                            "batchNumber" to item.batchNumber,
-                            "supplier" to item.supplier,
-                            "unitForm" to item.unitForm,
-                            "lastSoldDate" to item.lastSoldDate,
-                            "totalSoldQuantity" to item.totalSoldQuantity,
-                            "brand" to item.brand,
-                            "salesStrategy" to item.salesStrategy,
-                            "lastUpdated" to item.lastUpdated,
-                            "branchId" to targetBranchId,
-                            "originatingUserUid" to item.originatingUserUid,
-                            "imageUri" to (item.imageUri ?: "")
-                        )
-                        repository.upsertRemoteDocument("branch_inventory", "${targetBranchId}_${item.id}", invMap)
-                    } else {
-                        // Existing item: update metadata only if local is newer, preserving remote stock
-                        val remoteLastUpdated = (remoteDoc["lastUpdated"] as? Number)?.toLong() ?: 0L
-                        if (item.lastUpdated > remoteLastUpdated) {
-                            val metadataMap = hashMapOf(
-                                "id" to item.id,
-                                "name" to item.name,
-                                "dosage" to item.dosage,
-                                "minRequiredStock" to item.minRequiredStock,
-                                "category" to item.category,
-                                "price" to item.price,
-                                "expiryDate" to item.expiryDate,
-                                "batchNumber" to item.batchNumber,
-                                "supplier" to item.supplier,
-                                "unitForm" to item.unitForm,
-                                "brand" to item.brand,
-                                "salesStrategy" to item.salesStrategy,
-                                "lastUpdated" to item.lastUpdated,
-                                "branchId" to targetBranchId,
-                                "originatingUserUid" to item.originatingUserUid,
-                                "imageUri" to (item.imageUri ?: "")
-                            )
-                            repository.upsertRemoteDocument("branch_inventory", "${targetBranchId}_${item.id}", metadataMap)
-                        }
-                    }
-                }
-
                 // ==========================================
-                // 5. Bi-directional Medication Sales Sync
+                // 5. Bi-directional Operation Task Sync (Remote Ingestion)
                 // ==========================================
                 try {
-                    val pendingSales = dao.getAllMedicationSales().firstOrNull() ?: emptyList()
-                    for (sale in pendingSales) {
-                        if (sale.clientTransactionId.isBlank()) continue
-                        val saleDoc = repository.getRemoteDocument("medication_sales", sale.clientTransactionId).getOrNull()
-                        if (saleDoc == null) {
-                            val targetBranchId = sale.branchId
-                            if (targetBranchId.isBlank()) {
-                                android.util.Log.w("CloudSyncWorker", "Skipping sale ${sale.clientTransactionId} upload: missing branchId lineage.")
-                                continue
-                            }
-                            val saleMap = mapOf(
-                                "productName" to sale.productName,
-                                "brand" to sale.brand,
-                                "genericName" to sale.genericName,
-                                "category" to sale.category,
-                                "quantitySold" to sale.quantitySold,
-                                "dateSold" to sale.dateSold,
-                                "pharmacyNode" to sale.pharmacyNode,
-                                "patientAge" to sale.patientAge,
-                                "patientGender" to sale.patientGender,
-                                "patientState" to sale.patientState,
-                                "patientLga" to sale.patientLga,
-                                "patientCity" to sale.patientCity,
-                                "salePrice" to sale.salePrice,
-                                "batchNumber" to sale.batchNumber,
-                                "clientTransactionId" to sale.clientTransactionId,
-                                "branchId" to targetBranchId,
-                                "originatingUserUid" to sale.originatingUserUid
+                    val remoteTaskDocs = repository.getRemoteDocumentsWhereEquals("branch_operation_tasks", "branchId", branchId).getOrDefault(emptyList())
+                    for (doc in remoteTaskDocs) {
+                        val docBranchId = doc["branchId"] as? String
+                        if (docBranchId.isNullOrBlank() || docBranchId != branchId) continue
+                        val id = (doc["id"] as? Number)?.toInt()
+                            ?: (doc["id"] as? String)?.toIntOrNull()
+                            ?: continue
+                        val title = doc["title"] as? String ?: ""
+                        val description = doc["description"] as? String ?: ""
+                        val urgency = doc["urgency"] as? String ?: "Normal"
+                        val category = doc["category"] as? String ?: "General"
+                        val isCompleted = doc["isCompleted"] as? Boolean ?: false
+                        val createdAt = (doc["createdAt"] as? Number)?.toLong() ?: syncTime
+
+                        val localTasks = dao.getAllOperationTasks().firstOrNull() ?: emptyList()
+                        val localTask = localTasks.find { it.id == id }
+                        if (localTask == null) {
+                            val newLocalTask = com.example.data.OperationTask(
+                                id = id,
+                                title = title,
+                                description = description,
+                                urgency = urgency,
+                                category = category,
+                                isCompleted = isCompleted,
+                                createdAt = createdAt,
+                                branchId = docBranchId,
+                                originatingUserUid = doc["originatingUserUid"] as? String ?: "",
+                                assignedToName = doc["assignedToName"] as? String,
+                                assignedToUid = doc["assignedToUid"] as? String,
+                                verifiedBy = doc["verifiedBy"] as? String,
+                                verificationNotes = doc["verificationNotes"] as? String,
+                                verificationChannel = doc["verificationChannel"] as? String,
+                                verificationCustomerName = doc["verificationCustomerName"] as? String,
+                                verifiedAt = (doc["verifiedAt"] as? Number)?.toLong(),
+                                isApproved = doc["isApproved"] as? Boolean ?: false,
+                                approvedBy = doc["approvedBy"] as? String,
+                                approvedAt = (doc["approvedAt"] as? Number)?.toLong(),
+                                approvalNotes = doc["approvalNotes"] as? String
                             )
-                            repository.upsertRemoteDocument("medication_sales", sale.clientTransactionId, saleMap)
+                            dao.insertOperationTask(newLocalTask)
                         }
                     }
                 } catch (e: Exception) {
@@ -634,75 +484,40 @@ class CloudSyncWorker(
                 }
 
                 // ==========================================
-                // 6. Bi-directional Operation Task Sync
+                // 6. Bi-directional Receipt Sync (Remote Ingestion)
                 // ==========================================
                 try {
-                    val pendingTasks = dao.getAllOperationTasks().firstOrNull() ?: emptyList()
-                    for (task in pendingTasks) {
-                        val targetBranchId = task.branchId
-                        if (targetBranchId.isBlank()) {
-                            android.util.Log.w("CloudSyncWorker", "Skipping task ${task.id} upload: missing branchId lineage.")
-                            continue
-                        }
-                        val docId = "${targetBranchId}_${task.id}"
-                        val taskDoc = repository.getRemoteDocument("branch_operation_tasks", docId).getOrNull()
-                        if (taskDoc == null) {
-                            val taskMap = mapOf(
-                                "id" to task.id,
-                                "title" to task.title,
-                                "description" to task.description,
-                                "urgency" to task.urgency,
-                                "category" to task.category,
-                                "isCompleted" to task.isCompleted,
-                                "createdAt" to task.createdAt,
-                                "branchId" to targetBranchId,
-                                "originatingUserUid" to task.originatingUserUid,
-                                "assignedToName" to (task.assignedToName ?: ""),
-                                "assignedToUid" to (task.assignedToUid ?: ""),
-                                "verifiedBy" to (task.verifiedBy ?: ""),
-                                "verificationNotes" to (task.verificationNotes ?: ""),
-                                "verificationChannel" to (task.verificationChannel ?: ""),
-                                "verificationCustomerName" to (task.verificationCustomerName ?: ""),
-                                "verifiedAt" to (task.verifiedAt ?: 0L),
-                                "isApproved" to task.isApproved,
-                                "approvedBy" to (task.approvedBy ?: ""),
-                                "approvedAt" to (task.approvedAt ?: 0L),
-                                "approvalNotes" to (task.approvalNotes ?: "")
-                            )
-                            repository.upsertRemoteDocument("branch_operation_tasks", docId, taskMap)
-                        }
-                    }
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
+                    val remoteReceiptDocs = repository.getRemoteDocumentsWhereEquals("branch_receipts", "branchId", branchId).getOrDefault(emptyList())
+                    for (doc in remoteReceiptDocs) {
+                        val docBranchId = doc["branchId"] as? String
+                        if (docBranchId.isNullOrBlank() || docBranchId != branchId) continue
+                        val id = (doc["id"] as? Number)?.toInt()
+                            ?: (doc["id"] as? String)?.toIntOrNull()
+                            ?: continue
+                        val timestamp = (doc["timestamp"] as? Number)?.toLong() ?: syncTime
+                        val customerName = doc["customerName"] as? String ?: ""
+                        val totalAmount = (doc["totalAmount"] as? Number)?.toDouble() ?: 0.0
+                        val imageFileName = doc["imageFileName"] as? String ?: ""
+                        val isInvoice = doc["isInvoice"] as? Boolean ?: false
+                        val paymentStatus = doc["paymentStatus"] as? String ?: "Paid"
+                        val orderId = doc["orderId"] as? String ?: ""
 
-                // ==========================================
-                // 7. Bi-directional Receipt Sync
-                // ==========================================
-                try {
-                    val pendingReceipts = dao.getAllReceipts().firstOrNull() ?: emptyList()
-                    for (receipt in pendingReceipts) {
-                        val targetBranchId = receipt.branchId
-                        if (targetBranchId.isBlank()) {
-                            android.util.Log.w("CloudSyncWorker", "Skipping receipt ${receipt.id} upload: missing branchId lineage.")
-                            continue
-                        }
-                        val docId = "${targetBranchId}_${receipt.id}"
-                        val receiptDoc = repository.getRemoteDocument("branch_receipts", docId).getOrNull()
-                        if (receiptDoc == null) {
-                            val receiptMap = mapOf(
-                                "id" to receipt.id,
-                                "timestamp" to receipt.timestamp,
-                                "customerName" to receipt.customerName,
-                                "totalAmount" to receipt.totalAmount,
-                                "imageFileName" to receipt.imageFileName,
-                                "isInvoice" to receipt.isInvoice,
-                                "paymentStatus" to receipt.paymentStatus,
-                                "orderId" to receipt.orderId,
-                                "branchId" to targetBranchId,
-                                "originatingUserUid" to receipt.originatingUserUid
+                        val localReceipts = dao.getAllReceipts().firstOrNull() ?: emptyList()
+                        val localReceipt = localReceipts.find { it.id == id }
+                        if (localReceipt == null) {
+                            val newLocalReceipt = com.example.data.Receipt(
+                                id = id,
+                                timestamp = timestamp,
+                                customerName = customerName,
+                                totalAmount = totalAmount,
+                                imageFileName = imageFileName,
+                                isInvoice = isInvoice,
+                                paymentStatus = paymentStatus,
+                                orderId = orderId,
+                                branchId = docBranchId,
+                                originatingUserUid = doc["originatingUserUid"] as? String ?: ""
                             )
-                            repository.upsertRemoteDocument("branch_receipts", docId, receiptMap)
+                            dao.insertReceipt(newLocalReceipt)
                         }
                     }
                 } catch (e: Exception) {
