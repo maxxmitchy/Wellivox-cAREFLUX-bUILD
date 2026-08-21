@@ -12,11 +12,13 @@ import android.widget.Toast
 import com.example.BuildConfig
 import com.example.data.*
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -891,25 +893,37 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
             initialValue = emptyList()
         )
 
-        receipts = repository.allReceipts.stateIn(
+        receipts = @OptIn(ExperimentalCoroutinesApi::class) _currentPharmacistBranchId.flatMapLatest { branch ->
+            val b = branch ?: ""
+            if (b.isBlank()) repository.allReceipts else repository.getReceiptsForBranch(b)
+        }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
 
-        operationTasks = repository.allOperationTasks.stateIn(
+        operationTasks = @OptIn(ExperimentalCoroutinesApi::class) _currentPharmacistBranchId.flatMapLatest { branch ->
+            val b = branch ?: ""
+            if (b.isBlank()) repository.allOperationTasks else repository.getOperationTasksForBranch(b)
+        }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
 
-        inventoryItems = repository.allInventoryItems.stateIn(
+        inventoryItems = @OptIn(ExperimentalCoroutinesApi::class) _currentPharmacistBranchId.flatMapLatest { branch ->
+            val b = branch ?: ""
+            if (b.isBlank()) repository.allInventoryItems else repository.getInventoryForBranch(b)
+        }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
 
-        lowStockItems = repository.lowStockItems.stateIn(
+        lowStockItems = @OptIn(ExperimentalCoroutinesApi::class) _currentPharmacistBranchId.flatMapLatest { branch ->
+            val b = branch ?: ""
+            if (b.isBlank()) repository.lowStockItems else repository.getLowStockItemsForBranch(b)
+        }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
@@ -947,25 +961,37 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
             initialValue = emptyList()
         )
 
-        customers = repository.allCustomers.stateIn(
+        customers = @OptIn(ExperimentalCoroutinesApi::class) _currentPharmacistBranchId.flatMapLatest { branch ->
+            val b = branch ?: ""
+            if (b.isBlank()) repository.allCustomers else repository.getCustomersForBranch(b)
+        }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
 
-        customerMedications = repository.allCustomerMedications.stateIn(
+        customerMedications = @OptIn(ExperimentalCoroutinesApi::class) _currentPharmacistBranchId.flatMapLatest { branch ->
+            val b = branch ?: ""
+            if (b.isBlank()) repository.allCustomerMedications else repository.getCustomerMedicationsForBranch(b)
+        }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
 
-        clinicalInterventions = repository.allClinicalInterventions.stateIn(
+        clinicalInterventions = @OptIn(ExperimentalCoroutinesApi::class) _currentPharmacistBranchId.flatMapLatest { branch ->
+            val b = branch ?: ""
+            if (b.isBlank()) repository.allClinicalInterventions else repository.getClinicalInterventionsForBranch(b)
+        }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
         )
 
-        medicationSales = repository.allMedicationSales.stateIn(
+        medicationSales = @OptIn(ExperimentalCoroutinesApi::class) _currentPharmacistBranchId.flatMapLatest { branch ->
+            val b = branch ?: ""
+            if (b.isBlank()) repository.allMedicationSales else repository.getMedicationSalesForBranch(b)
+        }.stateIn(
             scope = viewModelScope,
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = emptyList()
@@ -5914,7 +5940,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             val gen = branchGenerationToken.incrementAndGet()
             try {
-                // Cancel active listeners deterministically before clearing old branch local database data
+                // Cancel active listeners deterministically before switching branch sync scope
                 val jobsToCancel = activeSyncJobs.toList()
                 activeSyncJobs.clear()
                 jobsToCancel.forEach { job ->
@@ -5924,7 +5950,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                         // ignore cancellation exceptions
                     }
                 }
-                repository.clearAllData()
+                // Do NOT wipe local Room data — offline mutations across branches are preserved safely in Room
             } catch (e: Exception) {
                 android.util.Log.w("PharmacyViewModel", "Data wipe on branch switch failed: ${e.localizedMessage}")
             }

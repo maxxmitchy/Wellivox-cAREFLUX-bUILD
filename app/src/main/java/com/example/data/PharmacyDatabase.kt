@@ -30,9 +30,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         User::class,
         UserBranchAccess::class,
         CustomerBranch::class,
-        InventoryLedgerEntry::class
+        InventoryLedgerEntry::class,
+        com.example.data.sync.SyncOutboxRecord::class
     ],
-    version = 33,
+    version = 34,
     exportSchema = false
 )
 abstract class PharmacyDatabase : RoomDatabase() {
@@ -158,6 +159,37 @@ abstract class PharmacyDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_33_34 = object : Migration(33, 34) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `sync_outbox` (" +
+                    "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                    "`outboxId` TEXT NOT NULL, " +
+                    "`branchId` TEXT NOT NULL, " +
+                    "`entityType` TEXT NOT NULL, " +
+                    "`entityId` TEXT NOT NULL, " +
+                    "`operationType` TEXT NOT NULL, " +
+                    "`payloadJson` TEXT NOT NULL, " +
+                    "`createdAt` INTEGER NOT NULL, " +
+                    "`retryCount` INTEGER NOT NULL, " +
+                    "`lastAttemptAt` INTEGER NOT NULL, " +
+                    "`status` TEXT NOT NULL, " +
+                    "`clientTransactionId` TEXT NOT NULL, " +
+                    "`originatingUserUid` TEXT NOT NULL, " +
+                    "`errorMessage` TEXT)"
+                )
+                database.execSQL("CREATE INDEX IF NOT EXISTS `index_sync_outbox_branchId` ON `sync_outbox` (`branchId`)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS `index_sync_outbox_status` ON `sync_outbox` (`status`)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS `index_sync_outbox_clientTransactionId` ON `sync_outbox` (`clientTransactionId`)")
+
+                database.execSQL("ALTER TABLE `inventory_ledger_entries` ADD COLUMN `branchId` TEXT NOT NULL DEFAULT ''")
+
+                database.execSQL("UPDATE `medication_sales` SET `clientTransactionId` = 'LEGACY_SALE_' || `id` WHERE `clientTransactionId` = '' OR `clientTransactionId` IS NULL")
+                database.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_medication_sales_clientTransactionId` ON `medication_sales` (`clientTransactionId`)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS `index_medication_sales_branchId` ON `medication_sales` (`branchId`)")
+            }
+        }
+
         fun getDatabase(context: Context): PharmacyDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -165,7 +197,7 @@ abstract class PharmacyDatabase : RoomDatabase() {
                     PharmacyDatabase::class.java,
                     "pharmacy_database"
                 )
-                .addMigrations(MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_17_18, MIGRATION_22_23, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33)
+                .addMigrations(MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_17_18, MIGRATION_22_23, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34)
                 .build()
                 INSTANCE = instance
                 instance

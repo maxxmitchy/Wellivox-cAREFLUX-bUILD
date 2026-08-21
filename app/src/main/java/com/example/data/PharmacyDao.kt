@@ -365,6 +365,59 @@ interface PharmacyDao {
         insertInventoryLedgerEntry(ledgerEntry)
     }
 
+    // --- Sync Outbox Operations ---
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertOutboxRecord(record: com.example.data.sync.SyncOutboxRecord): Long
+
+    @Update
+    suspend fun updateOutboxRecord(record: com.example.data.sync.SyncOutboxRecord)
+
+    @Query("DELETE FROM sync_outbox WHERE id = :id")
+    suspend fun deleteOutboxRecordById(id: Int)
+
+    @Query("SELECT * FROM sync_outbox WHERE status = 'PENDING' OR status = 'FAILED' ORDER BY createdAt ASC")
+    suspend fun getPendingOutboxRecords(): List<com.example.data.sync.SyncOutboxRecord>
+
+    @Query("SELECT * FROM sync_outbox WHERE branchId = :branchId ORDER BY createdAt ASC")
+    fun getOutboxRecordsForBranch(branchId: String): Flow<List<com.example.data.sync.SyncOutboxRecord>>
+
+    @Query("SELECT * FROM sync_outbox WHERE clientTransactionId = :clientTxId LIMIT 1")
+    suspend fun getOutboxRecordByClientTxId(clientTxId: String): com.example.data.sync.SyncOutboxRecord?
+
+    @Query("DELETE FROM sync_outbox")
+    suspend fun clearSyncOutbox()
+
+    // --- Branch-Scoped Queries ---
+    @Query("SELECT * FROM customers WHERE branchId = :branchId ORDER BY name ASC")
+    fun getCustomersForBranch(branchId: String): Flow<List<Customer>>
+
+    @Query("SELECT * FROM inventory_items WHERE branchId = :branchId ORDER BY name ASC")
+    fun getInventoryForBranch(branchId: String): Flow<List<InventoryItem>>
+
+    @Query("SELECT * FROM inventory_items WHERE branchId = :branchId AND stockQuantity <= minRequiredStock")
+    fun getLowStockItemsForBranch(branchId: String): Flow<List<InventoryItem>>
+
+    @Query("SELECT * FROM operations_tasks WHERE branchId = :branchId ORDER BY isCompleted ASC, createdAt DESC")
+    fun getOperationTasksForBranch(branchId: String): Flow<List<OperationTask>>
+
+    @Query("SELECT * FROM receipts WHERE branchId = :branchId ORDER BY timestamp DESC")
+    fun getReceiptsForBranch(branchId: String): Flow<List<Receipt>>
+
+    @Query("SELECT * FROM medication_sales WHERE branchId = :branchId ORDER BY dateSold DESC")
+    fun getMedicationSalesForBranch(branchId: String): Flow<List<MedicationSale>>
+
+    @Query("SELECT * FROM medication_sales WHERE clientTransactionId = :clientTxId LIMIT 1")
+    suspend fun getMedicationSaleByClientTransactionId(clientTxId: String): MedicationSale?
+
+    @Query("SELECT * FROM clinical_interventions WHERE branchId = :branchId ORDER BY dateAdded DESC")
+    fun getClinicalInterventionsForBranch(branchId: String): Flow<List<ClinicalIntervention>>
+
+    @Query("SELECT * FROM customer_medications WHERE branchId = :branchId")
+    fun getCustomerMedicationsForBranch(branchId: String): Flow<List<CustomerMedication>>
+
+    @Query("SELECT * FROM inventory_ledger_entries WHERE branchId = :branchId ORDER BY timestamp DESC")
+    fun getInventoryLedgerEntriesForBranch(branchId: String): Flow<List<InventoryLedgerEntry>>
+
     @Transaction
     suspend fun clearAllData() {
         clearOperationTasks()

@@ -42,6 +42,125 @@ class CloudSyncWorker(
                     e.printStackTrace()
                 }
             }
+
+            // ==========================================
+            // 0. Drain Durable Outbox
+            // ==========================================
+            try {
+                val pendingOutbox = dao.getPendingOutboxRecords()
+                for (record in pendingOutbox) {
+                    // Objective 7: Authorization Check for Outbox Record Branch
+                    if (currentUserUid == null || (branchId != null && branchId != record.branchId)) {
+                        android.util.Log.w(
+                            "CloudSyncWorker",
+                            "Outbox record ${record.id} branch (${record.branchId}) differs from active user branch ($branchId). Marking BLOCKED without forcing upload or modifying branchId."
+                        )
+                        dao.updateOutboxRecord(
+                            record.copy(
+                                status = "BLOCKED",
+                                errorMessage = "User $currentUserUid not authorized for branch ${record.branchId}"
+                            )
+                        )
+                        continue
+                    }
+
+                    // Process Outbox Record based on entityType
+                    try {
+                        var uploadResult: kotlin.Result<Unit> = kotlin.Result.failure(Exception("Unknown entityType"))
+                        val payloadMap = try {
+                            val jsonObject = org.json.JSONObject(record.payloadJson)
+                            val map = mutableMapOf<String, Any?>()
+                            val keys = jsonObject.keys()
+                            while (keys.hasNext()) {
+                                val key = keys.next()
+                                val value = jsonObject.get(key)
+                                map[key] = if (value == org.json.JSONObject.NULL) null else value
+                            }
+                            map
+                        } catch (ex: Exception) {
+                            emptyMap<String, Any?>()
+                        }
+
+                        when (record.entityType) {
+                            "SALE" -> {
+                                val saleDocId = if (record.clientTransactionId.isNotBlank()) record.clientTransactionId else record.entityId
+                                if (saleDocId.isNotBlank() && payloadMap.isNotEmpty()) {
+                                    uploadResult = repository.upsertRemoteDocument("medication_sales", saleDocId, payloadMap)
+                                }
+                            }
+                            "CUSTOMER" -> {
+                                val docId = "${record.branchId}_${record.entityId}"
+                                if (payloadMap.isNotEmpty()) {
+                                    uploadResult = repository.upsertRemoteDocument("branch_customers", docId, payloadMap)
+                                }
+                            }
+                            "INVENTORY" -> {
+                                val docId = "${record.branchId}_${record.entityId}"
+                                if (payloadMap.isNotEmpty()) {
+                                    uploadResult = repository.upsertRemoteDocument("branch_inventory", docId, payloadMap)
+                                }
+                            }
+                            "CUSTOMER_MEDICATION" -> {
+                                val docId = "${record.branchId}_${record.entityId}"
+                                if (payloadMap.isNotEmpty()) {
+                                    uploadResult = repository.upsertRemoteDocument("branch_customer_medications", docId, payloadMap)
+                                }
+                            }
+                            "INTERVENTION" -> {
+                                val docId = "${record.branchId}_${record.entityId}"
+                                if (payloadMap.isNotEmpty()) {
+                                    uploadResult = repository.upsertRemoteDocument("branch_interventions", docId, payloadMap)
+                                }
+                            }
+                            "TASK" -> {
+                                val docId = "${record.branchId}_${record.entityId}"
+                                if (payloadMap.isNotEmpty()) {
+                                    uploadResult = repository.upsertRemoteDocument("branch_operation_tasks", docId, payloadMap)
+                                }
+                            }
+                            "RECEIPT" -> {
+                                val docId = "${record.branchId}_${record.entityId}"
+                                if (payloadMap.isNotEmpty()) {
+                                    uploadResult = repository.upsertRemoteDocument("branch_receipts", docId, payloadMap)
+                                }
+                            }
+                        }
+
+                        uploadResult.fold(
+                            onSuccess = {
+                                dao.updateOutboxRecord(
+                                    record.copy(
+                                        status = "SYNCED",
+                                        lastAttemptAt = System.currentTimeMillis(),
+                                        errorMessage = null
+                                    )
+                                )
+                            },
+                            onFailure = { err ->
+                                dao.updateOutboxRecord(
+                                    record.copy(
+                                        status = "FAILED",
+                                        retryCount = record.retryCount + 1,
+                                        lastAttemptAt = System.currentTimeMillis(),
+                                        errorMessage = err.localizedMessage
+                                    )
+                                )
+                            }
+                        )
+                    } catch (ex: Exception) {
+                        dao.updateOutboxRecord(
+                            record.copy(
+                                status = "FAILED",
+                                retryCount = record.retryCount + 1,
+                                lastAttemptAt = System.currentTimeMillis(),
+                                errorMessage = ex.localizedMessage
+                            )
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
             
             // If branchId is resolved, execute bi-directional synchronization
             if (!branchId.isNullOrBlank()) {

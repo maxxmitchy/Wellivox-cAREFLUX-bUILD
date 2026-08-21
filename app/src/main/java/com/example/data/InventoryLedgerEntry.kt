@@ -21,5 +21,6 @@ data class InventoryLedgerEntry(
     val actorName: String = "Pharmacist",
     val notes: String = "",
     val timestamp: Long = System.currentTimeMillis(),
-    val syncStatus: String = "SYNCED"
+    val syncStatus: String = "SYNCED",
+    val branchId: String = ""
 )

@@ -379,7 +379,8 @@ service cloud.firestore {
       );
       allow create: if isAuth() &&
         getBranchId() != null &&
-        request.resource.data.branchId == getBranchId();
+        request.resource.data.branchId == getBranchId() &&
+        request.resource.data.clientTransactionId == saleId;
       // Non-admins cannot modify existing sales after creation (append-only ledger)
       allow update: if isAdmin();
       allow delete: if isAdmin();
@@ -474,6 +475,11 @@ service cloud.firestore {
           request.resource.data.status in ['Claimed', 'Accepted'] &&
           request.resource.data.branchId == resource.data.branchId &&
           request.resource.data.ownerUid == resource.data.ownerUid &&
+          (isAdmin() || (
+            getBranchId() != null &&
+            (!('claimantUid' in request.resource.data) || request.resource.data.claimantUid == request.auth.uid) &&
+            (!('claimantBranchId' in request.resource.data) || request.resource.data.claimantBranchId == getBranchId())
+          )) &&
           request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'status', 'acceptedByDeviceId', 'acceptedByDeviceModel', 'acceptedAt', 'soldAt', 'quantity', 'profitShareAmount', 'claimantUid', 'claimedAt', 'claimantBranchId'
           ])

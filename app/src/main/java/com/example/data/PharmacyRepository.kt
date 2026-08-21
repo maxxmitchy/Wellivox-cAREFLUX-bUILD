@@ -103,6 +103,56 @@ class PharmacyRepository(
     suspend fun syncSaleTransaction(request: SaleSyncRequest): SyncResult =
         remoteDataSource.syncSaleTransaction(request)
 
+    // --- Outbox Operations ---
+    suspend fun insertOutboxRecord(record: com.example.data.sync.SyncOutboxRecord): Long =
+        pharmacyDao.insertOutboxRecord(record)
+
+    suspend fun updateOutboxRecord(record: com.example.data.sync.SyncOutboxRecord) =
+        pharmacyDao.updateOutboxRecord(record)
+
+    suspend fun deleteOutboxRecordById(id: Int) =
+        pharmacyDao.deleteOutboxRecordById(id)
+
+    suspend fun getPendingOutboxRecords(): List<com.example.data.sync.SyncOutboxRecord> =
+        pharmacyDao.getPendingOutboxRecords()
+
+    fun getOutboxRecordsForBranch(branchId: String): Flow<List<com.example.data.sync.SyncOutboxRecord>> =
+        pharmacyDao.getOutboxRecordsForBranch(branchId)
+
+    suspend fun getOutboxRecordByClientTxId(clientTxId: String): com.example.data.sync.SyncOutboxRecord? =
+        pharmacyDao.getOutboxRecordByClientTxId(clientTxId)
+
+    // --- Branch-Scoped Data Operations ---
+    fun getCustomersForBranch(branchId: String): Flow<List<Customer>> =
+        pharmacyDao.getCustomersForBranch(branchId)
+
+    fun getInventoryForBranch(branchId: String): Flow<List<InventoryItem>> =
+        pharmacyDao.getInventoryForBranch(branchId)
+
+    fun getLowStockItemsForBranch(branchId: String): Flow<List<InventoryItem>> =
+        pharmacyDao.getLowStockItemsForBranch(branchId)
+
+    fun getOperationTasksForBranch(branchId: String): Flow<List<OperationTask>> =
+        pharmacyDao.getOperationTasksForBranch(branchId)
+
+    fun getReceiptsForBranch(branchId: String): Flow<List<Receipt>> =
+        pharmacyDao.getReceiptsForBranch(branchId)
+
+    fun getMedicationSalesForBranch(branchId: String): Flow<List<MedicationSale>> =
+        pharmacyDao.getMedicationSalesForBranch(branchId)
+
+    suspend fun getMedicationSaleByClientTransactionId(clientTxId: String): MedicationSale? =
+        pharmacyDao.getMedicationSaleByClientTransactionId(clientTxId)
+
+    fun getClinicalInterventionsForBranch(branchId: String): Flow<List<ClinicalIntervention>> =
+        pharmacyDao.getClinicalInterventionsForBranch(branchId)
+
+    fun getCustomerMedicationsForBranch(branchId: String): Flow<List<CustomerMedication>> =
+        pharmacyDao.getCustomerMedicationsForBranch(branchId)
+
+    fun getInventoryLedgerEntriesForBranch(branchId: String): Flow<List<InventoryLedgerEntry>> =
+        pharmacyDao.getInventoryLedgerEntriesForBranch(branchId)
+
     suspend fun logOutboundSms(logData: Map<String, Any?>): Result<Unit> =
         remoteDataSource.logOutboundSms(logData)
 

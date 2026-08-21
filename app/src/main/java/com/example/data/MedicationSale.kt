@@ -1,9 +1,16 @@
 package com.example.data
 
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.PrimaryKey
 
-@Entity(tableName = "medication_sales")
+@Entity(
+    tableName = "medication_sales",
+    indices = [
+        Index(value = ["clientTransactionId"], unique = true),
+        Index(value = ["branchId"])
+    ]
+)
 data class MedicationSale(
     @PrimaryKey(autoGenerate = true) val id: Int = 0,
     val productName: String,

@@ -144,7 +144,7 @@ class PosDataIntegrityTest {
         val salesBlockStartIndex = content.indexOf("match /medication_sales/{saleId}")
         assertTrue("medication_sales match block must exist", salesBlockStartIndex >= 0)
         
-        val salesBlock = content.substring(salesBlockStartIndex, (salesBlockStartIndex + 500).coerceAtMost(content.length))
+        val salesBlock = content.substring(salesBlockStartIndex, (salesBlockStartIndex + 1000).coerceAtMost(content.length))
         assertTrue("medication_sales update must restrict non-admins", salesBlock.contains("allow update: if isAdmin();"))
         assertTrue("medication_sales delete must restrict non-admins", salesBlock.contains("allow delete: if isAdmin();"))
     }
