@@ -65,7 +65,30 @@ class NotificationActionReceiver : BroadcastReceiver() {
                                 assignedToName = staffName,
                                 assignedToUid = authUser.uid
                             )
-                            repository.updateOperationTask(updated)
+                            val targetBranchId = updated.branchId.ifBlank { branchId }
+                            val userUid = updated.originatingUserUid.ifBlank { authUser.uid }
+                            val map: Map<String, Any> = mapOf(
+                                "id" to updated.id,
+                                "title" to updated.title,
+                                "description" to updated.description,
+                                "urgency" to updated.urgency,
+                                "category" to updated.category,
+                                "isCompleted" to updated.isCompleted,
+                                "createdAt" to updated.createdAt,
+                                "branchId" to targetBranchId,
+                                "originatingUserUid" to userUid,
+                                "assignedToName" to (updated.assignedToName ?: ""),
+                                "assignedToUid" to (updated.assignedToUid ?: "")
+                            )
+                            val outbox = com.example.data.sync.SyncOutboxRecord(
+                                branchId = targetBranchId,
+                                entityType = "TASK",
+                                entityId = updated.id.toString(),
+                                operationType = "UPSERT",
+                                payloadJson = org.json.JSONObject(map).toString(),
+                                originatingUserUid = userUid
+                            )
+                            repository.updateOperationTaskAndOutbox(updated, outbox)
 
                             CoroutineScope(Dispatchers.Main).launch {
                                 Toast.makeText(
@@ -103,7 +126,32 @@ class NotificationActionReceiver : BroadcastReceiver() {
                                 verificationChannel = "SYSTEM_NOTIFICATION_SHADE",
                                 verifiedAt = System.currentTimeMillis()
                             )
-                            repository.updateOperationTask(updated)
+                            val targetBranchId = updated.branchId.ifBlank { branchId }
+                            val userUid = updated.originatingUserUid.ifBlank { authUser.uid }
+                            val map: Map<String, Any> = mapOf(
+                                "id" to updated.id,
+                                "title" to updated.title,
+                                "description" to updated.description,
+                                "urgency" to updated.urgency,
+                                "category" to updated.category,
+                                "isCompleted" to updated.isCompleted,
+                                "createdAt" to updated.createdAt,
+                                "branchId" to targetBranchId,
+                                "originatingUserUid" to userUid,
+                                "verifiedBy" to (updated.verifiedBy ?: ""),
+                                "verificationNotes" to (updated.verificationNotes ?: ""),
+                                "verificationChannel" to (updated.verificationChannel ?: ""),
+                                "verifiedAt" to (updated.verifiedAt ?: 0L)
+                            )
+                            val outbox = com.example.data.sync.SyncOutboxRecord(
+                                branchId = targetBranchId,
+                                entityType = "TASK",
+                                entityId = updated.id.toString(),
+                                operationType = "UPSERT",
+                                payloadJson = org.json.JSONObject(map).toString(),
+                                originatingUserUid = userUid
+                            )
+                            repository.updateOperationTaskAndOutbox(updated, outbox)
 
                             CoroutineScope(Dispatchers.Main).launch {
                                 Toast.makeText(

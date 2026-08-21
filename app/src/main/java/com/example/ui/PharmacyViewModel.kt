@@ -1712,7 +1712,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                         expiryDate = closestExpiry,
                         lastUpdated = System.currentTimeMillis()
                     )
-                    repository.insertInventoryItem(updatedItem)
+                    saveAndSyncInventoryItemDirectly(updatedItem)
                     
                     val map = mapOf(
                         "id" to updatedItem.id,
@@ -2246,7 +2246,34 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                     medications = emptyList(),
                     noteText = userNotes.trim()
                 )
-                repository.updateCustomer(updatedCustomer)
+                val custBranchId = updatedCustomer.branchId.ifBlank { getActiveBranchId() }
+                val custUserUid = updatedCustomer.originatingUserUid.ifBlank { getCurrentUserUid() }
+                val custMap = mapOf(
+                    "id" to updatedCustomer.id,
+                    "name" to updatedCustomer.name,
+                    "phoneNumber" to updatedCustomer.phoneNumber,
+                    "email" to updatedCustomer.email,
+                    "notes" to updatedCustomer.notes,
+                    "loyaltyPoints" to updatedCustomer.loyaltyPoints,
+                    "refillStreak" to updatedCustomer.refillStreak,
+                    "dateAdded" to updatedCustomer.dateAdded,
+                    "age" to updatedCustomer.age,
+                    "gender" to updatedCustomer.gender,
+                    "state" to updatedCustomer.state,
+                    "lga" to updatedCustomer.lga,
+                    "city" to updatedCustomer.city,
+                    "branchId" to custBranchId,
+                    "originatingUserUid" to custUserUid
+                )
+                val outboxRecord = com.example.data.sync.SyncOutboxRecord(
+                    branchId = custBranchId,
+                    entityType = "CUSTOMER",
+                    entityId = updatedCustomer.id.toString(),
+                    operationType = "UPSERT",
+                    payloadJson = org.json.JSONObject(custMap).toString(),
+                    originatingUserUid = custUserUid
+                )
+                repository.updateCustomerAndOutbox(updatedCustomer, outboxRecord)
                 syncCustomerToBranch(updatedCustomer)
                 
                 // Re-scan newly saved notes in case user specified a NEW future follow-up!
@@ -2355,6 +2382,42 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    private suspend fun updateOperationTaskAndOutboxHelper(task: OperationTask) {
+        val branchId = task.branchId.ifBlank { getActiveBranchId() }
+        val userUid = task.originatingUserUid.ifBlank { getCurrentUserUid() }
+        val map: Map<String, Any> = mapOf(
+            "id" to task.id,
+            "title" to task.title,
+            "description" to task.description,
+            "urgency" to task.urgency,
+            "category" to task.category,
+            "isCompleted" to task.isCompleted,
+            "createdAt" to task.createdAt,
+            "branchId" to branchId,
+            "originatingUserUid" to userUid,
+            "assignedToName" to (task.assignedToName ?: ""),
+            "assignedToUid" to (task.assignedToUid ?: ""),
+            "verifiedBy" to (task.verifiedBy ?: ""),
+            "verificationNotes" to (task.verificationNotes ?: ""),
+            "verificationChannel" to (task.verificationChannel ?: ""),
+            "verificationCustomerName" to (task.verificationCustomerName ?: ""),
+            "verifiedAt" to (task.verifiedAt ?: 0L),
+            "isApproved" to task.isApproved,
+            "approvedBy" to (task.approvedBy ?: ""),
+            "approvedAt" to (task.approvedAt ?: 0L),
+            "approvalNotes" to (task.approvalNotes ?: "")
+        )
+        val outbox = com.example.data.sync.SyncOutboxRecord(
+            branchId = branchId,
+            entityType = "TASK",
+            entityId = task.id.toString(),
+            operationType = "UPSERT",
+            payloadJson = org.json.JSONObject(map).toString(),
+            originatingUserUid = userUid
+        )
+        repository.updateOperationTaskAndOutbox(task, outbox)
+    }
+
     fun verifiablyCompleteOperationTask(
         task: OperationTask,
         notes: String,
@@ -2374,8 +2437,8 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 verificationCustomerName = patientName.trim(),
                 verifiedAt = now
             )
-            // 1. Instantly update Room database state
-            repository.updateOperationTask(updated)
+            // 1. Instantly update Room database state and Outbox
+            updateOperationTaskAndOutboxHelper(updated)
             if (_activeHighlightTaskId.value == task.id.toLong()) {
                 _activeHighlightTaskId.value = null
             }
@@ -2437,7 +2500,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 approvedAt = System.currentTimeMillis(),
                 approvalNotes = notes.trim()
             )
-            repository.updateOperationTask(updated)
+            updateOperationTaskAndOutboxHelper(updated)
             
             val branchId = _currentPharmacistBranchId.value
             if (!branchId.isNullOrBlank()) {
@@ -2542,7 +2605,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 }
 
                 val updated = task.copy(assignedToName = staffName, description = updatedDesc)
-                repository.updateOperationTask(updated)
+                updateOperationTaskAndOutboxHelper(updated)
                 if (_activeHighlightTaskId.value == task.id.toLong()) {
                     _activeHighlightTaskId.value = null
                 }
@@ -2689,7 +2752,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                     }
 
                     if (task.description != targetDesc || task.urgency != urgencyStr) {
-                        repository.updateOperationTask(task.copy(description = targetDesc, urgency = urgencyStr))
+                        updateOperationTaskAndOutboxHelper(task.copy(description = targetDesc, urgency = urgencyStr))
                     }
                 }
             }
@@ -2760,7 +2823,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                     )
                     if (updatedDesc != activeTask.description) {
                         val updatedTask = activeTask.copy(description = updatedDesc)
-                        repository.updateOperationTask(updatedTask)
+                        updateOperationTaskAndOutboxHelper(updatedTask)
                         val branchId = _currentPharmacistBranchId.value
                         if (!branchId.isNullOrBlank()) {
                             syncEntityToFirestore("operationTasks", updatedTask.id.toString(), mapOf(
@@ -2812,7 +2875,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
     fun toggleOperationTask(task: OperationTask) {
         viewModelScope.launch {
             val updated = task.copy(isCompleted = !task.isCompleted)
-            repository.updateOperationTask(updated)
+            updateOperationTaskAndOutboxHelper(updated)
             if (updated.isCompleted) {
                 syncTaskCompletionWithInventoryReconciliation(updated)
             }
@@ -5622,7 +5685,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
             }
             val newQty = item.stockQuantity - quantity
             val updated = item.copy(stockQuantity = newQty, lastUpdated = System.currentTimeMillis())
-            repository.insertInventoryItem(updated)
+            saveAndSyncInventoryItemDirectly(updated)
             
             val map = mapOf(
                 "id" to updated.id,
@@ -5729,7 +5792,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
         )
 
         viewModelScope.launch {
-            repository.updateOperationTask(updatedTask)
+            updateOperationTaskAndOutboxHelper(updatedTask)
         }
 
         // 2. Immediately notify UI so modal dismisses instantly (<16ms)
@@ -5762,7 +5825,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                     )
                 }
                 
-                repository.insertInventoryItem(updatedItem)
+                saveAndSyncInventoryItemDirectly(updatedItem)
                 
                 // Sync inventory item to Firestore
                 val itemMap = mapOf(
@@ -5837,7 +5900,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 
                 val newQty = item.stockQuantity - quantity
                 val updated = item.copy(stockQuantity = newQty, lastUpdated = System.currentTimeMillis())
-                repository.insertInventoryItem(updated)
+                saveAndSyncInventoryItemDirectly(updated)
                 
                 val map = mapOf(
                     "id" to updated.id,
@@ -5894,7 +5957,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             val newQty = item.stockQuantity + quantity
             val updated = item.copy(stockQuantity = newQty, lastUpdated = System.currentTimeMillis())
-            repository.insertInventoryItem(updated)
+            saveAndSyncInventoryItemDirectly(updated)
             
             val map = mapOf(
                 "id" to updated.id,
@@ -5947,7 +6010,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
             }
             val newQty = item.stockQuantity - quantity
             val updated = item.copy(stockQuantity = newQty, lastUpdated = System.currentTimeMillis())
-            repository.insertInventoryItem(updated)
+            saveAndSyncInventoryItemDirectly(updated)
             
             val map = mapOf(
                 "id" to updated.id,
@@ -6026,7 +6089,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                     salesStrategy = "20% Near-Expiry Markdown Applied",
                     lastUpdated = System.currentTimeMillis()
                 )
-                repository.insertInventoryItem(updatedItem)
+                saveAndSyncInventoryItemDirectly(updatedItem)
                 val map = mapOf(
                     "id" to updatedItem.id,
                     "name" to updatedItem.name,

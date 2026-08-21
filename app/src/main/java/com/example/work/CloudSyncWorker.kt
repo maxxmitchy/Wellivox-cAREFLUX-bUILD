@@ -77,8 +77,7 @@ class CloudSyncWorker(
                         userRole.equals("Admin", ignoreCase = true) ||
                         userRole.equals("SuperAdmin", ignoreCase = true) ||
                         userRole.equals("SystemAdmin", ignoreCase = true) ||
-                        userRole.equals("System Administrator", ignoreCase = true) ||
-                        userRole.equals("Branch Manager", ignoreCase = true)
+                        userRole.equals("System Administrator", ignoreCase = true)
                     )
                     if (!isSystemAdmin && branchId != null && branchId != record.branchId) {
                         android.util.Log.w(
