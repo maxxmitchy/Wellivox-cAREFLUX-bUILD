@@ -34,12 +34,27 @@ class CloudSyncWorker(
             
             // Fetch current authenticated user's branchId via Repository
             val currentUserUid = repository.getCurrentUserUid()
+                ?: try {
+                    applicationContext.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+                        .getString("cached_uid", null)?.takeIf { it.isNotBlank() }
+                } catch (e: Exception) {
+                    null
+                }
+
             var branchId: String? = null
             if (currentUserUid != null) {
                 try {
                     branchId = repository.getPharmacistBranchId(currentUserUid)
                 } catch (e: Exception) {
                     e.printStackTrace()
+                }
+            }
+            if (branchId.isNullOrBlank()) {
+                branchId = try {
+                    applicationContext.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+                        .getString("cached_branch_id", null)?.takeIf { it.isNotBlank() }
+                } catch (e: Exception) {
+                    null
                 }
             }
 
@@ -73,24 +88,45 @@ class CloudSyncWorker(
                         continue
                     }
                     val userRole = repository.getPharmacistRole(currentUserUid)
+                        ?: try {
+                            applicationContext.getSharedPreferences("app_settings", Context.MODE_PRIVATE)
+                                .getString("cached_role", null)?.takeIf { it.isNotBlank() }
+                        } catch (e: Exception) {
+                            null
+                        }
                     val isSystemAdmin = userRole != null && (
                         userRole.equals("Admin", ignoreCase = true) ||
                         userRole.equals("SuperAdmin", ignoreCase = true) ||
                         userRole.equals("SystemAdmin", ignoreCase = true) ||
                         userRole.equals("System Administrator", ignoreCase = true)
                     )
-                    if (!isSystemAdmin && branchId != null && branchId != record.branchId) {
-                        android.util.Log.w(
-                            "CloudSyncWorker",
-                            "Outbox record ${record.id} branch (${record.branchId}) differs from active user branch ($branchId). Marking BLOCKED."
-                        )
-                        dao.updateOutboxRecord(
-                            record.copy(
-                                status = "BLOCKED",
-                                errorMessage = "User $currentUserUid not authorized for branch ${record.branchId}"
+                    if (!isSystemAdmin) {
+                        if (branchId.isNullOrBlank()) {
+                            android.util.Log.w(
+                                "CloudSyncWorker",
+                                "Outbox record ${record.id} cannot be processed by non-admin user ($currentUserUid) with missing branchId. Marking BLOCKED."
                             )
-                        )
-                        continue
+                            dao.updateOutboxRecord(
+                                record.copy(
+                                    status = "BLOCKED",
+                                    errorMessage = "Non-admin user $currentUserUid authorized branch is unknown or missing"
+                                )
+                            )
+                            continue
+                        }
+                        if (branchId != record.branchId) {
+                            android.util.Log.w(
+                                "CloudSyncWorker",
+                                "Outbox record ${record.id} branch (${record.branchId}) differs from active user branch ($branchId). Marking BLOCKED."
+                            )
+                            dao.updateOutboxRecord(
+                                record.copy(
+                                    status = "BLOCKED",
+                                    errorMessage = "User $currentUserUid not authorized for branch ${record.branchId}"
+                                )
+                            )
+                            continue
+                        }
                     }
 
                     // Mark status as IN_PROGRESS before attempting network operation

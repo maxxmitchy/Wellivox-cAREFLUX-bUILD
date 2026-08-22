@@ -190,6 +190,11 @@ abstract class PharmacyDatabase : RoomDatabase() {
             }
         }
 
+        @androidx.annotation.VisibleForTesting
+        fun setTestInstance(instance: PharmacyDatabase?) {
+            INSTANCE = instance
+        }
+
         fun getDatabase(context: Context): PharmacyDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(

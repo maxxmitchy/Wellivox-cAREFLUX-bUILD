@@ -24,7 +24,11 @@ class Phase27_5ArchitectureVerificationTest {
     @Before
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
-        db = PharmacyDatabase.getDatabase(context)
+        val inMemoryDb = androidx.room.Room.inMemoryDatabaseBuilder(context, PharmacyDatabase::class.java)
+            .allowMainThreadQueries()
+            .build()
+        PharmacyDatabase.setTestInstance(inMemoryDb)
+        db = inMemoryDb
     }
 
     @Test
