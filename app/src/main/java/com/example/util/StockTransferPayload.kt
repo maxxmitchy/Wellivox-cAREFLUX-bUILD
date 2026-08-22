@@ -114,8 +114,9 @@ data class StockTransferPayload(
          * of branch inventory items using strict variant identity rules:
          * 1. Name match (case-insensitive)
          * 2. Dosage match (case-insensitive)
-         * 3. Scoring / disambiguation on UnitForm, Brand, Category, and Batch.
-         * Returns null if no exact or safe match is found.
+         * 3. Authoritative sourceGlobalId / globalId verification
+         * 4. Multi-candidate scoring with strict tie/ambiguity detection (FAILS CLOSED on ties).
+         * Returns null if no exact or safe match is found, or if candidates are ambiguous.
          */
         fun resolveMatchingInventoryItem(
             candidates: List<InventoryItem>,
@@ -127,6 +128,7 @@ data class StockTransferPayload(
             }
 
             if (matchingNameAndDose.isEmpty()) return null
+
             if (matchingNameAndDose.size == 1) {
                 val candidate = matchingNameAndDose.first()
                 // If unitForm is defined in both and conflicts, do NOT falsely collide!
@@ -147,25 +149,104 @@ data class StockTransferPayload(
             // Multiple candidates with same name and dosage: disambiguate with strict scoring
             val scored = matchingNameAndDose.map { candidate ->
                 var score = 0
+
+                // 1. Source global ID matching as strong verification evidence (+100)
+                if (payload.sourceGlobalId.isNotBlank() && candidate.globalId.isNotBlank() &&
+                    candidate.globalId.trim().equals(payload.sourceGlobalId.trim(), ignoreCase = true)
+                ) {
+                    score += 100
+                }
+
+                // 2. Unit form matching (+50 if match, -100 if conflict)
                 if (payload.unitForm.isNotBlank() && candidate.unitForm.isNotBlank()) {
                     if (candidate.unitForm.trim().equals(payload.unitForm.trim(), ignoreCase = true)) score += 50
                     else score -= 100 // Hard penalty on unit form mismatch
                 }
+
+                // 3. Brand matching (+40 if match, -80 if conflict)
                 if (payload.brand.isNotBlank() && candidate.brand.isNotBlank()) {
                     if (candidate.brand.trim().equals(payload.brand.trim(), ignoreCase = true)) score += 40
                     else score -= 80 // Hard penalty on brand mismatch
                 }
+
+                // 4. Batch number matching (+20)
                 if (payload.batchNumber.isNotBlank() && candidate.batchNumber.isNotBlank()) {
                     if (candidate.batchNumber.trim().equals(payload.batchNumber.trim(), ignoreCase = true)) score += 20
                 }
+
+                // 5. Category matching (+10)
                 if (payload.category.isNotBlank() && candidate.category.isNotBlank()) {
                     if (candidate.category.trim().equals(payload.category.trim(), ignoreCase = true)) score += 10
                 }
+
                 Pair(candidate, score)
             }
 
-            val bestMatch = scored.maxByOrNull { it.second }
-            return if (bestMatch != null && bestMatch.second >= 0) bestMatch.first else null
+            // Exclude disqualified candidates with negative scores (hard conflicts)
+            val eligible = scored.filter { it.second >= 0 }
+            if (eligible.isEmpty()) return null
+
+            val maxScore = eligible.maxOf { it.second }
+            val topCandidates = eligible.filter { it.second == maxScore }
+
+            // STRICT AMBIGUITY INVARIANT: If two or more candidates have the exact same top score, FAIL CLOSED.
+            if (topCandidates.size > 1) {
+                return null
+            }
+
+            return topCandidates.first().first
+        }
+
+        /**
+         * Resolves the destination InventoryBatch for a given InventoryItem and transfer payload:
+         * - Matches physical lot by batchNumber.
+         * - Enforces immutable lot metadata (e.g. expiryDate) consistency.
+         * - If matching batch exists without conflict -> updates existing batch.
+         * - If batch does not exist -> creates a new InventoryBatch under destinationItemId.
+         * - If conflicting immutable metadata is detected -> FAILS CLOSED with conflict error.
+         */
+        fun resolveDestinationBatch(
+            existingBatches: List<com.example.data.InventoryBatch>,
+            destinationItemId: Int,
+            payload: StockTransferPayload
+        ): BatchResolutionResult {
+            if (payload.batchNumber.isBlank()) {
+                val singleBatch = existingBatches.firstOrNull()
+                return if (singleBatch != null && existingBatches.size == 1) {
+                    BatchResolutionResult(matchedBatch = singleBatch, isNewBatch = false)
+                } else {
+                    BatchResolutionResult(matchedBatch = null, isNewBatch = true)
+                }
+            }
+
+            val matchingBatch = existingBatches.find {
+                it.batchNumber.trim().equals(payload.batchNumber.trim(), ignoreCase = true)
+            }
+
+            if (matchingBatch != null) {
+                // Verify immutable lot metadata: expiry date consistency
+                if (payload.expiryDate > 0L && matchingBatch.expiryDate > 0L) {
+                    val diff = kotlin.math.abs(matchingBatch.expiryDate - payload.expiryDate)
+                    // Allow small time drift of 24h for timezones, but reject distinct expiration months/years
+                    if (diff > (24L * 60L * 60L * 1000L)) {
+                        return BatchResolutionResult(
+                            hasConflict = true,
+                            conflictReason = "Conflicting expiry date for Batch '${payload.batchNumber}' (Destination: ${matchingBatch.expiryDate}, Transfer: ${payload.expiryDate})"
+                        )
+                    }
+                }
+                return BatchResolutionResult(matchedBatch = matchingBatch, isNewBatch = false)
+            }
+
+            // New batch for this inventory item
+            return BatchResolutionResult(matchedBatch = null, isNewBatch = true)
         }
     }
 }
+
+data class BatchResolutionResult(
+    val matchedBatch: com.example.data.InventoryBatch? = null,
+    val isNewBatch: Boolean = false,
+    val hasConflict: Boolean = false,
+    val conflictReason: String = ""
+)

@@ -5887,37 +5887,29 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
             return
         }
 
-        // 1. Instantly update task in local Room database
-        val updatedTask = task.copy(
-            isCompleted = true,
-            isApproved = true,
-            verifiedBy = updaterName,
-            verifiedAt = System.currentTimeMillis(),
-            verificationNotes = "Received and verified successfully. Notes: $notes",
-            verificationChannel = "Transfer Sync",
-            verificationCustomerName = "Source: ${payload.fromBranch}",
-            approvedBy = updaterName,
-            approvedAt = System.currentTimeMillis(),
-            approvalNotes = "Confirmed receipt of ${payload.quantity} units of ${payload.name} (${payload.dosage})."
-        )
-
-        viewModelScope.launch {
-            updateOperationTaskAndOutboxHelper(updatedTask)
-        }
-
-        // 2. Immediately notify UI so modal dismisses instantly (<16ms)
-        onFinished(true, "Successfully received stock and finalized transfer.")
-
-        // 3. Process deterministic inventory resolution, batch mutation, ledger entry, Firestore sync, and audit trail
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
                 val branchItems = repository.allInventoryItems.first().filter { 
                     it.branchId.isBlank() || it.branchId.equals(currentBranch, ignoreCase = true)
                 }
 
+                val sameNameAndDosage = branchItems.filter {
+                    it.name.trim().equals(payload.name.trim(), ignoreCase = true) &&
+                    it.dosage.trim().equals(payload.dosage.trim(), ignoreCase = true)
+                }
+
                 // Deterministic resolution: match exact variant identity
                 val matchedItem = com.example.util.StockTransferPayload.resolveMatchingInventoryItem(branchItems, payload)
                 
+                if (matchedItem == null && sameNameAndDosage.isNotEmpty()) {
+                    // There were candidates matching name & dosage, but resolution failed due to ambiguity (tie) or attribute conflict.
+                    // Strict Invariant: FAIL CLOSED.
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        onFinished(false, "Transfer receiving failed: Ambiguous or conflicting variant identity at destination branch.")
+                    }
+                    return@launch
+                }
+
                 val destinationItemId: Int
                 val finalUpdatedItem: com.example.data.InventoryItem
                 
@@ -5944,20 +5936,27 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                         expiryDate = if (payload.expiryDate > 0L) payload.expiryDate else (System.currentTimeMillis() + (365L * 24L * 60L * 60L * 1000L)),
                         supplier = if (payload.fromBranch.isNotBlank()) payload.fromBranch else "Branch Transfer",
                         branchId = currentBranch,
-                        globalId = java.util.UUID.randomUUID().toString(),
+                        globalId = if (payload.sourceGlobalId.isNotBlank()) payload.sourceGlobalId else java.util.UUID.randomUUID().toString(),
                         lastUpdated = System.currentTimeMillis()
                     )
                     destinationItemId = saveAndSyncInventoryItemDirectly(newItem)
                     finalUpdatedItem = newItem.copy(id = destinationItemId)
                 }
 
-                // Deterministic batch association: create or update InventoryBatch at destination
+                // Deterministic batch association: verify immutable lot metadata and resolve InventoryBatch
                 val batches = repository.getBatchesForItem(destinationItemId).firstOrNull() ?: emptyList()
-                val existingBatch = if (payload.batchNumber.isNotBlank()) {
-                    batches.find { it.batchNumber.trim().equals(payload.batchNumber.trim(), ignoreCase = true) }
-                } else null
+                val batchResult = com.example.util.StockTransferPayload.resolveDestinationBatch(batches, destinationItemId, payload)
 
-                if (existingBatch != null) {
+                if (batchResult.hasConflict) {
+                    // Immutable lot metadata conflict (e.g. batch number exists with conflicting expiry date) -> FAIL CLOSED
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                        onFinished(false, "Transfer receiving failed: ${batchResult.conflictReason}")
+                    }
+                    return@launch
+                }
+
+                if (batchResult.matchedBatch != null) {
+                    val existingBatch = batchResult.matchedBatch
                     val updatedBatch = existingBatch.copy(
                         stockQuantity = existingBatch.stockQuantity + payload.quantity,
                         expiryDate = if (payload.expiryDate > 0L) payload.expiryDate else existingBatch.expiryDate
@@ -5975,6 +5974,21 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                     repository.insertInventoryBatch(newBatch)
                 }
                 
+                // Update task in local Room database and outbox
+                val updatedTask = task.copy(
+                    isCompleted = true,
+                    isApproved = true,
+                    verifiedBy = updaterName,
+                    verifiedAt = System.currentTimeMillis(),
+                    verificationNotes = "Received and verified successfully. Notes: $notes",
+                    verificationChannel = "Transfer Sync",
+                    verificationCustomerName = "Source: ${payload.fromBranch}",
+                    approvedBy = updaterName,
+                    approvedAt = System.currentTimeMillis(),
+                    approvalNotes = "Confirmed receipt of ${payload.quantity} units of ${payload.name} (${payload.dosage})."
+                )
+                updateOperationTaskAndOutboxHelper(updatedTask)
+
                 // Sync inventory item to Firestore
                 val itemMap = mapOf(
                     "id" to finalUpdatedItem.id,
@@ -6041,8 +6055,15 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                     details = "Successfully verified and received stock transfer of ${payload.quantity} units of ${finalUpdatedItem.name} (${finalUpdatedItem.dosage} • ${finalUpdatedItem.unitForm}, Batch: ${payload.batchNumber}). Notes: $notes",
                     affectedId = destinationItemId.toString()
                 )
+
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    onFinished(true, "Successfully received stock and finalized transfer.")
+                }
             } catch (e: Exception) {
                 e.printStackTrace()
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                    onFinished(false, "Error receiving stock transfer: ${e.message}")
+                }
             }
         }
     }
