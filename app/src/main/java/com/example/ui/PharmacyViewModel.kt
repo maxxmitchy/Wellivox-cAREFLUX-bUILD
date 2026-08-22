@@ -2350,12 +2350,16 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
         urgency: String, 
         category: String,
         assignedToName: String? = null,
-        assignedToUid: String? = null
+        assignedToUid: String? = null,
+        inventoryItemId: Int? = null,
+        taskType: String? = null,
+        dueTimestamp: Long? = null
     ) {
         viewModelScope.launch {
             val localId = (100000..999999).random()
             val branchId = getActiveBranchId()
             val userUid = getCurrentUserUid()
+            val effectiveTaskType = taskType ?: if (category == "Stock Transfer") "STOCK_TRANSFER" else "GENERAL"
             val task = OperationTask(
                 id = localId, 
                 title = title, 
@@ -2366,7 +2370,10 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 assignedToName = assignedToName,
                 assignedToUid = assignedToUid,
                 branchId = branchId,
-                originatingUserUid = userUid
+                originatingUserUid = userUid,
+                inventoryItemId = inventoryItemId,
+                taskType = effectiveTaskType,
+                dueTimestamp = dueTimestamp
             )
             val map = mapOf(
                 "id" to localId,
@@ -2379,7 +2386,10 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 "branchId" to branchId,
                 "originatingUserUid" to userUid,
                 "assignedToName" to (assignedToName ?: ""),
-                "assignedToUid" to (assignedToUid ?: "")
+                "assignedToUid" to (assignedToUid ?: ""),
+                "inventoryItemId" to (inventoryItemId ?: 0),
+                "taskType" to effectiveTaskType,
+                "dueTimestamp" to (dueTimestamp ?: 0L)
             )
             val outbox = com.example.data.sync.SyncOutboxRecord(
                 branchId = branchId,
@@ -2435,7 +2445,10 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
             "isApproved" to task.isApproved,
             "approvedBy" to (task.approvedBy ?: ""),
             "approvedAt" to (task.approvedAt ?: 0L),
-            "approvalNotes" to (task.approvalNotes ?: "")
+            "approvalNotes" to (task.approvalNotes ?: ""),
+            "inventoryItemId" to (task.inventoryItemId ?: 0),
+            "taskType" to (task.taskType ?: ""),
+            "dueTimestamp" to (task.dueTimestamp ?: 0L)
         )
         val outbox = com.example.data.sync.SyncOutboxRecord(
             branchId = task.branchId,
@@ -2501,7 +2514,10 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                             "isApproved" to updated.isApproved,
                             "approvedBy" to (updated.approvedBy ?: ""),
                             "approvedAt" to (updated.approvedAt ?: 0L),
-                            "approvalNotes" to (updated.approvalNotes ?: "")
+                            "approvalNotes" to (updated.approvalNotes ?: ""),
+                            "inventoryItemId" to (updated.inventoryItemId ?: 0),
+                            "taskType" to (updated.taskType ?: ""),
+                            "dueTimestamp" to (updated.dueTimestamp ?: 0L)
                         )
                         syncEntityToFirestore("branch_operation_tasks", updated.id.toString(), map)
                         logAuditTrail(
@@ -2553,7 +2569,10 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                     "isApproved" to updated.isApproved,
                     "approvedBy" to (updated.approvedBy ?: ""),
                     "approvedAt" to (updated.approvedAt ?: 0L),
-                    "approvalNotes" to (updated.approvalNotes ?: "")
+                    "approvalNotes" to (updated.approvalNotes ?: ""),
+                    "inventoryItemId" to (updated.inventoryItemId ?: 0),
+                    "taskType" to (updated.taskType ?: ""),
+                    "dueTimestamp" to (updated.dueTimestamp ?: 0L)
                 )
                 syncEntityToFirestore("branch_operation_tasks", updated.id.toString(), map)
                 logAuditTrail(
@@ -2571,45 +2590,16 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
         viewModelScope.launch {
             try {
                 var updatedDesc = task.description
-                if (task.title.contains("Expiry", ignoreCase = true) || task.category.contains("Expiry", ignoreCase = true) || updatedDesc.contains("30 days", ignoreCase = true)) {
-                    val items = repository.allInventoryItems.first()
-                    val combinedText = "${task.title} ${task.description}"
-                    val itemIdRegex = Regex("""\[(?:Item\s*#|Item\s*ID:\s*|#)(\d+)\]|(?:Item\s*#|Item\s*ID:\s*)(\d+)""", RegexOption.IGNORE_CASE)
-                    val extractedId = itemIdRegex.find(combinedText)?.let { match ->
-                        (match.groupValues[1].ifEmpty { match.groupValues[2] }).toIntOrNull()
-                    }
-
-                    val matchedItem = if (extractedId != null) {
-                        items.find { it.id == extractedId }
-                    } else {
-                        val productName = task.title.substringAfter("Expiry Shelf Audit:").replace("Perform FEFO check on", "", ignoreCase = true).trim()
-                        val candidates = items.filter { 
-                            it.name.equals(productName, ignoreCase = true) || 
-                            task.title.contains(it.name, ignoreCase = true) || 
-                            it.name.contains(productName, ignoreCase = true) ||
-                            task.description.contains(it.name, ignoreCase = true)
-                        }
-                        if (candidates.size == 1) {
-                            candidates.first()
-                        } else if (candidates.size > 1) {
-                            candidates.maxByOrNull { c ->
-                                var score = 0
-                                if (c.dosage.isNotBlank() && combinedText.contains(c.dosage, ignoreCase = true)) score += 50
-                                if (c.unitForm.isNotBlank() && combinedText.contains(c.unitForm, ignoreCase = true)) score += 30
-                                if (c.batchNumber.isNotBlank() && combinedText.contains(c.batchNumber, ignoreCase = true)) score += 40
-                                score
-                            }
-                        } else null
-                    }
-                    
-                    val smartDesc = if (matchedItem != null) {
+                if (task.taskType == "EXPIRY_AUDIT" && task.inventoryItemId != null) {
+                    val matchedItem = repository.getInventoryItemById(task.inventoryItemId)
+                    if (matchedItem != null) {
                         val now = System.currentTimeMillis()
                         val sdf = java.text.SimpleDateFormat("MMM d, yyyy", java.util.Locale.getDefault())
                         val batch = matchedItem.batchNumber.ifBlank { "N/A" }
                         val dateStr = if (matchedItem.expiryDate > 0) sdf.format(java.util.Date(matchedItem.expiryDate)) else "Soon"
                         val daysLeft = if (matchedItem.expiryDate > 0) ((matchedItem.expiryDate - now) / (1000L * 60 * 60 * 24)).toInt() else 0
                         
-                        when {
+                        val smartDesc = when {
                             matchedItem.expiryDate <= 0 -> "Batch $batch expiring soon. Perform physical count & apply FEFO markdown."
                             daysLeft < 0 -> {
                                 val absDays = Math.abs(daysLeft)
@@ -2618,19 +2608,13 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                             daysLeft == 0 -> "EXPIRES TODAY ($dateStr, Batch $batch). Move to quarantine or apply clearance discount immediately."
                             else -> "Expires in $daysLeft day${if (daysLeft == 1) "" else "s"} on $dateStr (Batch $batch). Perform physical count & apply FEFO markdown."
                         }
-                    } else {
-                        if (updatedDesc.contains("expiring within 30 days", ignoreCase = true)) {
-                            updatedDesc.replace("expiring within 30 days", "expiring batch - perform physical count & FEFO audit", ignoreCase = true)
-                        } else {
-                            "Perform physical stock count & apply FEFO markdown for expiring batch."
-                        }
-                    }
 
-                    if (updatedDesc.startsWith("Assignee:")) {
-                        val assigneePrefix = updatedDesc.substringBefore(" | instructions: ")
-                        updatedDesc = "$assigneePrefix | instructions: $smartDesc"
-                    } else {
-                        updatedDesc = smartDesc
+                        if (updatedDesc.startsWith("Assignee:")) {
+                            val assigneePrefix = updatedDesc.substringBefore(" | instructions: ")
+                            updatedDesc = "$assigneePrefix | instructions: $smartDesc"
+                        } else {
+                            updatedDesc = smartDesc
+                        }
                     }
                 }
 
@@ -2652,7 +2636,10 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                         "createdAt" to updated.createdAt,
                         "branchId" to branchId,
                         "assignedToName" to (updated.assignedToName ?: ""),
-                        "assignedToUid" to (updated.assignedToUid ?: "")
+                        "assignedToUid" to (updated.assignedToUid ?: ""),
+                        "inventoryItemId" to (updated.inventoryItemId ?: 0),
+                        "taskType" to (updated.taskType ?: ""),
+                        "dueTimestamp" to (updated.dueTimestamp ?: 0L)
                     )
                     syncEntityToFirestore("branch_operation_tasks", updated.id.toString(), map)
                     logAuditTrail(
@@ -2682,7 +2669,6 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
             val cutoff14Days = now - (14L * 24 * 60 * 60 * 1000L)
 
             val activeTasks = currentTasks.filter { !it.isCompleted }
-            val activeTitles = activeTasks.map { it.title.lowercase() }.toSet()
 
             var dispatchedCount = 0
 
@@ -2694,86 +2680,51 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 ).joinToString(" • ")
                 val variantSuffix = if (variantDetails.isNotBlank()) " ($variantDetails)" else ""
                 val itemTag = "[Item #${item.id}]"
-                val expectedTitle = "Inventory Verification: ${item.name}$variantSuffix $itemTag".lowercase()
-                val itemNameLower = item.name.lowercase()
+
+                val hasActiveTask = activeTasks.any { task ->
+                    task.inventoryItemId == item.id && task.taskType == "LOW_STOCK_VERIFICATION"
+                }
                 val recentTaskCompleted = currentTasks.any { task ->
                     task.isCompleted &&
-                    (task.title.contains(itemTag, ignoreCase = true) || 
-                     (task.title.lowercase().contains(itemNameLower) && (item.dosage.isBlank() || task.title.lowercase().contains(item.dosage.lowercase())))) &&
+                    task.inventoryItemId == item.id &&
+                    task.taskType == "LOW_STOCK_VERIFICATION" &&
                     ((task.verifiedAt ?: task.createdAt) >= cutoff7Days)
                 }
                 val recentlyReconciled = item.lastReconciledAt >= cutoff7Days
 
-                if (!activeTitles.contains(expectedTitle) && !recentTaskCompleted && !recentlyReconciled) {
+                if (!hasActiveTask && !recentTaskCompleted && !recentlyReconciled) {
                     addOperationTask(
                         title = "Inventory Verification: ${item.name}$variantSuffix $itemTag",
                         description = "Stock low (${item.stockQuantity} remaining, min ${item.minRequiredStock}). Verify shelf count & reconcile discrepancies for ${item.name}${if (item.dosage.isNotBlank()) " (${item.dosage})" else ""}${if (item.unitForm.isNotBlank()) " [${item.unitForm}]" else ""} [Item ID: ${item.id}].",
                         urgency = "High",
                         category = "Clinical Intelligence",
-                        assignedToName = null
+                        assignedToName = null,
+                        inventoryItemId = item.id,
+                        taskType = "LOW_STOCK_VERIFICATION",
+                        dueTimestamp = now + (3L * 24 * 60 * 60 * 1000L)
                     )
                     dispatchedCount++
                 }
             }
 
-            // 2. Comprehensive sweep & refresh for ALL active tasks in DB
-            activeTasks.forEach { task ->
-                val isExpiryTask = task.title.contains("Expiry", ignoreCase = true) || 
-                                  task.category.contains("Expiry", ignoreCase = true) || 
-                                  task.description.contains("30 days", ignoreCase = true)
-                if (isExpiryTask) {
-                    val combinedText = "${task.title} ${task.description}"
-                    val itemIdRegex = Regex("""\[(?:Item\s*#|Item\s*ID:\s*|#)(\d+)\]|(?:Item\s*#|Item\s*ID:\s*)(\d+)""", RegexOption.IGNORE_CASE)
-                    val extractedId = itemIdRegex.find(combinedText)?.let { match ->
-                        (match.groupValues[1].ifEmpty { match.groupValues[2] }).toIntOrNull()
-                    }
-
-                    val matchedItem = if (extractedId != null) {
-                        items.find { it.id == extractedId }
-                    } else {
-                        val productName = task.title.substringAfter("Expiry Shelf Audit:").replace("Perform FEFO check on", "", ignoreCase = true).trim()
-                        val candidates = items.filter { 
-                            it.name.equals(productName, ignoreCase = true) || 
-                            task.title.contains(it.name, ignoreCase = true) || 
-                            it.name.contains(productName, ignoreCase = true) ||
-                            task.description.contains(it.name, ignoreCase = true)
-                        }
-                        if (candidates.size == 1) {
-                            candidates.first()
-                        } else if (candidates.size > 1) {
-                            candidates.maxByOrNull { c ->
-                                var score = 0
-                                if (c.dosage.isNotBlank() && combinedText.contains(c.dosage, ignoreCase = true)) score += 50
-                                if (c.unitForm.isNotBlank() && combinedText.contains(c.unitForm, ignoreCase = true)) score += 30
-                                if (c.batchNumber.isNotBlank() && combinedText.contains(c.batchNumber, ignoreCase = true)) score += 40
-                                score
-                            }
-                        } else null
-                    }
+            // 2. Comprehensive sweep & refresh for active EXPIRY_AUDIT tasks in DB
+            activeTasks.filter { it.taskType == "EXPIRY_AUDIT" && it.inventoryItemId != null }.forEach { task ->
+                val matchedItem = items.find { it.id == task.inventoryItemId }
+                if (matchedItem != null) {
+                    val batch = matchedItem.batchNumber.ifBlank { "N/A" }
+                    val dateStr = if (matchedItem.expiryDate > 0) sdf.format(java.util.Date(matchedItem.expiryDate)) else "Soon"
+                    val daysLeft = if (matchedItem.expiryDate > 0) ((matchedItem.expiryDate - now) / (1000L * 60 * 60 * 24)).toInt() else 0
                     
-                    val smartDesc = if (matchedItem != null) {
-                        val batch = matchedItem.batchNumber.ifBlank { "N/A" }
-                        val dateStr = if (matchedItem.expiryDate > 0) sdf.format(java.util.Date(matchedItem.expiryDate)) else "Soon"
-                        val daysLeft = if (matchedItem.expiryDate > 0) ((matchedItem.expiryDate - now) / (1000L * 60 * 60 * 24)).toInt() else 0
-                        
-                        when {
-                            matchedItem.expiryDate <= 0 -> "Batch $batch expiring soon. Perform physical count & apply FEFO markdown for ${matchedItem.name} (${matchedItem.dosage}) [Item ID: ${matchedItem.id}]."
-                            daysLeft < 0 -> {
-                                val absDays = Math.abs(daysLeft)
-                                "EXPIRED $absDays day${if (absDays == 1) "" else "s"} ago on $dateStr (Batch $batch). Immediately quarantine stock or record disposal write-off for ${matchedItem.name} (${matchedItem.dosage}) [Item ID: ${matchedItem.id}]."
-                            }
-                            daysLeft == 0 -> "EXPIRES TODAY ($dateStr, Batch $batch). Move to quarantine or apply clearance discount immediately for ${matchedItem.name} (${matchedItem.dosage}) [Item ID: ${matchedItem.id}]."
-                            else -> "Expires in $daysLeft day${if (daysLeft == 1) "" else "s"} on $dateStr (Batch $batch). Perform physical count & apply FEFO markdown for ${matchedItem.name} (${matchedItem.dosage}) [Item ID: ${matchedItem.id}]."
+                    val smartDesc = when {
+                        matchedItem.expiryDate <= 0 -> "Batch $batch expiring soon. Perform physical count & apply FEFO markdown for ${matchedItem.name} (${matchedItem.dosage}) [Item ID: ${matchedItem.id}]."
+                        daysLeft < 0 -> {
+                            val absDays = Math.abs(daysLeft)
+                            "EXPIRED $absDays day${if (absDays == 1) "" else "s"} ago on $dateStr (Batch $batch). Immediately quarantine stock or record disposal write-off for ${matchedItem.name} (${matchedItem.dosage}) [Item ID: ${matchedItem.id}]."
                         }
-                    } else {
-                        if (task.description.contains("expiring within 30 days", ignoreCase = true)) {
-                            task.description.replace("expiring within 30 days", "expiring batch - perform physical count & FEFO audit", ignoreCase = true)
-                        } else {
-                            "Perform physical stock count & apply FEFO markdown for expiring batch."
-                        }
+                        daysLeft == 0 -> "EXPIRES TODAY ($dateStr, Batch $batch). Move to quarantine or apply clearance discount immediately for ${matchedItem.name} (${matchedItem.dosage}) [Item ID: ${matchedItem.id}]."
+                        else -> "Expires in $daysLeft day${if (daysLeft == 1) "" else "s"} on $dateStr (Batch $batch). Perform physical count & apply FEFO markdown for ${matchedItem.name} (${matchedItem.dosage}) [Item ID: ${matchedItem.id}]."
                     }
-                    val daysLeftCalc = matchedItem?.let { if (it.expiryDate > 0) ((it.expiryDate - now) / (1000L * 60 * 60 * 24)).toInt() else 0 } ?: 14
-                    val urgencyStr = if (daysLeftCalc <= 7) "High" else "Medium"
+                    val urgencyStr = if (daysLeft <= 7) "High" else "Medium"
 
                     val targetDesc = if (task.description.startsWith("Assignee:")) {
                         val assigneePrefix = task.description.substringBefore(" | instructions: ")
@@ -2796,17 +2747,19 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 ).joinToString(" • ")
                 val variantSuffix = if (variantDetails.isNotBlank()) " ($variantDetails)" else ""
                 val itemTag = "[Item #${item.id}]"
-                val expectedTitle = "Expiry Shelf Audit: ${item.name}$variantSuffix $itemTag".lowercase()
-                val itemNameLower = item.name.lowercase()
+
+                val hasActiveTask = activeTasks.any { task ->
+                    task.inventoryItemId == item.id && task.taskType == "EXPIRY_AUDIT"
+                }
                 val recentTaskCompleted = currentTasks.any { task ->
                     task.isCompleted &&
-                    (task.title.contains(itemTag, ignoreCase = true) || 
-                     (task.title.lowercase().contains(itemNameLower) && (item.dosage.isBlank() || task.title.lowercase().contains(item.dosage.lowercase())))) &&
+                    task.inventoryItemId == item.id &&
+                    task.taskType == "EXPIRY_AUDIT" &&
                     ((task.verifiedAt ?: task.createdAt) >= cutoff7Days)
                 }
                 val recentlyReconciled = item.lastReconciledAt >= cutoff7Days
 
-                if (!activeTitles.contains(expectedTitle) && !recentTaskCompleted && !recentlyReconciled) {
+                if (!hasActiveTask && !recentTaskCompleted && !recentlyReconciled) {
                     val batch = item.batchNumber.ifBlank { "N/A" }
                     val dateStr = if (item.expiryDate > 0) sdf.format(java.util.Date(item.expiryDate)) else "Soon"
                     val daysLeft = if (item.expiryDate > 0) ((item.expiryDate - now) / (1000L * 60 * 60 * 24)).toInt() else 0
@@ -2827,7 +2780,10 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                         description = desc,
                         urgency = urgencyStr,
                         category = "Revenue & Retention",
-                        assignedToName = null
+                        assignedToName = null,
+                        inventoryItemId = item.id,
+                        taskType = "EXPIRY_AUDIT",
+                        dueTimestamp = if (item.expiryDate > 0) item.expiryDate else now + (30L * 24 * 60 * 60 * 1000L)
                     )
                     dispatchedCount++
                 }
@@ -2847,7 +2803,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
 
             if (cycleRatio < 0.80f) {
                 // Synchronize live compliance stats on any existing active cycle count tasks
-                currentTasks.filter { !it.isCompleted && (it.title.startsWith("14-Day Cycle Count:", ignoreCase = true) || it.title.startsWith("7-Day High-Velocity Cycle Count:", ignoreCase = true)) }.forEach { activeTask ->
+                currentTasks.filter { !it.isCompleted && it.taskType == "CYCLE_COUNT" }.forEach { activeTask ->
                     val updatedDesc = activeTask.description.replace(
                         Regex("Rolling (?:14-day|7-day) cycle count compliance \\([^)]+\\)"),
                         "Rolling cycle count compliance ($reconciledCount/${items.size} reconciled, $cycleRatioPctFormatted%)"
@@ -2857,10 +2813,13 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                         updateOperationTaskAndOutboxHelper(updatedTask)
                         val branchId = _currentPharmacistBranchId.value
                         if (!branchId.isNullOrBlank()) {
-                            syncEntityToFirestore("operationTasks", updatedTask.id.toString(), mapOf(
+                            syncEntityToFirestore("branch_operation_tasks", updatedTask.id.toString(), mapOf(
                                 "id" to updatedTask.id,
                                 "description" to updatedTask.description,
-                                "branchId" to branchId
+                                "branchId" to branchId,
+                                "inventoryItemId" to (updatedTask.inventoryItemId ?: 0),
+                                "taskType" to (updatedTask.taskType ?: ""),
+                                "dueTimestamp" to (updatedTask.dueTimestamp ?: 0L)
                             ))
                         }
                     }
@@ -2875,17 +2834,19 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                     val itemTag = "[Item #${item.id}]"
                     val cyclePrefix = if (item.isFastMoving) "7-Day High-Velocity Cycle Count:" else "14-Day Cycle Count:"
                     val cutoffForTask = if (item.isFastMoving) cutoff7Days else cutoff14Days
-                    val expectedTitle = "$cyclePrefix ${item.name}$variantSuffix $itemTag".lowercase()
-                    val itemNameLower = item.name.lowercase()
+
+                    val hasActiveTask = activeTasks.any { task ->
+                        task.inventoryItemId == item.id && task.taskType == "CYCLE_COUNT"
+                    }
                     val recentTaskCompleted = currentTasks.any { task ->
                         task.isCompleted &&
-                        (task.title.contains(itemTag, ignoreCase = true) || 
-                         (task.title.lowercase().contains(itemNameLower) && (item.dosage.isBlank() || task.title.lowercase().contains(item.dosage.lowercase())))) &&
+                        task.inventoryItemId == item.id &&
+                        task.taskType == "CYCLE_COUNT" &&
                         ((task.verifiedAt ?: task.createdAt) >= cutoffForTask)
                     }
                     val recentlyReconciled = item.lastReconciledAt >= cutoffForTask
 
-                    if (!activeTitles.contains(expectedTitle) && !recentTaskCompleted && !recentlyReconciled) {
+                    if (!hasActiveTask && !recentTaskCompleted && !recentlyReconciled) {
                         val lastRecStr = if (item.lastReconciledAt > 0) sdf.format(java.util.Date(item.lastReconciledAt)) else "Never"
                         val cycleLabel = if (item.isFastMoving) "7-day high-velocity" else "14-day"
                         addOperationTask(
@@ -2893,7 +2854,10 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                             description = "Rolling $cycleLabel cycle count compliance ($reconciledCount/${items.size} reconciled, $cycleRatioPctFormatted%). Last counted: $lastRecStr. Verify physical shelf count of ${item.name}${if (item.dosage.isNotBlank()) " (${item.dosage})" else ""}${if (item.unitForm.isNotBlank()) " • ${item.unitForm}" else ""} [Item ID: ${item.id}].",
                             urgency = if (item.isFastMoving) "High" else "Medium",
                             category = "Clinical Intelligence",
-                            assignedToName = null
+                            assignedToName = null,
+                            inventoryItemId = item.id,
+                            taskType = "CYCLE_COUNT",
+                            dueTimestamp = if (item.isFastMoving) now + (7L * 24 * 60 * 60 * 1000L) else now + (14L * 24 * 60 * 60 * 1000L)
                         )
                         dispatchedCount++
                     }
@@ -2932,7 +2896,10 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                     "isApproved" to updated.isApproved,
                     "approvedBy" to (updated.approvedBy ?: ""),
                     "approvedAt" to (updated.approvedAt ?: 0L),
-                    "approvalNotes" to (updated.approvalNotes ?: "")
+                    "approvalNotes" to (updated.approvalNotes ?: ""),
+                    "inventoryItemId" to (updated.inventoryItemId ?: 0),
+                    "taskType" to (updated.taskType ?: ""),
+                    "dueTimestamp" to (updated.dueTimestamp ?: 0L)
                 )
                 syncEntityToFirestore("branch_operation_tasks", updated.id.toString(), map)
                 logAuditTrail(
@@ -2969,81 +2936,106 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
 
     private suspend fun syncTaskCompletionWithInventoryReconciliation(task: OperationTask, countedQuantity: Int? = null) {
         if (!task.isCompleted) return
-        val targetBranch = task.branchId.ifBlank { getActiveBranchId() }
-        val items = if (targetBranch.isBlank()) repository.allInventoryItems.first() else repository.getInventoryForBranch(targetBranch).first()
-        if (items.isEmpty()) return
-        val now = System.currentTimeMillis()
-        val taskTime = if ((task.verifiedAt ?: 0L) > 0L) task.verifiedAt!! else now
-        
-        val taskFullText = "${task.title} ${task.description}"
-        val taskTextLower = taskFullText.lowercase()
 
-        // 1. Direct Target ID matching: Look for [Item #123] or [Item ID: 123] or Item #123 in title/description
-        val itemIdRegex = Regex("""\[(?:Item\s*#|Item\s*ID:\s*|#)(\d+)\]|(?:Item\s*#|Item\s*ID:\s*)(\d+)""", RegexOption.IGNORE_CASE)
-        val extractedId = itemIdRegex.find(taskFullText)?.let { match ->
-            (match.groupValues[1].ifEmpty { match.groupValues[2] }).toIntOrNull()
+        // Direct fail-closed check: task must have an authoritative inventoryItemId and not be unresolved
+        val targetItemId = task.inventoryItemId
+        if (targetItemId == null || task.taskType == "LEGACY_UNRESOLVED") {
+            android.util.Log.w("PharmacyViewModel", "Task ${task.id} is not an authoritative inventory-linked task (inventoryItemId=null, taskType=${task.taskType}). Failing closed without inventory mutation.")
+            return
         }
 
-        val directItem = if (extractedId != null) {
-            items.find { it.id == extractedId }
-        } else null
+        val item = repository.getInventoryItemById(targetItemId)
+        if (item == null) {
+            android.util.Log.e("PharmacyViewModel", "Inventory reconciliation failed: Item $targetItemId not found in database. Failing closed.")
+            return
+        }
 
-        // 2. High-Precision Variant Matching Fallback (single entity resolution)
-        val matchedItem: InventoryItem? = if (directItem != null) {
-            directItem
+        // Branch Isolation verification
+        val targetBranch = task.branchId.ifBlank { getActiveBranchId() }
+        if (item.branchId.isNotBlank() && targetBranch.isNotBlank() && item.branchId != targetBranch) {
+            android.util.Log.e("PharmacyViewModel", "Cross-branch reconciliation breach: Task branch '$targetBranch' does not match item branch '${item.branchId}'. Failing closed.")
+            return
+        }
+
+        val now = System.currentTimeMillis()
+        val taskTime = if ((task.verifiedAt ?: 0L) > 0L) task.verifiedAt!! else now
+
+        val updated = if (countedQuantity != null) {
+            item.copy(stockQuantity = countedQuantity, lastReconciledAt = taskTime, lastUpdated = now)
         } else {
-            // Find candidates that share the medicine brand / base name
-            val candidates = items.filter { item ->
-                val itemNameLower = item.name.lowercase().replace(Regex("\\(.*\\)"), "").trim()
-                taskTextLower.contains(itemNameLower) || (item.brand.isNotBlank() && taskTextLower.contains(item.brand.lowercase()))
-            }
+            item.copy(lastReconciledAt = taskTime, lastUpdated = now)
+        }
+        saveAndSyncInventoryItemDirectly(updated)
+        if (countedQuantity != null) {
+            logAuditTrail(
+                action = "STOCK_ADJUSTMENT",
+                details = "Audit count updated stock of ${item.name} (${item.dosage}${if (item.unitForm.isNotBlank()) " • ${item.unitForm}" else ""}) [Item #${item.id}] from ${item.stockQuantity} to $countedQuantity via audit task '${task.title}'",
+                affectedId = item.id.toString()
+            )
+        }
+    }
 
-            if (candidates.isEmpty()) {
-                null
-            } else if (candidates.size == 1) {
-                candidates.first()
-            } else {
-                // Multi-variant case (e.g. Exforge 5/160 vs Exforge 10/160 vs Exforge 10/160/12.5)
-                // Score by exact dosage, packaging form, and batch matches
-                candidates.maxByOrNull { item ->
-                    var score = 0
-                    val dosageLower = item.dosage.lowercase().trim()
-                    val unitFormLower = item.unitForm.lowercase().trim()
-                    val batchLower = item.batchNumber.lowercase().trim()
+    suspend fun migrateLegacyOperationTasks(): Pair<Int, Int> {
+        val allTasks = repository.allOperationTasks.first()
+        val items = repository.allInventoryItems.first()
+        val itemsById = items.associateBy { it.id }
 
-                    if (dosageLower.isNotBlank() && taskTextLower.contains(dosageLower)) {
-                        score += 50
+        val itemIdRegex = Regex("""\[(?:Item\s*#|Item\s*ID:\s*|#)(\d+)\]|(?:Item\s*#|Item\s*ID:\s*)(\d+)""", RegexOption.IGNORE_CASE)
+
+        var resolvedCount = 0
+        var unresolvedCount = 0
+
+        for (task in allTasks) {
+            if (task.taskType == null || (task.inventoryItemId == null && task.taskType != "GENERAL" && task.taskType != "LEGACY_UNRESOLVED" && task.taskType != "STOCK_TRANSFER")) {
+                if (task.category == "Stock Transfer" || task.title.contains("STOCK TRANSFER", ignoreCase = true)) {
+                    val updated = task.copy(taskType = "STOCK_TRANSFER")
+                    repository.updateOperationTask(updated)
+                    resolvedCount++
+                } else {
+                    val combinedText = "${task.title} ${task.description}"
+                    val match = itemIdRegex.find(combinedText)
+                    val candidateId = match?.let { (it.groupValues[1].ifEmpty { it.groupValues[2] }).toIntOrNull() }
+
+                    if (candidateId != null && itemsById.containsKey(candidateId)) {
+                        val item = itemsById[candidateId]!!
+                        if (task.branchId.isBlank() || item.branchId.isBlank() || task.branchId == item.branchId) {
+                            val inferredType = when {
+                                task.title.contains("Expiry", ignoreCase = true) || task.category.contains("Expiry", ignoreCase = true) -> "EXPIRY_AUDIT"
+                                task.title.contains("Cycle Count", ignoreCase = true) -> "CYCLE_COUNT"
+                                task.title.contains("Verification", ignoreCase = true) || task.title.contains("Low stock", ignoreCase = true) -> "LOW_STOCK_VERIFICATION"
+                                else -> "GENERAL"
+                            }
+                            val inferredDue = when (inferredType) {
+                                "EXPIRY_AUDIT" -> if (item.expiryDate > 0) item.expiryDate else null
+                                "CYCLE_COUNT" -> task.createdAt + (if (item.isFastMoving) 7L else 14L) * 24 * 60 * 60 * 1000L
+                                "LOW_STOCK_VERIFICATION" -> task.createdAt + 3L * 24 * 60 * 60 * 1000L
+                                else -> null
+                            }
+                            val updated = task.copy(
+                                inventoryItemId = candidateId,
+                                taskType = inferredType,
+                                dueTimestamp = inferredDue
+                            )
+                            repository.updateOperationTask(updated)
+                            resolvedCount++
+                        } else {
+                            val updated = task.copy(taskType = "LEGACY_UNRESOLVED")
+                            repository.updateOperationTask(updated)
+                            unresolvedCount++
+                        }
+                    } else if (task.title.contains("Expiry", ignoreCase = true) || task.title.contains("Cycle Count", ignoreCase = true) || task.title.contains("Inventory Verification", ignoreCase = true)) {
+                        val updated = task.copy(taskType = "LEGACY_UNRESOLVED")
+                        repository.updateOperationTask(updated)
+                        unresolvedCount++
+                    } else {
+                        val updated = task.copy(taskType = "GENERAL")
+                        repository.updateOperationTask(updated)
+                        resolvedCount++
                     }
-                    if (unitFormLower.isNotBlank() && taskTextLower.contains(unitFormLower)) {
-                        score += 30
-                    }
-                    if (batchLower.isNotBlank() && taskTextLower.contains(batchLower)) {
-                        score += 40
-                    }
-                    if (taskTextLower.contains(item.name.lowercase())) {
-                        score += 20
-                    }
-                    score
                 }
             }
         }
-
-        // 3. Strictly reconcile ONLY the single identified item entity
-        if (matchedItem != null) {
-            val updated = if (countedQuantity != null) {
-                matchedItem.copy(stockQuantity = countedQuantity, lastReconciledAt = taskTime, lastUpdated = now)
-            } else {
-                matchedItem.copy(lastReconciledAt = taskTime, lastUpdated = now)
-            }
-            saveAndSyncInventoryItemDirectly(updated)
-            if (countedQuantity != null) {
-                logAuditTrail(
-                    action = "STOCK_ADJUSTMENT",
-                    details = "Audit count updated stock of ${matchedItem.name} (${matchedItem.dosage}${if (matchedItem.unitForm.isNotBlank()) " • ${matchedItem.unitForm}" else ""}) [Item #${matchedItem.id}] from ${matchedItem.stockQuantity} to $countedQuantity via audit task '${task.title}'",
-                    affectedId = matchedItem.id.toString()
-                )
-            }
-        }
+        return Pair(resolvedCount, unresolvedCount)
     }
 
     // --- Receipt Actions ---
@@ -5436,7 +5428,10 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                                 assignedToName = if (assignedToName.isNullOrEmpty()) null else assignedToName,
                                 assignedToUid = if (assignedToUid.isNullOrEmpty()) null else assignedToUid,
                                 branchId = data["branchId"] as? String ?: userBranchId,
-                                originatingUserUid = data["originatingUserUid"] as? String ?: ""
+                                originatingUserUid = data["originatingUserUid"] as? String ?: "",
+                                inventoryItemId = (data["inventoryItemId"] as? Number)?.toInt(),
+                                taskType = data["taskType"] as? String,
+                                dueTimestamp = (data["dueTimestamp"] as? Number)?.toLong()
                             )
                         }
 
@@ -5824,7 +5819,8 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                     "isApproved" to false,
                     "approvedBy" to "",
                     "approvedAt" to 0L,
-                    "approvalNotes" to ""
+                    "approvalNotes" to "",
+                    "taskType" to "STOCK_TRANSFER"
                 )
                 repository.upsertRemoteDocument("branch_operation_tasks", transferTaskId.toString(), transferTaskMap)
 
@@ -5846,7 +5842,8 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                         isCompleted = false,
                         createdAt = System.currentTimeMillis(),
                         branchId = destinationBranch.trim(),
-                        assignedToName = "Branch Manager"
+                        assignedToName = "Branch Manager",
+                        taskType = "STOCK_TRANSFER"
                     ),
                     taskOutbox
                 )
@@ -6178,7 +6175,8 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                         "isApproved" to false,
                         "approvedBy" to "",
                         "approvedAt" to 0L,
-                        "approvalNotes" to ""
+                        "approvalNotes" to "",
+                        "taskType" to "STOCK_TRANSFER"
                     )
                     repository.upsertRemoteDocument("branch_operation_tasks", transferTaskId.toString(), transferTaskMap)
 
@@ -6200,7 +6198,8 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                             isCompleted = false,
                             createdAt = System.currentTimeMillis(),
                             branchId = destinationBranch.trim(),
-                            assignedToName = "Branch Manager"
+                            assignedToName = "Branch Manager",
+                            taskType = "STOCK_TRANSFER"
                         ),
                         taskOutbox
                     )

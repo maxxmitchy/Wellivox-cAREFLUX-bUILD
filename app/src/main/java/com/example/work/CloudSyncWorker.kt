@@ -509,7 +509,10 @@ class CloudSyncWorker(
                                 isApproved = doc["isApproved"] as? Boolean ?: false,
                                 approvedBy = doc["approvedBy"] as? String,
                                 approvedAt = (doc["approvedAt"] as? Number)?.toLong(),
-                                approvalNotes = doc["approvalNotes"] as? String
+                                approvalNotes = doc["approvalNotes"] as? String,
+                                inventoryItemId = (doc["inventoryItemId"] as? Number)?.toInt(),
+                                taskType = doc["taskType"] as? String,
+                                dueTimestamp = (doc["dueTimestamp"] as? Number)?.toLong()
                             )
                             dao.insertOperationTask(newLocalTask)
                         }

@@ -33,7 +33,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         InventoryLedgerEntry::class,
         com.example.data.sync.SyncOutboxRecord::class
     ],
-    version = 34,
+    version = 35,
     exportSchema = false
 )
 abstract class PharmacyDatabase : RoomDatabase() {
@@ -190,6 +190,17 @@ abstract class PharmacyDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_34_35 = object : Migration(34, 35) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL("ALTER TABLE operations_tasks ADD COLUMN inventoryItemId INTEGER DEFAULT NULL")
+                database.execSQL("ALTER TABLE operations_tasks ADD COLUMN taskType TEXT DEFAULT NULL")
+                database.execSQL("ALTER TABLE operations_tasks ADD COLUMN dueTimestamp INTEGER DEFAULT NULL")
+                database.execSQL("CREATE INDEX IF NOT EXISTS `index_operations_tasks_branchId` ON `operations_tasks` (`branchId`)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS `index_operations_tasks_inventoryItemId` ON `operations_tasks` (`inventoryItemId`)")
+                database.execSQL("CREATE INDEX IF NOT EXISTS `index_operations_tasks_taskType` ON `operations_tasks` (`taskType`)")
+            }
+        }
+
         @androidx.annotation.VisibleForTesting
         fun setTestInstance(instance: PharmacyDatabase?) {
             INSTANCE = instance
@@ -202,7 +213,7 @@ abstract class PharmacyDatabase : RoomDatabase() {
                     PharmacyDatabase::class.java,
                     "pharmacy_database"
                 )
-                .addMigrations(MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_17_18, MIGRATION_22_23, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34)
+                .addMigrations(MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_17_18, MIGRATION_22_23, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35)
                 .build()
                 INSTANCE = instance
                 instance

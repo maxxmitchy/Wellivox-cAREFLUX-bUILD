@@ -85,7 +85,10 @@ class NotificationActionReceiver : BroadcastReceiver() {
                                 "branchId" to updated.branchId,
                                 "originatingUserUid" to updated.originatingUserUid,
                                 "assignedToName" to (updated.assignedToName ?: ""),
-                                "assignedToUid" to (updated.assignedToUid ?: "")
+                                "assignedToUid" to (updated.assignedToUid ?: ""),
+                                "inventoryItemId" to (updated.inventoryItemId ?: 0),
+                                "taskType" to (updated.taskType ?: ""),
+                                "dueTimestamp" to (updated.dueTimestamp ?: 0L)
                             )
                             val outbox = com.example.data.sync.SyncOutboxRecord(
                                 branchId = updated.branchId,
@@ -155,7 +158,10 @@ class NotificationActionReceiver : BroadcastReceiver() {
                                 "verifiedBy" to (updated.verifiedBy ?: ""),
                                 "verificationNotes" to (updated.verificationNotes ?: ""),
                                 "verificationChannel" to (updated.verificationChannel ?: ""),
-                                "verifiedAt" to (updated.verifiedAt ?: 0L)
+                                "verifiedAt" to (updated.verifiedAt ?: 0L),
+                                "inventoryItemId" to (updated.inventoryItemId ?: 0),
+                                "taskType" to (updated.taskType ?: ""),
+                                "dueTimestamp" to (updated.dueTimestamp ?: 0L)
                             )
                             val outbox = com.example.data.sync.SyncOutboxRecord(
                                 branchId = updated.branchId,
