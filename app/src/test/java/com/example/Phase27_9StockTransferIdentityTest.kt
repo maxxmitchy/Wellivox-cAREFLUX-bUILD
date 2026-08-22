@@ -100,6 +100,25 @@ class Phase27_9StockTransferIdentityTest {
         assertNull("Single candidate with conflicting sourceGlobalId MUST fail closed", resolved)
     }
 
+    // 2b / Case 3: Single candidate + destination candidate missing globalId (blank) -> FAIL CLOSED
+    @Test
+    fun test_sourceGlobalIdPresent_destinationCandidateMissingGlobalId_failsClosed() {
+        val candidates = listOf(
+            createTestItem(id = 101, name = "Amoxicillin", dosage = "500mg", unitForm = "Capsule", brand = "Generic", globalId = "")
+        )
+        val payload = StockTransferPayload(
+            sourceGlobalId = "GLOBAL-A",
+            sourceItemId = 999,
+            name = "Amoxicillin",
+            dosage = "500mg",
+            unitForm = "Capsule",
+            brand = "Generic",
+            quantity = 10
+        )
+        val resolved = StockTransferPayload.resolveMatchingInventoryItem(candidates, payload)
+        assertNull("Candidate with missing (blank) globalId MUST NOT match when authoritative sourceGlobalId is provided", resolved)
+    }
+
     // 3. Multiple candidates + exactly one matching sourceGlobalId -> PASS
     @Test
     fun test3_multipleCandidatesExactlyOneMatchingSourceGlobalId_passes() {

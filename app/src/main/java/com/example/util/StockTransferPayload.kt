@@ -149,30 +149,23 @@ data class StockTransferPayload(
                 return true
             }
 
-            // Global ID verification rule: When sourceGlobalId is present
+            // Global ID verification rule: When sourceGlobalId is present, the transfer MUST NOT
+            // be accepted unless verified by an authoritative matching globalId on the candidate.
             if (payload.sourceGlobalId.isNotBlank()) {
                 val matchingGlobalId = matchingNameAndDose.filter {
                     it.globalId.isNotBlank() &&
                     it.globalId.trim().equals(payload.sourceGlobalId.trim(), ignoreCase = true)
                 }
 
-                if (matchingGlobalId.size > 1) {
-                    // Case 5: Duplicate globalId detected among candidates -> FAIL CLOSED
-                    return null
-                }
-
                 if (matchingGlobalId.size == 1) {
-                    // Case 1 & Case 3: Exactly one candidate matches sourceGlobalId
+                    // Case 1 & Case 4: Exactly one candidate matches sourceGlobalId
                     val candidate = matchingGlobalId.first()
                     return if (isVariantCompatible(candidate)) candidate else null
                 }
 
-                // If candidates have non-blank globalId but none match sourceGlobalId ->
-                // Case 2 & Case 4: Contradicting / conflicting globalId -> FAIL CLOSED
-                val candidatesWithGlobalId = matchingNameAndDose.filter { it.globalId.isNotBlank() }
-                if (candidatesWithGlobalId.isNotEmpty()) {
-                    return null
-                }
+                // Case 2 (conflicting globalId), Case 3 (blank candidate globalId),
+                // Case 5 (no candidates match), Case 6 (duplicate candidate globalId): FAIL CLOSED
+                return null
             }
 
             // Fallback for legacy transfers (no sourceGlobalId) or legacy records without globalId:
