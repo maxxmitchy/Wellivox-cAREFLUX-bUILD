@@ -114,9 +114,9 @@ data class StockTransferPayload(
          * of branch inventory items using strict variant identity rules:
          * 1. Name match (case-insensitive)
          * 2. Dosage match (case-insensitive)
-         * 3. Authoritative sourceGlobalId / globalId verification
-         * 4. Multi-candidate scoring with strict tie/ambiguity detection (FAILS CLOSED on ties).
-         * Returns null if no exact or safe match is found, or if candidates are ambiguous.
+         * 3. Authoritative sourceGlobalId / globalId verification (Single & Multi candidate)
+         * 4. Multi-candidate scoring with strict tie/ambiguity detection (FAILS CLOSED on ties/conflicts).
+         * Returns null if no exact or safe match is found, or if candidates are ambiguous or conflicting.
          */
         fun resolveMatchingInventoryItem(
             candidates: List<InventoryItem>,
@@ -129,28 +129,63 @@ data class StockTransferPayload(
 
             if (matchingNameAndDose.isEmpty()) return null
 
-            if (matchingNameAndDose.size == 1) {
-                val candidate = matchingNameAndDose.first()
-                // If unitForm is defined in both and conflicts, do NOT falsely collide!
+            // Helper to validate core variant attribute compatibility (unitForm, brand, category)
+            fun isVariantCompatible(candidate: InventoryItem): Boolean {
                 if (payload.unitForm.isNotBlank() && candidate.unitForm.isNotBlank() &&
                     !candidate.unitForm.trim().equals(payload.unitForm.trim(), ignoreCase = true)
                 ) {
-                    return null
+                    return false
                 }
-                // If brand is defined in both and conflicts, do NOT falsely collide!
                 if (payload.brand.isNotBlank() && candidate.brand.isNotBlank() &&
                     !candidate.brand.trim().equals(payload.brand.trim(), ignoreCase = true)
                 ) {
-                    return null
+                    return false
                 }
-                return candidate
+                if (payload.category.isNotBlank() && candidate.category.isNotBlank() &&
+                    !candidate.category.trim().equals(payload.category.trim(), ignoreCase = true)
+                ) {
+                    return false
+                }
+                return true
             }
 
-            // Multiple candidates with same name and dosage: disambiguate with strict scoring
+            // Global ID verification rule: When sourceGlobalId is present
+            if (payload.sourceGlobalId.isNotBlank()) {
+                val matchingGlobalId = matchingNameAndDose.filter {
+                    it.globalId.isNotBlank() &&
+                    it.globalId.trim().equals(payload.sourceGlobalId.trim(), ignoreCase = true)
+                }
+
+                if (matchingGlobalId.size > 1) {
+                    // Case 5: Duplicate globalId detected among candidates -> FAIL CLOSED
+                    return null
+                }
+
+                if (matchingGlobalId.size == 1) {
+                    // Case 1 & Case 3: Exactly one candidate matches sourceGlobalId
+                    val candidate = matchingGlobalId.first()
+                    return if (isVariantCompatible(candidate)) candidate else null
+                }
+
+                // If candidates have non-blank globalId but none match sourceGlobalId ->
+                // Case 2 & Case 4: Contradicting / conflicting globalId -> FAIL CLOSED
+                val candidatesWithGlobalId = matchingNameAndDose.filter { it.globalId.isNotBlank() }
+                if (candidatesWithGlobalId.isNotEmpty()) {
+                    return null
+                }
+            }
+
+            // Fallback for legacy transfers (no sourceGlobalId) or legacy records without globalId:
+            if (matchingNameAndDose.size == 1) {
+                val candidate = matchingNameAndDose.first()
+                return if (isVariantCompatible(candidate)) candidate else null
+            }
+
+            // Multiple candidates: disambiguate with strict scoring
             val scored = matchingNameAndDose.map { candidate ->
                 var score = 0
 
-                // 1. Source global ID matching as strong verification evidence (+100)
+                // 1. Source global ID matching (+100)
                 if (payload.sourceGlobalId.isNotBlank() && candidate.globalId.isNotBlank() &&
                     candidate.globalId.trim().equals(payload.sourceGlobalId.trim(), ignoreCase = true)
                 ) {

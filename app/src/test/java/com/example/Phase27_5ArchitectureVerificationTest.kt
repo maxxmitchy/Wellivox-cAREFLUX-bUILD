@@ -63,14 +63,7 @@ class Phase27_5ArchitectureVerificationTest {
             .apply()
 
         val vm = PharmacyViewModel(ApplicationProvider.getApplicationContext())
-        vm.addOrUpdateInventory(
-            name = corruptedUpdate.name,
-            dosage = corruptedUpdate.dosage,
-            currentStock = corruptedUpdate.stockQuantity,
-            minStock = corruptedUpdate.minRequiredStock,
-            category = corruptedUpdate.category,
-            id = corruptedUpdate.id
-        )
+        vm.insertAndSyncInventoryItem(corruptedUpdate)
         org.robolectric.shadows.ShadowLooper.idleMainLooper()
 
         // Verify Room item quantity was NOT modified (failed closed)

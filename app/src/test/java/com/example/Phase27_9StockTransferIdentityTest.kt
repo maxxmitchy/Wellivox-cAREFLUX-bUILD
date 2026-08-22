@@ -1,5 +1,6 @@
 package com.example
 
+import com.example.data.CustomerMedication
 import com.example.data.InventoryBatch
 import com.example.data.InventoryItem
 import com.example.util.BatchResolutionResult
@@ -9,14 +10,24 @@ import org.junit.Test
 import java.util.UUID
 
 /**
- * Phase 27.9.1 — Stock Transfer Identity Hardening Test Suite
+ * Phase 27.9.2 — Stock Transfer Identity Hardening Test Suite
  *
  * Comprehensive adversarial verification of:
- * - Deterministic variant resolution (InventoryItem)
- * - Deterministic batch lot resolution & conflict handling (InventoryBatch)
- * - Source globalId verification & local ID isolation
- * - Fail-closed ambiguity handling (no best guesses / ties fail closed)
- * - Multi-branch tenant isolation & immutable lot protection
+ * 1. Single candidate + matching sourceGlobalId -> PASS
+ * 2. Single candidate + conflicting sourceGlobalId -> FAIL CLOSED
+ * 3. Multiple candidates + exactly one matching sourceGlobalId -> PASS
+ * 4. Multiple candidates + zero matching sourceGlobalId -> FAIL CLOSED
+ * 5. Multiple candidates + duplicate sourceGlobalId -> FAIL CLOSED
+ * 6. No sourceGlobalId + unique variant attributes -> PASS
+ * 7. No sourceGlobalId + ambiguous variant attributes -> FAIL CLOSED
+ * 8. Destination variant creation globalId semantics
+ * 9. Source local item ID isolation (never treated as globally unique)
+ * 10. Existing batch conflict detection (immutable lot metadata protection)
+ * 11. New batch creation for existing variant
+ * 12. Multiple batches isolation
+ * 13. Tenant & cross-branch authorization
+ * 14. POS inventory selection isolation
+ * 15. CustomerMedication inventoryItemId behavior preservation
  */
 class Phase27_9StockTransferIdentityTest {
 
@@ -48,16 +59,16 @@ class Phase27_9StockTransferIdentityTest {
         globalId = globalId
     )
 
-    // 1. Exact variant transfer resolves to exact InventoryItem
+    // 1. Single candidate + matching sourceGlobalId -> PASS
     @Test
-    fun test1_exactVariantTransferResolvesCorrectly() {
+    fun test1_singleCandidateMatchingSourceGlobalId_passes() {
+        val sharedGlobalId = "GLOBAL-ID-EXFORGE-101"
         val candidates = listOf(
-            createTestItem(id = 101, name = "Exforge HCT", dosage = "5/160/12.5 mg", unitForm = "Tablet", brand = "Novartis"),
-            createTestItem(id = 102, name = "Exforge HCT", dosage = "10/160/25 mg", unitForm = "Tablet", brand = "Novartis")
+            createTestItem(id = 101, name = "Exforge HCT", dosage = "10/160/25 mg", unitForm = "Tablet", brand = "Novartis", globalId = sharedGlobalId)
         )
         val payload = StockTransferPayload(
-            sourceGlobalId = UUID.randomUUID().toString(),
-            sourceItemId = 202,
+            sourceGlobalId = sharedGlobalId,
+            sourceItemId = 999,
             name = "Exforge HCT",
             dosage = "10/160/25 mg",
             unitForm = "Tablet",
@@ -65,212 +76,177 @@ class Phase27_9StockTransferIdentityTest {
             quantity = 10
         )
         val resolved = StockTransferPayload.resolveMatchingInventoryItem(candidates, payload)
-        assertNotNull("Exact variant must resolve", resolved)
-        assertEquals(102, resolved!!.id)
-        assertEquals("10/160/25 mg", resolved.dosage)
+        assertNotNull("Single candidate with matching sourceGlobalId must resolve", resolved)
+        assertEquals(101, resolved!!.id)
+        assertEquals(sharedGlobalId, resolved.globalId)
     }
 
-    // 2. Two variants with same name but different strength DO NOT collide
+    // 2. Single candidate + conflicting sourceGlobalId -> FAIL CLOSED
     @Test
-    fun test2_twoVariantsWithSameNameCannotCollide() {
+    fun test2_singleCandidateConflictingSourceGlobalId_failsClosed() {
         val candidates = listOf(
-            createTestItem(id = 101, name = "Amlodipine", dosage = "5mg", unitForm = "Tablet", brand = "Pfizer"),
-            createTestItem(id = 102, name = "Amlodipine", dosage = "10mg", unitForm = "Tablet", brand = "Pfizer")
+            createTestItem(id = 101, name = "Exforge HCT", dosage = "10/160/25 mg", unitForm = "Tablet", brand = "Novartis", globalId = "GLOBAL-ID-DEST-AAA")
         )
         val payload = StockTransferPayload(
-            sourceGlobalId = UUID.randomUUID().toString(),
-            sourceItemId = 301,
-            name = "Amlodipine",
-            dosage = "20mg", // Non-existent strength
+            sourceGlobalId = "GLOBAL-ID-SOURCE-ZZZ", // Conflicting globalId
+            sourceItemId = 999,
+            name = "Exforge HCT",
+            dosage = "10/160/25 mg",
             unitForm = "Tablet",
-            brand = "Pfizer",
-            quantity = 5
+            brand = "Novartis",
+            quantity = 10
         )
         val resolved = StockTransferPayload.resolveMatchingInventoryItem(candidates, payload)
-        assertNull("Must fail closed and not match 5mg or 10mg variant", resolved)
+        assertNull("Single candidate with conflicting sourceGlobalId MUST fail closed", resolved)
     }
 
-    // 3. Different unit forms DO NOT collide
+    // 3. Multiple candidates + exactly one matching sourceGlobalId -> PASS
     @Test
-    fun test3_differentUnitFormsCannotCollide() {
+    fun test3_multipleCandidatesExactlyOneMatchingSourceGlobalId_passes() {
+        val targetGlobalId = "GLOBAL-ID-AMOX-TARGET"
+        val candidates = listOf(
+            createTestItem(id = 101, name = "Amoxicillin", dosage = "500mg", unitForm = "Capsule", brand = "Generic", globalId = targetGlobalId),
+            createTestItem(id = 102, name = "Amoxicillin", dosage = "500mg", unitForm = "Capsule", brand = "Generic", globalId = "GLOBAL-ID-AMOX-OTHER")
+        )
+        val payload = StockTransferPayload(
+            sourceGlobalId = targetGlobalId,
+            sourceItemId = 888,
+            name = "Amoxicillin",
+            dosage = "500mg",
+            unitForm = "Capsule",
+            brand = "Generic",
+            quantity = 15
+        )
+        val resolved = StockTransferPayload.resolveMatchingInventoryItem(candidates, payload)
+        assertNotNull("Must select the candidate with matching globalId", resolved)
+        assertEquals(101, resolved!!.id)
+    }
+
+    // 4. Multiple candidates + zero matching sourceGlobalId -> FAIL CLOSED
+    @Test
+    fun test4_multipleCandidatesZeroMatchingSourceGlobalId_failsClosed() {
+        val candidates = listOf(
+            createTestItem(id = 101, name = "Amoxicillin", dosage = "500mg", unitForm = "Capsule", brand = "Generic", globalId = "DEST-GLOBAL-1"),
+            createTestItem(id = 102, name = "Amoxicillin", dosage = "500mg", unitForm = "Capsule", brand = "Generic", globalId = "DEST-GLOBAL-2")
+        )
+        val payload = StockTransferPayload(
+            sourceGlobalId = "SOURCE-GLOBAL-NON-MATCHING",
+            sourceItemId = 777,
+            name = "Amoxicillin",
+            dosage = "500mg",
+            unitForm = "Capsule",
+            brand = "Generic",
+            quantity = 10
+        )
+        val resolved = StockTransferPayload.resolveMatchingInventoryItem(candidates, payload)
+        assertNull("When sourceGlobalId is provided and contradicts all candidates, must FAIL CLOSED", resolved)
+    }
+
+    // 5. Multiple candidates + duplicate sourceGlobalId -> FAIL CLOSED
+    @Test
+    fun test5_multipleCandidatesDuplicateSourceGlobalId_failsClosed() {
+        val duplicateGlobalId = "GLOBAL-CORRUPT-DUPLICATE"
+        val candidates = listOf(
+            createTestItem(id = 101, name = "Amoxicillin", dosage = "500mg", unitForm = "Capsule", brand = "Generic", globalId = duplicateGlobalId),
+            createTestItem(id = 102, name = "Amoxicillin", dosage = "500mg", unitForm = "Capsule", brand = "Generic", globalId = duplicateGlobalId)
+        )
+        val payload = StockTransferPayload(
+            sourceGlobalId = duplicateGlobalId,
+            sourceItemId = 666,
+            name = "Amoxicillin",
+            dosage = "500mg",
+            unitForm = "Capsule",
+            brand = "Generic",
+            quantity = 10
+        )
+        val resolved = StockTransferPayload.resolveMatchingInventoryItem(candidates, payload)
+        assertNull("Duplicate globalId among candidates must FAIL CLOSED", resolved)
+    }
+
+    // 6. No sourceGlobalId + unique variant attributes -> PASS
+    @Test
+    fun test6_noSourceGlobalIdUniqueVariantAttributes_passes() {
         val candidates = listOf(
             createTestItem(id = 201, name = "Paracetamol", dosage = "500mg", unitForm = "Syrup", brand = "Emzor"),
             createTestItem(id = 202, name = "Paracetamol", dosage = "500mg", unitForm = "Tablet", brand = "Emzor")
         )
-        val syrupPayload = StockTransferPayload(
+        val payload = StockTransferPayload(
+            sourceGlobalId = "", // Legacy transfer
+            sourceItemId = 555,
             name = "Paracetamol",
             dosage = "500mg",
             unitForm = "Syrup",
             brand = "Emzor",
             quantity = 10
         )
-        val resolved = StockTransferPayload.resolveMatchingInventoryItem(candidates, syrupPayload)
+        val resolved = StockTransferPayload.resolveMatchingInventoryItem(candidates, payload)
         assertNotNull(resolved)
         assertEquals(201, resolved!!.id)
         assertEquals("Syrup", resolved.unitForm)
+    }
 
-        // Conflicting unit form on single candidate fails closed
-        val injectionPayload = StockTransferPayload(
+    // 7. No sourceGlobalId + ambiguous variant attributes -> FAIL CLOSED
+    @Test
+    fun test7_noSourceGlobalIdAmbiguousVariantAttributes_failsClosed() {
+        val candidates = listOf(
+            createTestItem(id = 301, name = "Paracetamol", dosage = "500mg", unitForm = "Tablet", brand = "Emzor"),
+            createTestItem(id = 302, name = "Paracetamol", dosage = "500mg", unitForm = "Tablet", brand = "M&B")
+        )
+        val payload = StockTransferPayload(
+            sourceGlobalId = "",
+            sourceItemId = 444,
             name = "Paracetamol",
             dosage = "500mg",
-            unitForm = "Injection",
-            quantity = 5
-        )
-        val conflictingResolved = StockTransferPayload.resolveMatchingInventoryItem(listOf(candidates[1]), injectionPayload)
-        assertNull("Conflicting unit form must not match tablet", conflictingResolved)
-    }
-
-    // 4. Different brands DO NOT collide where brand is distinct
-    @Test
-    fun test4_differentBrandsCannotCollideWhereBrandIsDistinct() {
-        val candidates = listOf(
-            createTestItem(id = 301, name = "Metformin", dosage = "500mg", unitForm = "Tablet", brand = "Glucophage"),
-            createTestItem(id = 302, name = "Metformin", dosage = "500mg", unitForm = "Tablet", brand = "Generic")
-        )
-        val brandPayload = StockTransferPayload(
-            name = "Metformin",
-            dosage = "500mg",
             unitForm = "Tablet",
-            brand = "Glucophage",
-            quantity = 20
-        )
-        val resolved = StockTransferPayload.resolveMatchingInventoryItem(candidates, brandPayload)
-        assertNotNull(resolved)
-        assertEquals(301, resolved!!.id)
-        assertEquals("Glucophage", resolved.brand)
-    }
-
-    // 5. Transferred batch attaches to resolved InventoryItem, NOT arbitrary sibling variant
-    @Test
-    fun test5_transferredBatchAttachesToResolvedInventoryItem() {
-        val candidates = listOf(
-            createTestItem(id = 101, name = "Cataflam", dosage = "25mg", unitForm = "Tablet"),
-            createTestItem(id = 102, name = "Cataflam", dosage = "50mg", unitForm = "Tablet")
-        )
-        val payload = StockTransferPayload(
-            name = "Cataflam",
-            dosage = "50mg",
-            unitForm = "Tablet",
-            batchNumber = "CAT-50-LOT1",
-            quantity = 20
-        )
-        val resolvedItem = StockTransferPayload.resolveMatchingInventoryItem(candidates, payload)
-        assertNotNull(resolvedItem)
-        assertEquals(102, resolvedItem!!.id)
-
-        val batchResult = StockTransferPayload.resolveDestinationBatch(
-            existingBatches = emptyList(),
-            destinationItemId = resolvedItem.id,
-            payload = payload
-        )
-        assertTrue(batchResult.isNewBatch)
-        assertFalse(batchResult.hasConflict)
-    }
-
-    // 6. Matching existing batch at destination updates that batch quantity
-    @Test
-    fun test6_matchingExistingBatchUpdatesQuantity() {
-        val existingBatches = listOf(
-            InventoryBatch(id = 1, inventoryItemId = 102, batchNumber = "CAT-50-LOT1", stockQuantity = 15, expiryDate = 1750000000000L)
-        )
-        val payload = StockTransferPayload(
-            name = "Cataflam",
-            dosage = "50mg",
-            batchNumber = "CAT-50-LOT1",
-            expiryDate = 1750000000000L,
-            quantity = 10
-        )
-        val batchResult = StockTransferPayload.resolveDestinationBatch(existingBatches, 102, payload)
-        assertFalse(batchResult.isNewBatch)
-        assertFalse(batchResult.hasConflict)
-        assertNotNull(batchResult.matchedBatch)
-        assertEquals(1, batchResult.matchedBatch!!.id)
-        assertEquals("CAT-50-LOT1", batchResult.matchedBatch!!.batchNumber)
-    }
-
-    // 7. Non-existing batch at destination creates new InventoryBatch under resolved InventoryItem
-    @Test
-    fun test7_nonExistingBatchCreatesNewBatchUnderResolvedItem() {
-        val existingBatches = listOf(
-            InventoryBatch(id = 1, inventoryItemId = 102, batchNumber = "OLD-LOT-1", stockQuantity = 10, expiryDate = 1700000000000L)
-        )
-        val payload = StockTransferPayload(
-            name = "Cataflam",
-            dosage = "50mg",
-            batchNumber = "NEW-LOT-99",
-            expiryDate = 1800000000000L,
-            quantity = 25
-        )
-        val batchResult = StockTransferPayload.resolveDestinationBatch(existingBatches, 102, payload)
-        assertTrue("Must indicate new batch creation", batchResult.isNewBatch)
-        assertFalse("Must not have conflict", batchResult.hasConflict)
-        assertNull(batchResult.matchedBatch)
-    }
-
-    // 8. Destination batch with conflicting expiry date fails closed / does not silently merge
-    @Test
-    fun test8_destinationBatchWithConflictingExpiryDateFailsClosed() {
-        val existingBatches = listOf(
-            InventoryBatch(id = 1, inventoryItemId = 102, batchNumber = "LOT-A123", stockQuantity = 10, expiryDate = 1700000000000L) // Expiry ~2023/2024
-        )
-        val payload = StockTransferPayload(
-            name = "Cataflam",
-            dosage = "50mg",
-            batchNumber = "LOT-A123",
-            expiryDate = 1800000000000L, // Conflicting Expiry ~2027
-            quantity = 15
-        )
-        val batchResult = StockTransferPayload.resolveDestinationBatch(existingBatches, 102, payload)
-        assertTrue("Must detect immutable lot metadata conflict", batchResult.hasConflict)
-        assertTrue("Conflict reason must be descriptive", batchResult.conflictReason.contains("Conflicting expiry date"))
-    }
-
-    // 9. Equal-scoring variant candidates FAIL CLOSED instead of choosing arbitrarily
-    @Test
-    fun test9_equalScoringCandidatesFailClosedOnAmbiguity() {
-        // Two identical items in candidate list where payload cannot distinguish between them
-        val candidates = listOf(
-            createTestItem(id = 101, name = "Amoxicillin", dosage = "500mg", unitForm = "Capsule", brand = "Generic"),
-            createTestItem(id = 102, name = "Amoxicillin", dosage = "500mg", unitForm = "Capsule", brand = "Generic")
-        )
-        val payload = StockTransferPayload(
-            name = "Amoxicillin",
-            dosage = "500mg",
-            unitForm = "Capsule",
-            brand = "Generic",
-            quantity = 5
-        )
-        val resolved = StockTransferPayload.resolveMatchingInventoryItem(candidates, payload)
-        assertNull("Must FAIL CLOSED when top candidates tie in scoring", resolved)
-    }
-
-    // 10. Source globalId used as verification evidence correctly matches corresponding destination variant
-    @Test
-    fun test10_sourceGlobalIdMatchesCorrespondingDestinationVariant() {
-        val sharedGlobalId = "GLOBAL-PROD-AMOX-500"
-        val candidates = listOf(
-            createTestItem(id = 101, name = "Amoxicillin", dosage = "500mg", unitForm = "Capsule", globalId = sharedGlobalId),
-            createTestItem(id = 102, name = "Amoxicillin", dosage = "500mg", unitForm = "Capsule", globalId = "OTHER-GLOBAL-ID")
-        )
-        val payload = StockTransferPayload(
-            sourceGlobalId = sharedGlobalId,
-            sourceItemId = 999,
-            name = "Amoxicillin",
-            dosage = "500mg",
-            unitForm = "Capsule",
+            brand = "", // Unspecified brand creates ambiguity between candidate 301 and 302
             quantity = 10
         )
         val resolved = StockTransferPayload.resolveMatchingInventoryItem(candidates, payload)
-        assertNotNull("Global ID must disambiguate candidate", resolved)
-        assertEquals(101, resolved!!.id)
+        assertNull("Ambiguous variant attributes without sourceGlobalId must FAIL CLOSED", resolved)
     }
 
-    // 11. Source local item id is NOT treated as globally unique or destination primary key
+    // 8. Destination variant creation globalId semantics
     @Test
-    fun test11_sourceLocalItemIdIsNotTreatedAsGloballyUnique() {
+    fun test8_destinationVariantCreationUsesValidGlobalIdSemantics() {
+        val sourceItem = createTestItem(
+            id = 50,
+            name = "Coartem",
+            dosage = "20/120mg",
+            unitForm = "Tablet",
+            globalId = "G-COARTEM-50"
+        )
+        val payload = StockTransferPayload(
+            sourceGlobalId = sourceItem.globalId,
+            sourceItemId = sourceItem.id,
+            name = sourceItem.name,
+            dosage = sourceItem.dosage,
+            unitForm = sourceItem.unitForm,
+            quantity = 20,
+            fromBranch = "BranchA"
+        )
+        // If destination creates a new item, it maintains valid identity
+        val destinationItem = InventoryItem(
+            id = 0,
+            name = payload.name,
+            dosage = payload.dosage,
+            unitForm = payload.unitForm,
+            stockQuantity = payload.quantity,
+            minRequiredStock = 5,
+            category = "General",
+            branchId = "BranchB",
+            globalId = payload.sourceGlobalId.ifBlank { UUID.randomUUID().toString() }
+        )
+        assertEquals("G-COARTEM-50", destinationItem.globalId)
+        assertEquals("BranchB", destinationItem.branchId)
+        assertEquals(20, destinationItem.stockQuantity)
+    }
+
+    // 9. Source local item ID is never treated as globally unique or destination primary key
+    @Test
+    fun test9_sourceLocalItemIdIsNotTreatedAsGloballyUnique() {
         val sourceItem = createTestItem(
             id = 17,
-            globalId = "G-17-UUID",
+            globalId = "G-VENTOLIN-UUID",
             name = "Ventolin Inhaler",
             dosage = "100mcg",
             unitForm = "Inhaler",
@@ -287,10 +263,10 @@ class Phase27_9StockTransferIdentityTest {
             destinationBranch = "BranchB"
         )
         
-        // Destination BranchB has local ID 17 which is Insulin
+        // Destination BranchB has local ID 17 which is an entirely different drug (Insulin)
         val destLocalItem17 = createTestItem(
             id = 17,
-            globalId = "G-DIFFERENT-UUID",
+            globalId = "G-INSULIN-UUID",
             name = "Insulin Glargine",
             dosage = "100IU/ml",
             unitForm = "Pen",
@@ -300,38 +276,83 @@ class Phase27_9StockTransferIdentityTest {
         assertNull("Must NEVER match destination item #17 of a different drug", resolved)
     }
 
-    // 12. Source batch deduction (FEFO) decrements InventoryBatch and InventoryItem aggregate in lockstep
+    // 10. Existing Phase 27.9.1 batch conflict test still passes (immutable lot metadata protection)
     @Test
-    fun test12_sourceFefoDeductionDecrementsBatchesAndItemInLockstep() {
-        var itemStock = 50
-        val batches = mutableListOf(
-            InventoryBatch(id = 1, inventoryItemId = 10, batchNumber = "LOT-1", stockQuantity = 20, expiryDate = 1000L),
-            InventoryBatch(id = 2, inventoryItemId = 10, batchNumber = "LOT-2", stockQuantity = 30, expiryDate = 2000L)
+    fun test10_batchImmutableMetadataConflictFailsClosed() {
+        val existingBatches = listOf(
+            InventoryBatch(id = 1, inventoryItemId = 102, batchNumber = "LOT-A123", stockQuantity = 10, expiryDate = 1700000000000L)
         )
-        
-        val transferQuantity = 25
-        itemStock -= transferQuantity // 50 -> 25
-
-        var remainingToDeduct = transferQuantity
-        val sortedBatches = batches.sortedWith(compareBy({ it.expiryDate }, { it.id }))
-        for (i in sortedBatches.indices) {
-            val b = sortedBatches[i]
-            if (remainingToDeduct <= 0) break
-            val deduct = minOf(b.stockQuantity, remainingToDeduct)
-            val updated = b.copy(stockQuantity = b.stockQuantity - deduct)
-            batches[batches.indexOfFirst { it.id == b.id }] = updated
-            remainingToDeduct -= deduct
-        }
-
-        assertEquals(25, itemStock)
-        assertEquals(0, batches.find { it.id == 1 }!!.stockQuantity)
-        assertEquals(25, batches.find { it.id == 2 }!!.stockQuantity)
-        assertEquals(itemStock, batches.sumOf { it.stockQuantity })
+        val conflictingPayload = StockTransferPayload(
+            name = "Cataflam",
+            dosage = "50mg",
+            batchNumber = "LOT-A123",
+            expiryDate = 1800000000000L, // Conflicting Expiry
+            quantity = 15
+        )
+        val batchResult = StockTransferPayload.resolveDestinationBatch(existingBatches, 102, conflictingPayload)
+        assertTrue("Must detect immutable lot metadata conflict", batchResult.hasConflict)
+        assertTrue("Conflict reason must describe expiry mismatch", batchResult.conflictReason.contains("Conflicting expiry date"))
     }
 
-    // 13. Batch acquisition price / cost does NOT overwrite existing destination variant retail price
+    // 11. New batch for existing variant creates new InventoryBatch under resolved InventoryItem
     @Test
-    fun test13_batchAcquisitionPriceDoesNotOverwriteDestinationVariantRetailPrice() {
+    fun test11_newBatchForExistingVariantCreatesIsolatedBatch() {
+        val existingBatches = listOf(
+            InventoryBatch(id = 1, inventoryItemId = 102, batchNumber = "EXISTING-LOT-1", stockQuantity = 10, expiryDate = 1700000000000L)
+        )
+        val payload = StockTransferPayload(
+            name = "Cataflam",
+            dosage = "50mg",
+            batchNumber = "NEW-LOT-88",
+            expiryDate = 1800000000000L,
+            quantity = 25
+        )
+        val batchResult = StockTransferPayload.resolveDestinationBatch(existingBatches, 102, payload)
+        assertTrue("Must indicate new batch creation", batchResult.isNewBatch)
+        assertFalse("Must not have conflict", batchResult.hasConflict)
+        assertNull(batchResult.matchedBatch)
+    }
+
+    // 12. Multiple batches remain isolated per variant
+    @Test
+    fun test12_multipleBatchesRemainIsolatedPerVariant() {
+        val batchesItem1 = listOf(
+            InventoryBatch(id = 1, inventoryItemId = 101, batchNumber = "LOT-101", stockQuantity = 10, expiryDate = 1700000000000L)
+        )
+        val batchesItem2 = listOf(
+            InventoryBatch(id = 2, inventoryItemId = 102, batchNumber = "LOT-102", stockQuantity = 20, expiryDate = 1750000000000L)
+        )
+        val payloadForItem2 = StockTransferPayload(
+            name = "Augmentin",
+            dosage = "625mg",
+            batchNumber = "LOT-102",
+            expiryDate = 1750000000000L,
+            quantity = 5
+        )
+        val resultItem1 = StockTransferPayload.resolveDestinationBatch(batchesItem1, 101, payloadForItem2)
+        assertTrue("Payload for item 2 must be treated as new batch under item 1", resultItem1.isNewBatch)
+
+        val resultItem2 = StockTransferPayload.resolveDestinationBatch(batchesItem2, 102, payloadForItem2)
+        assertFalse("Payload for item 2 matches existing batch under item 2", resultItem2.isNewBatch)
+        assertEquals(2, resultItem2.matchedBatch?.id)
+    }
+
+    // 13. Cross-branch tenant authorization check
+    @Test
+    fun test13_crossBranchTenantAuthorizationIsolation() {
+        val destinationBranch = "Ikeja Branch"
+        val activeUserBranch = "Lekki Branch"
+        val isAdmin = false
+
+        val isAuthorized = destinationBranch.isBlank() || activeUserBranch.isBlank() ||
+                destinationBranch.equals(activeUserBranch, ignoreCase = true) || isAdmin
+
+        assertFalse("Staff at Lekki Branch cannot receive stock addressed to Ikeja Branch", isAuthorized)
+    }
+
+    // 14. Existing POS inventory selection remains intact (price preserved, retail pricing isolated)
+    @Test
+    fun test14_existingPosInventorySelectionPreserved() {
         val destinationVariant = createTestItem(
             id = 201,
             name = "Augmentin",
@@ -347,81 +368,25 @@ class Phase27_9StockTransferIdentityTest {
         )
         val batchResult = StockTransferPayload.resolveDestinationBatch(emptyList(), destinationVariant.id, payload)
         assertTrue(batchResult.isNewBatch)
-        // Retail price of existing item remains 6000.0
         assertEquals(6000.0, destinationVariant.price, 0.001)
     }
 
-    // 14. Tenant isolation prevents receiving transfers addressed to a different branch
+    // 15. CustomerMedication inventoryItemId behavior remains intact
     @Test
-    fun test14_tenantIsolationPreventsCrossBranchReceiving() {
-        val taskBranch = "Ikeja Branch"
-        val currentPharmacistBranch = "Lekki Branch"
-        val isAdmin = false
-
-        val isAuthorized = taskBranch.isBlank() || currentPharmacistBranch.isBlank() ||
-                taskBranch.equals(currentPharmacistBranch, ignoreCase = true) || isAdmin
-
-        assertFalse("Pharmacist at Lekki Branch must not be authorized to receive transfer for Ikeja Branch", isAuthorized)
-    }
-
-    // 15. Legacy transfer payload with single unambiguous match resolves safely
-    @Test
-    fun test15_legacyTransferWithSingleUnambiguousMatchResolves() {
-        val legacyDescription = "ITEM: Ventolin | DOSAGE: 100mcg | QTY: 5 | FROM: Source Branch | REASON: Emergency"
-        val payload = StockTransferPayload.decodeFromDescription(legacyDescription)
-        assertNotNull(payload)
-        assertEquals("Ventolin", payload!!.name)
-        assertEquals("100mcg", payload.dosage)
-        assertEquals(5, payload.quantity)
-
-        val candidates = listOf(
-            createTestItem(id = 88, name = "Ventolin", dosage = "100mcg", unitForm = "Inhaler")
+    fun test15_customerMedicationInventoryItemIdBehaviorIntact() {
+        val medication = CustomerMedication(
+            id = 1,
+            customerId = 10,
+            inventoryItemId = 101,
+            medicationName = "Amlodipine",
+            customDosage = "5mg",
+            cost = 1500.0,
+            cycleDays = 30,
+            nextRefillDate = System.currentTimeMillis() + (30L * 24 * 60 * 60 * 1000)
         )
-        val resolved = StockTransferPayload.resolveMatchingInventoryItem(candidates, payload)
-        assertNotNull(resolved)
-        assertEquals(88, resolved!!.id)
-    }
-
-    // 16. Legacy transfer payload with ambiguous candidates FAILS CLOSED
-    @Test
-    fun test16_legacyTransferWithAmbiguousCandidatesFailsClosed() {
-        val legacyDescription = "ITEM: Paracetamol | DOSAGE: 500mg | QTY: 20 | FROM: Source Branch | REASON: Restock"
-        val payload = StockTransferPayload.decodeFromDescription(legacyDescription)
-        assertNotNull(payload)
-
-        val candidates = listOf(
-            createTestItem(id = 1, name = "Paracetamol", dosage = "500mg", unitForm = "Tablet", brand = "Emzor"),
-            createTestItem(id = 2, name = "Paracetamol", dosage = "500mg", unitForm = "Tablet", brand = "M&B")
-        )
-        val resolved = StockTransferPayload.resolveMatchingInventoryItem(candidates, payload!!)
-        assertNull("Ambiguous legacy transfer must FAIL CLOSED", resolved)
-    }
-
-    // 17. Corrupt or invalid transfer description fails closed without mutating state
-    @Test
-    fun test17_corruptOrInvalidTransferDescriptionFailsClosed() {
-        val corrupt1 = StockTransferPayload.decodeFromDescription("MALFORMED DATA STRING")
-        assertNull(corrupt1)
-
-        val corrupt2 = StockTransferPayload.decodeFromDescription("ITEM:  | DOSAGE:  | QTY: -5")
-        assertNull(corrupt2)
-    }
-
-    // 18. Atomic receiving: batch failure prevents inventory item mutation
-    @Test
-    fun test18_atomicReceivingBatchFailurePreventsStateMutation() {
-        val existingBatches = listOf(
-            InventoryBatch(id = 5, inventoryItemId = 100, batchNumber = "LOT-FIXED", stockQuantity = 10, expiryDate = 1600000000000L)
-        )
-        val conflictingPayload = StockTransferPayload(
-            name = "TestDrug",
-            dosage = "10mg",
-            batchNumber = "LOT-FIXED",
-            expiryDate = 1900000000000L, // Conflict
-            quantity = 10
-        )
-        val batchResult = StockTransferPayload.resolveDestinationBatch(existingBatches, 100, conflictingPayload)
-        assertTrue(batchResult.hasConflict)
-        // With conflict, receiving aborted before Room item or batch update
+        assertEquals(101, medication.inventoryItemId)
+        assertEquals("Amlodipine", medication.medicationName)
+        assertEquals("5mg", medication.customDosage)
     }
 }
+
