@@ -1246,6 +1246,12 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 android.util.Log.e("PharmacyViewModel", "Cannot create inventory item: missing lineage. Failing closed.")
                 return 0
             }
+            // Tenant authorization verification: non-admins cannot create items for arbitrary external branches
+            val activeBranch = getActiveBranchId()
+            if (!isCurrentUserAdmin() && activeBranch.isNotBlank() && itemBranchId != activeBranch) {
+                android.util.Log.e("PharmacyViewModel", "Tenant authorization breach attempt: User in branch $activeBranch tried creating inventory in branch $itemBranchId. Failing closed.")
+                return 0
+            }
         } else {
             if (item.branchId.isBlank() || item.originatingUserUid.isBlank()) {
                 android.util.Log.e("PharmacyViewModel", "Cannot update inventory item ${item.id}: missing lineage. Failing closed.")
@@ -1538,7 +1544,9 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 totalSoldQuantity = itemSoldQty,
                 imageUri = finalImageUri,
                 brand = itemBrand,
-                isFastMoving = finalFastMoving
+                isFastMoving = finalFastMoving,
+                branchId = previousExisting?.branchId ?: "",
+                originatingUserUid = previousExisting?.originatingUserUid ?: ""
             )
             val finalSavedId = saveAndSyncInventoryItemDirectly(item)
 
@@ -5845,7 +5853,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                     existing.copy(stockQuantity = updatedQty, lastUpdated = System.currentTimeMillis())
                 } else {
                     com.example.data.InventoryItem(
-                        id = (100000..999999).random(),
+                        id = 0,
                         name = itemName,
                         dosage = itemDosage,
                         stockQuantity = itemQty,
