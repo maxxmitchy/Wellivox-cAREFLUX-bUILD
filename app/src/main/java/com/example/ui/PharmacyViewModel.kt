@@ -2672,8 +2672,9 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
 
     fun dispatchAutomatedVerificationTasks(onFinished: (Int) -> Unit = {}) {
         viewModelScope.launch {
-            val currentTasks = repository.allOperationTasks.first()
-            val items = repository.allInventoryItems.first()
+            val activeBranch = getActiveBranchId()
+            val currentTasks = if (activeBranch.isBlank()) repository.allOperationTasks.first() else repository.getOperationTasksForBranch(activeBranch).first()
+            val items = if (activeBranch.isBlank()) repository.allInventoryItems.first() else repository.getInventoryForBranch(activeBranch).first()
             val now = System.currentTimeMillis()
             val sdf = java.text.SimpleDateFormat("MMM d, yyyy", java.util.Locale.getDefault())
             val ninetyDaysMs = 90L * 24 * 60 * 60 * 1000L
@@ -2968,7 +2969,8 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
 
     private suspend fun syncTaskCompletionWithInventoryReconciliation(task: OperationTask, countedQuantity: Int? = null) {
         if (!task.isCompleted) return
-        val items = repository.allInventoryItems.first()
+        val targetBranch = task.branchId.ifBlank { getActiveBranchId() }
+        val items = if (targetBranch.isBlank()) repository.allInventoryItems.first() else repository.getInventoryForBranch(targetBranch).first()
         if (items.isEmpty()) return
         val now = System.currentTimeMillis()
         val taskTime = if ((task.verifiedAt ?: 0L) > 0L) task.verifiedAt!! else now

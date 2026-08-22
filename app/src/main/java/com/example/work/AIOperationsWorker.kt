@@ -50,11 +50,11 @@ class AIOperationsWorker(
         val volumes = emptyList<com.example.data.DailyPrescriptionVolume>()
 
         try {
-            inventory = dao.getAllInventoryItems().first()
-            customers = dao.getAllCustomers().first()
-            meds = dao.getAllCustomerMedications().first()
-            receipts = dao.getAllReceipts().first()
-            tasks = dao.getAllOperationTasks().first()
+            inventory = dao.getInventoryForBranch(branchId).first()
+            customers = dao.getCustomersForBranch(branchId).first()
+            meds = dao.getCustomerMedicationsForBranch(branchId).first()
+            receipts = dao.getReceiptsForBranch(branchId).first()
+            tasks = dao.getOperationTasksForBranch(branchId).first()
         } catch (e: Exception) {
             e.printStackTrace()
             return Result.retry()

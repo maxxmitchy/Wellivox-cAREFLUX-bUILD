@@ -61,6 +61,11 @@ class NotificationActionReceiver : BroadcastReceiver() {
                         val task = repository.getOperationTaskById(taskId.toInt())
                         // Only claim if task exists and is not already completed
                         if (task != null && !task.isCompleted) {
+                            val isUserAdmin = userRole.equals("Admin", ignoreCase = true) || userRole.equals("SuperAdmin", ignoreCase = true)
+                            if (task.branchId != branchId && !isUserAdmin) {
+                                android.util.Log.e("NotificationActionReceiver", "Cross-branch authorization breach attempt: User in branch $branchId tried claiming task belonging to branch ${task.branchId}. Failing closed.")
+                                return@launch
+                            }
                             val updated = task.copy(
                                 assignedToName = staffName,
                                 assignedToUid = authUser.uid
@@ -121,6 +126,11 @@ class NotificationActionReceiver : BroadcastReceiver() {
                         val task = repository.getOperationTaskById(taskId.toInt())
                         // Do not overwrite verification metadata if already completed
                         if (task != null && !task.isCompleted) {
+                            val isUserAdmin = userRole.equals("Admin", ignoreCase = true) || userRole.equals("SuperAdmin", ignoreCase = true)
+                            if (task.branchId != branchId && !isUserAdmin) {
+                                android.util.Log.e("NotificationActionReceiver", "Cross-branch authorization breach attempt: User in branch $branchId tried quarantining task belonging to branch ${task.branchId}. Failing closed.")
+                                return@launch
+                            }
                             val updated = task.copy(
                                 isCompleted = true,
                                 verifiedBy = staffName,
