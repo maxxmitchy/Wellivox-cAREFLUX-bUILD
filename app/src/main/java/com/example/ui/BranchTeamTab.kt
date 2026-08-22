@@ -2609,22 +2609,25 @@ fun BranchTeamTab(
 
         val auditActionChannel = if (isExpiryTask) "Expiry Audit" else "Shelf Audit"
 
-        val descriptionText = task.description
-        val itemName = if (isStockTransfer && descriptionText.contains("ITEM: ")) {
-            descriptionText.substringAfter("ITEM: ").substringBefore(" | DOSAGE: ").trim()
+        val transferPayload = if (isStockTransfer) com.example.util.StockTransferPayload.decodeFromDescription(task.description) else null
+        val itemName = transferPayload?.name ?: if (isStockTransfer && task.description.contains("ITEM: ")) {
+            task.description.substringAfter("ITEM: ").substringBefore(" | DOSAGE: ").trim()
         } else ""
-        val itemDosage = if (isStockTransfer && descriptionText.contains("DOSAGE: ")) {
-            descriptionText.substringAfter("DOSAGE: ").substringBefore(" | QTY: ").trim()
+        val itemDosage = transferPayload?.dosage ?: if (isStockTransfer && task.description.contains("DOSAGE: ")) {
+            task.description.substringAfter("DOSAGE: ").substringBefore(" | QTY: ").trim()
         } else ""
-        val itemQty = if (isStockTransfer && descriptionText.contains("QTY: ")) {
-            descriptionText.substringAfter("QTY: ").substringBefore(" | FROM: ").trim().toIntOrNull() ?: 0
+        val itemQty = transferPayload?.quantity ?: if (isStockTransfer && task.description.contains("QTY: ")) {
+            task.description.substringAfter("QTY: ").substringBefore(" | FROM: ").trim().toIntOrNull() ?: 0
         } else 0
-        val fromBranch = if (isStockTransfer && descriptionText.contains("FROM: ")) {
-            descriptionText.substringAfter("FROM: ").substringBefore(" | REASON: ").trim()
+        val fromBranch = transferPayload?.fromBranch ?: if (isStockTransfer && task.description.contains("FROM: ")) {
+            task.description.substringAfter("FROM: ").substringBefore(" | REASON: ").trim()
         } else ""
-        val reasonText = if (isStockTransfer && descriptionText.contains("REASON: ")) {
-            descriptionText.substringAfter("REASON: ").trim()
+        val reasonText = transferPayload?.reason ?: if (isStockTransfer && task.description.contains("REASON: ")) {
+            val after = task.description.substringAfter("REASON: ")
+            if (after.contains(" | ")) after.substringBefore(" | ").trim() else after.trim()
         } else ""
+        val itemUnitForm = transferPayload?.unitForm ?: ""
+        val itemBatch = transferPayload?.batchNumber ?: ""
 
         val dialogTitleText = when {
             isStockTransfer -> "Stock Transfer Receipt"
@@ -2674,7 +2677,17 @@ fun BranchTeamTab(
                             Column(modifier = Modifier.padding(12.dp)) {
                                 Text(text = "INCOMING STOCK TRANSFER DETAILS", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = TealPrimary)
                                 Spacer(modifier = Modifier.height(4.dp))
-                                Text(text = "Item: $itemName ($itemDosage)", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                                val variantDetails = listOfNotNull(
+                                    itemDosage.takeIf { it.isNotBlank() },
+                                    itemUnitForm.takeIf { it.isNotBlank() },
+                                    itemBatch.takeIf { it.isNotBlank() }?.let { "Batch: $it" }
+                                ).joinToString(" • ")
+                                Text(
+                                    text = if (variantDetails.isNotBlank()) "Item: $itemName ($variantDetails)" else "Item: $itemName",
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(text = "Transfer Quantity: $itemQty units", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = TealPrimary)
                                 Spacer(modifier = Modifier.height(2.dp))

@@ -5731,6 +5731,25 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
             val updated = item.copy(stockQuantity = newQty, lastUpdated = System.currentTimeMillis())
             saveAndSyncInventoryItemDirectly(updated)
             
+            // Deduct batches at source branch (FEFO / lot deduction)
+            try {
+                val batches = repository.getBatchesForItem(item.id).firstOrNull() ?: emptyList()
+                if (batches.isNotEmpty()) {
+                    var remainingToDeduct = quantity
+                    val sortedBatches = batches.sortedWith(compareBy({ it.expiryDate }, { it.id }))
+                    for (batch in sortedBatches) {
+                        if (remainingToDeduct <= 0) break
+                        if (batch.stockQuantity <= 0) continue
+                        val deductFromThis = minOf(batch.stockQuantity, remainingToDeduct)
+                        val updatedBatch = batch.copy(stockQuantity = batch.stockQuantity - deductFromThis)
+                        repository.updateInventoryBatch(updatedBatch)
+                        remainingToDeduct -= deductFromThis
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+
             val map = mapOf(
                 "id" to updated.id,
                 "name" to updated.name,
@@ -5771,13 +5790,30 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 affectedId = item.id.toString()
             )
 
-            // Automate double-ended Task insertion for destination branch to confirm and verify receipt
+            // Automate double-ended Task insertion with structured transfer payload
+            val payload = com.example.util.StockTransferPayload(
+                sourceGlobalId = item.globalId,
+                sourceItemId = item.id,
+                name = item.name,
+                dosage = item.dosage,
+                unitForm = item.unitForm,
+                brand = item.brand,
+                category = item.category,
+                batchNumber = item.batchNumber,
+                expiryDate = item.expiryDate,
+                price = item.price,
+                quantity = quantity,
+                fromBranch = currentBranchName,
+                destinationBranch = destinationBranch.trim(),
+                reason = reason
+            )
+
             try {
                 val transferTaskId = (100000..999999).random()
                 val transferTaskMap = mapOf(
                     "id" to transferTaskId,
                     "title" to "INCOMING STOCK TRANSFER",
-                    "description" to "ITEM: ${item.name} | DOSAGE: ${item.dosage} | QTY: $quantity | FROM: ${_currentPharmacistBranchName.value ?: "Source Branch"} | REASON: $reason",
+                    "description" to payload.encodeToTaskDescription(),
                     "urgency" to "High",
                     "category" to "Stock Transfer",
                     "isCompleted" to false,
@@ -5791,6 +5827,29 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                     "approvalNotes" to ""
                 )
                 repository.upsertRemoteDocument("branch_operation_tasks", transferTaskId.toString(), transferTaskMap)
+
+                val taskOutbox = com.example.data.sync.SyncOutboxRecord(
+                    branchId = destinationBranch.trim(),
+                    entityType = "TASK",
+                    entityId = transferTaskId.toString(),
+                    operationType = "UPSERT",
+                    payloadJson = org.json.JSONObject(transferTaskMap).toString(),
+                    originatingUserUid = getCurrentUserUid()
+                )
+                repository.insertOperationTaskAndOutbox(
+                    com.example.data.OperationTask(
+                        id = transferTaskId,
+                        title = "INCOMING STOCK TRANSFER",
+                        description = payload.encodeToTaskDescription(),
+                        urgency = "High",
+                        category = "Stock Transfer",
+                        isCompleted = false,
+                        createdAt = System.currentTimeMillis(),
+                        branchId = destinationBranch.trim(),
+                        assignedToName = "Branch Manager"
+                    ),
+                    taskOutbox
+                )
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -5805,19 +5864,26 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
         onFinished: (Boolean, String) -> Unit
     ) {
         val updaterName = _currentPharmacistName.value ?: "Staff Pharmacist"
-        val descriptionText = task.description
-        if (!descriptionText.contains("ITEM: ")) {
-            onFinished(false, "Invalid stock transfer format")
+        val currentBranch = _currentPharmacistBranchId.value ?: _currentPharmacistBranchName.value ?: ""
+        
+        // Tenant boundary check: ensure user has rights to receive tasks for this branch
+        if (task.branchId.isNotBlank() && currentBranch.isNotBlank() &&
+            !task.branchId.equals(currentBranch, ignoreCase = true) &&
+            !isCurrentUserAdmin()
+        ) {
+            onFinished(false, "Unauthorized: You do not have permission to receive stock for ${task.branchId}.")
             return
         }
-        
-        val itemName = descriptionText.substringAfter("ITEM: ").substringBefore(" | DOSAGE: ").trim()
-        val itemDosage = descriptionText.substringAfter("DOSAGE: ").substringBefore(" | QTY: ").trim()
-        val itemQty = descriptionText.substringAfter("QTY: ").substringBefore(" | FROM: ").trim().toIntOrNull() ?: 0
-        val fromBranch = descriptionText.substringAfter("FROM: ").substringBefore(" | REASON: ").trim()
-        
-        if (itemQty <= 0) {
-            onFinished(false, "Invalid quantity received")
+
+        if (task.isCompleted) {
+            onFinished(false, "Transfer task has already been processed and finalized.")
+            return
+        }
+
+        // Decode and validate structured transfer payload
+        val payload = com.example.util.StockTransferPayload.decodeFromDescription(task.description)
+        if (payload == null || payload.quantity <= 0 || payload.name.isBlank()) {
+            onFinished(false, "Invalid or unresolvable stock transfer payload.")
             return
         }
 
@@ -5829,10 +5895,10 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
             verifiedAt = System.currentTimeMillis(),
             verificationNotes = "Received and verified successfully. Notes: $notes",
             verificationChannel = "Transfer Sync",
-            verificationCustomerName = "Source: $fromBranch",
+            verificationCustomerName = "Source: ${payload.fromBranch}",
             approvedBy = updaterName,
             approvedAt = System.currentTimeMillis(),
-            approvalNotes = "Confirmed receipt of $itemQty units of $itemName."
+            approvalNotes = "Confirmed receipt of ${payload.quantity} units of ${payload.name} (${payload.dosage})."
         )
 
         viewModelScope.launch {
@@ -5842,58 +5908,96 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
         // 2. Immediately notify UI so modal dismisses instantly (<16ms)
         onFinished(true, "Successfully received stock and finalized transfer.")
 
-        // 3. Process inventory increment, Firestore sync, and audit trail asynchronously in background queue
+        // 3. Process deterministic inventory resolution, batch mutation, ledger entry, Firestore sync, and audit trail
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             try {
-                // Look up local stock
-                val existing = repository.allInventoryItems.first().find { 
-                    it.name.equals(itemName, ignoreCase = true) && it.dosage.equals(itemDosage, ignoreCase = true)
+                val branchItems = repository.allInventoryItems.first().filter { 
+                    it.branchId.isBlank() || it.branchId.equals(currentBranch, ignoreCase = true)
                 }
+
+                // Deterministic resolution: match exact variant identity
+                val matchedItem = com.example.util.StockTransferPayload.resolveMatchingInventoryItem(branchItems, payload)
                 
-                val updatedQty = (existing?.stockQuantity ?: 0) + itemQty
-                val updatedItem = if (existing != null) {
-                    existing.copy(stockQuantity = updatedQty, lastUpdated = System.currentTimeMillis())
-                } else {
-                    com.example.data.InventoryItem(
-                        id = 0,
-                        name = itemName,
-                        dosage = itemDosage,
-                        stockQuantity = itemQty,
-                        minRequiredStock = 5,
-                        category = "Transfer Received",
-                        price = 0.0,
-                        expiryDate = System.currentTimeMillis() + (365L * 24L * 60L * 60L * 1000L), // 1 year default
-                        batchNumber = "TX-RECEIVED",
-                        supplier = fromBranch,
+                val destinationItemId: Int
+                val finalUpdatedItem: com.example.data.InventoryItem
+                
+                if (matchedItem != null) {
+                    val updatedQty = matchedItem.stockQuantity + payload.quantity
+                    finalUpdatedItem = matchedItem.copy(
+                        stockQuantity = updatedQty,
                         lastUpdated = System.currentTimeMillis()
                     )
+                    saveAndSyncInventoryItemDirectly(finalUpdatedItem)
+                    destinationItemId = finalUpdatedItem.id
+                } else {
+                    val newItem = com.example.data.InventoryItem(
+                        id = 0,
+                        name = payload.name,
+                        dosage = payload.dosage,
+                        unitForm = if (payload.unitForm.isNotBlank()) payload.unitForm else "Tablet",
+                        brand = if (payload.brand.isNotBlank()) payload.brand else "Standard",
+                        category = if (payload.category.isNotBlank()) payload.category else "General",
+                        price = if (payload.price > 0.0) payload.price else 0.0,
+                        stockQuantity = payload.quantity,
+                        minRequiredStock = 5,
+                        batchNumber = if (payload.batchNumber.isNotBlank()) payload.batchNumber else "TX-${System.currentTimeMillis() % 10000}",
+                        expiryDate = if (payload.expiryDate > 0L) payload.expiryDate else (System.currentTimeMillis() + (365L * 24L * 60L * 60L * 1000L)),
+                        supplier = if (payload.fromBranch.isNotBlank()) payload.fromBranch else "Branch Transfer",
+                        branchId = currentBranch,
+                        globalId = java.util.UUID.randomUUID().toString(),
+                        lastUpdated = System.currentTimeMillis()
+                    )
+                    destinationItemId = saveAndSyncInventoryItemDirectly(newItem)
+                    finalUpdatedItem = newItem.copy(id = destinationItemId)
                 }
-                
-                saveAndSyncInventoryItemDirectly(updatedItem)
+
+                // Deterministic batch association: create or update InventoryBatch at destination
+                val batches = repository.getBatchesForItem(destinationItemId).firstOrNull() ?: emptyList()
+                val existingBatch = if (payload.batchNumber.isNotBlank()) {
+                    batches.find { it.batchNumber.trim().equals(payload.batchNumber.trim(), ignoreCase = true) }
+                } else null
+
+                if (existingBatch != null) {
+                    val updatedBatch = existingBatch.copy(
+                        stockQuantity = existingBatch.stockQuantity + payload.quantity,
+                        expiryDate = if (payload.expiryDate > 0L) payload.expiryDate else existingBatch.expiryDate
+                    )
+                    repository.updateInventoryBatch(updatedBatch)
+                } else {
+                    val newBatch = com.example.data.InventoryBatch(
+                        id = 0,
+                        inventoryItemId = destinationItemId,
+                        batchNumber = if (payload.batchNumber.isNotBlank()) payload.batchNumber else "TX-RECEIVED",
+                        stockQuantity = payload.quantity,
+                        expiryDate = if (payload.expiryDate > 0L) payload.expiryDate else (System.currentTimeMillis() + (365L * 24L * 60L * 60L * 1000L)),
+                        price = if (payload.price > 0.0) payload.price else finalUpdatedItem.price
+                    )
+                    repository.insertInventoryBatch(newBatch)
+                }
                 
                 // Sync inventory item to Firestore
                 val itemMap = mapOf(
-                    "id" to updatedItem.id,
-                    "name" to updatedItem.name,
-                    "dosage" to updatedItem.dosage,
-                    "stockQuantity" to updatedItem.stockQuantity,
-                    "minRequiredStock" to updatedItem.minRequiredStock,
-                    "category" to updatedItem.category,
-                    "price" to updatedItem.price,
-                    "expiryDate" to updatedItem.expiryDate,
-                    "batchNumber" to updatedItem.batchNumber,
-                    "supplier" to updatedItem.supplier,
-                    "unitForm" to updatedItem.unitForm,
-                    "lastSoldDate" to updatedItem.lastSoldDate,
-                    "totalSoldQuantity" to updatedItem.totalSoldQuantity,
-                    "brand" to updatedItem.brand,
-                    "salesStrategy" to updatedItem.salesStrategy,
-                    "lastUpdated" to updatedItem.lastUpdated
+                    "id" to finalUpdatedItem.id,
+                    "name" to finalUpdatedItem.name,
+                    "dosage" to finalUpdatedItem.dosage,
+                    "stockQuantity" to finalUpdatedItem.stockQuantity,
+                    "minRequiredStock" to finalUpdatedItem.minRequiredStock,
+                    "category" to finalUpdatedItem.category,
+                    "price" to finalUpdatedItem.price,
+                    "expiryDate" to finalUpdatedItem.expiryDate,
+                    "batchNumber" to finalUpdatedItem.batchNumber,
+                    "supplier" to finalUpdatedItem.supplier,
+                    "unitForm" to finalUpdatedItem.unitForm,
+                    "lastSoldDate" to finalUpdatedItem.lastSoldDate,
+                    "totalSoldQuantity" to finalUpdatedItem.totalSoldQuantity,
+                    "brand" to finalUpdatedItem.brand,
+                    "salesStrategy" to finalUpdatedItem.salesStrategy,
+                    "lastUpdated" to finalUpdatedItem.lastUpdated,
+                    "branchId" to currentBranch
                 )
-                val branchId = _currentPharmacistBranchId.value ?: ""
-                syncEntityToFirestore("branch_inventory", updatedItem.id.toString(), itemMap)
+                syncEntityToFirestore("branch_inventory", finalUpdatedItem.id.toString(), itemMap)
                 
-                if (branchId.isNotEmpty()) {
+                if (currentBranch.isNotEmpty()) {
                     val taskMap = mapOf(
                         "id" to updatedTask.id,
                         "title" to updatedTask.title,
@@ -5902,7 +6006,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                         "category" to updatedTask.category,
                         "isCompleted" to updatedTask.isCompleted,
                         "createdAt" to updatedTask.createdAt,
-                        "branchId" to branchId,
+                        "branchId" to currentBranch,
                         "assignedToName" to (updatedTask.assignedToName ?: ""),
                         "assignedToUid" to (updatedTask.assignedToUid ?: ""),
                         "verifiedBy" to (updatedTask.verifiedBy ?: ""),
@@ -5917,11 +6021,25 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                     )
                     syncEntityToFirestore("branch_operation_tasks", updatedTask.id.toString(), taskMap)
                 }
+
+                // Record double-entry ledger for receiving branch
+                recordDoubleEntryLedger(
+                    itemId = destinationItemId,
+                    itemName = finalUpdatedItem.name,
+                    batchNumber = if (payload.batchNumber.isNotBlank()) payload.batchNumber else finalUpdatedItem.batchNumber,
+                    transactionType = "TRANSFER_RECEIPT",
+                    debitAccount = "BRANCH:$currentBranch",
+                    creditAccount = "BRANCH:${payload.fromBranch}",
+                    quantity = payload.quantity,
+                    unitPrice = finalUpdatedItem.price,
+                    referenceId = "RECEIPT_${destinationItemId}_${task.id}_${System.currentTimeMillis()}",
+                    notes = "Stock transfer receipt of ${payload.quantity} units from ${payload.fromBranch}. Notes: $notes"
+                )
                 
                 logAuditTrail(
                     action = "TRANSFER_RECEIVED",
-                    details = "Successfully verified and received stock transfer of $itemQty units of $itemName. Notes: $notes",
-                    affectedId = updatedItem.id.toString()
+                    details = "Successfully verified and received stock transfer of ${payload.quantity} units of ${finalUpdatedItem.name} (${finalUpdatedItem.dosage} • ${finalUpdatedItem.unitForm}, Batch: ${payload.batchNumber}). Notes: $notes",
+                    affectedId = destinationItemId.toString()
                 )
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -5934,6 +6052,7 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
             var successCount = 0
             var failCount = 0
             val stringBuilder = StringBuilder()
+            val currentBranchName = _currentPharmacistBranchName.value ?: "Careflux"
             
             transfers.forEach { (item, quantity) ->
                 if (item.stockQuantity < quantity) {
@@ -5945,6 +6064,25 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 val newQty = item.stockQuantity - quantity
                 val updated = item.copy(stockQuantity = newQty, lastUpdated = System.currentTimeMillis())
                 saveAndSyncInventoryItemDirectly(updated)
+                
+                // Deduct batches at source
+                try {
+                    val batches = repository.getBatchesForItem(item.id).firstOrNull() ?: emptyList()
+                    if (batches.isNotEmpty()) {
+                        var remainingToDeduct = quantity
+                        val sortedBatches = batches.sortedWith(compareBy({ it.expiryDate }, { it.id }))
+                        for (batch in sortedBatches) {
+                            if (remainingToDeduct <= 0) break
+                            if (batch.stockQuantity <= 0) continue
+                            val deductFromThis = minOf(batch.stockQuantity, remainingToDeduct)
+                            val updatedBatch = batch.copy(stockQuantity = batch.stockQuantity - deductFromThis)
+                            repository.updateInventoryBatch(updatedBatch)
+                            remainingToDeduct -= deductFromThis
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
                 
                 val map = mapOf(
                     "id" to updated.id,
@@ -5966,7 +6104,6 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                 )
                 syncEntityToFirestore("branch_inventory", updated.id.toString(), map)
                 
-                val currentBranchName = _currentPharmacistBranchName.value ?: "Careflux"
                 recordDoubleEntryLedger(
                     itemId = item.id,
                     itemName = item.name,
@@ -5985,6 +6122,71 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                     details = "Bulk Transferred $quantity units of ${item.name} (${item.dosage}) to branch: '$destinationBranch'. Reason: $reason",
                     affectedId = item.id.toString()
                 )
+
+                // Automate double-ended Task insertion with structured transfer payload
+                val payload = com.example.util.StockTransferPayload(
+                    sourceGlobalId = item.globalId,
+                    sourceItemId = item.id,
+                    name = item.name,
+                    dosage = item.dosage,
+                    unitForm = item.unitForm,
+                    brand = item.brand,
+                    category = item.category,
+                    batchNumber = item.batchNumber,
+                    expiryDate = item.expiryDate,
+                    price = item.price,
+                    quantity = quantity,
+                    fromBranch = currentBranchName,
+                    destinationBranch = destinationBranch.trim(),
+                    reason = reason
+                )
+
+                try {
+                    val transferTaskId = (100000..999999).random()
+                    val transferTaskMap = mapOf(
+                        "id" to transferTaskId,
+                        "title" to "INCOMING STOCK TRANSFER",
+                        "description" to payload.encodeToTaskDescription(),
+                        "urgency" to "High",
+                        "category" to "Stock Transfer",
+                        "isCompleted" to false,
+                        "createdAt" to System.currentTimeMillis(),
+                        "branchId" to destinationBranch.trim(),
+                        "assignedToName" to "Branch Manager",
+                        "assignedToUid" to "",
+                        "isApproved" to false,
+                        "approvedBy" to "",
+                        "approvedAt" to 0L,
+                        "approvalNotes" to ""
+                    )
+                    repository.upsertRemoteDocument("branch_operation_tasks", transferTaskId.toString(), transferTaskMap)
+
+                    val taskOutbox = com.example.data.sync.SyncOutboxRecord(
+                        branchId = destinationBranch.trim(),
+                        entityType = "TASK",
+                        entityId = transferTaskId.toString(),
+                        operationType = "UPSERT",
+                        payloadJson = org.json.JSONObject(transferTaskMap).toString(),
+                        originatingUserUid = getCurrentUserUid()
+                    )
+                    repository.insertOperationTaskAndOutbox(
+                        com.example.data.OperationTask(
+                            id = transferTaskId,
+                            title = "INCOMING STOCK TRANSFER",
+                            description = payload.encodeToTaskDescription(),
+                            urgency = "High",
+                            category = "Stock Transfer",
+                            isCompleted = false,
+                            createdAt = System.currentTimeMillis(),
+                            branchId = destinationBranch.trim(),
+                            assignedToName = "Branch Manager"
+                        ),
+                        taskOutbox
+                    )
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+
                 successCount++
             }
             
