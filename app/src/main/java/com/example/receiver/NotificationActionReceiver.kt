@@ -65,8 +65,10 @@ class NotificationActionReceiver : BroadcastReceiver() {
                                 assignedToName = staffName,
                                 assignedToUid = authUser.uid
                             )
-                            val targetBranchId = updated.branchId.ifBlank { branchId }
-                            val userUid = updated.originatingUserUid.ifBlank { authUser.uid }
+                            if (updated.branchId.isBlank() || updated.originatingUserUid.isBlank()) {
+                                android.util.Log.e("NotificationActionReceiver", "Task lineage missing. Failing closed.")
+                                return@launch
+                            }
                             val map: Map<String, Any> = mapOf(
                                 "id" to updated.id,
                                 "title" to updated.title,
@@ -75,18 +77,18 @@ class NotificationActionReceiver : BroadcastReceiver() {
                                 "category" to updated.category,
                                 "isCompleted" to updated.isCompleted,
                                 "createdAt" to updated.createdAt,
-                                "branchId" to targetBranchId,
-                                "originatingUserUid" to userUid,
+                                "branchId" to updated.branchId,
+                                "originatingUserUid" to updated.originatingUserUid,
                                 "assignedToName" to (updated.assignedToName ?: ""),
                                 "assignedToUid" to (updated.assignedToUid ?: "")
                             )
                             val outbox = com.example.data.sync.SyncOutboxRecord(
-                                branchId = targetBranchId,
+                                branchId = updated.branchId,
                                 entityType = "TASK",
                                 entityId = updated.id.toString(),
                                 operationType = "UPSERT",
                                 payloadJson = org.json.JSONObject(map).toString(),
-                                originatingUserUid = userUid
+                                originatingUserUid = updated.originatingUserUid
                             )
                             repository.updateOperationTaskAndOutbox(updated, outbox)
 
@@ -126,8 +128,10 @@ class NotificationActionReceiver : BroadcastReceiver() {
                                 verificationChannel = "SYSTEM_NOTIFICATION_SHADE",
                                 verifiedAt = System.currentTimeMillis()
                             )
-                            val targetBranchId = updated.branchId.ifBlank { branchId }
-                            val userUid = updated.originatingUserUid.ifBlank { authUser.uid }
+                            if (updated.branchId.isBlank() || updated.originatingUserUid.isBlank()) {
+                                android.util.Log.e("NotificationActionReceiver", "Task lineage missing. Failing closed.")
+                                return@launch
+                            }
                             val map: Map<String, Any> = mapOf(
                                 "id" to updated.id,
                                 "title" to updated.title,
@@ -136,20 +140,20 @@ class NotificationActionReceiver : BroadcastReceiver() {
                                 "category" to updated.category,
                                 "isCompleted" to updated.isCompleted,
                                 "createdAt" to updated.createdAt,
-                                "branchId" to targetBranchId,
-                                "originatingUserUid" to userUid,
+                                "branchId" to updated.branchId,
+                                "originatingUserUid" to updated.originatingUserUid,
                                 "verifiedBy" to (updated.verifiedBy ?: ""),
                                 "verificationNotes" to (updated.verificationNotes ?: ""),
                                 "verificationChannel" to (updated.verificationChannel ?: ""),
                                 "verifiedAt" to (updated.verifiedAt ?: 0L)
                             )
                             val outbox = com.example.data.sync.SyncOutboxRecord(
-                                branchId = targetBranchId,
+                                branchId = updated.branchId,
                                 entityType = "TASK",
                                 entityId = updated.id.toString(),
                                 operationType = "UPSERT",
                                 payloadJson = org.json.JSONObject(map).toString(),
-                                originatingUserUid = userUid
+                                originatingUserUid = updated.originatingUserUid
                             )
                             repository.updateOperationTaskAndOutbox(updated, outbox)
 

@@ -1237,8 +1237,23 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
 
     private suspend fun saveAndSyncInventoryItemDirectly(item: InventoryItem): Int {
         val now = System.currentTimeMillis()
-        val itemBranchId = if (item.branchId.isNotBlank()) item.branchId else getActiveBranchId()
-        val itemUserUid = if (item.originatingUserUid.isNotBlank()) item.originatingUserUid else getCurrentUserUid()
+        val itemBranchId: String
+        val itemUserUid: String
+        if (item.id == 0) {
+            itemBranchId = item.branchId.ifBlank { getActiveBranchId() }
+            itemUserUid = item.originatingUserUid.ifBlank { getCurrentUserUid() }
+            if (itemBranchId.isBlank() || itemUserUid.isBlank()) {
+                android.util.Log.e("PharmacyViewModel", "Cannot create inventory item: missing lineage. Failing closed.")
+                return 0
+            }
+        } else {
+            if (item.branchId.isBlank() || item.originatingUserUid.isBlank()) {
+                android.util.Log.e("PharmacyViewModel", "Cannot update inventory item ${item.id}: missing lineage. Failing closed.")
+                return 0
+            }
+            itemBranchId = item.branchId
+            itemUserUid = item.originatingUserUid
+        }
         val updated = item.copy(
             lastUpdated = now,
             branchId = itemBranchId,
@@ -1612,15 +1627,17 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
 
     fun deleteInventory(item: InventoryItem, reason: String = "Discontinued / Removed") {
         viewModelScope.launch {
-            val itemBranchId = item.branchId.ifBlank { getActiveBranchId() }
-            val itemUserUid = item.originatingUserUid.ifBlank { getCurrentUserUid() }
+            if (item.branchId.isBlank() || item.originatingUserUid.isBlank()) {
+                android.util.Log.e("PharmacyViewModel", "Cannot delete inventory item ${item.id}: missing lineage. Failing closed.")
+                return@launch
+            }
             val outboxRecord = com.example.data.sync.SyncOutboxRecord(
-                branchId = itemBranchId,
+                branchId = item.branchId,
                 entityType = "INVENTORY",
                 entityId = item.id.toString(),
                 operationType = "DELETE",
                 payloadJson = "{}",
-                originatingUserUid = itemUserUid
+                originatingUserUid = item.originatingUserUid
             )
             repository.deleteInventoryItemAndOutbox(item, outboxRecord)
 
@@ -2246,8 +2263,11 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                     medications = emptyList(),
                     noteText = userNotes.trim()
                 )
-                val custBranchId = updatedCustomer.branchId.ifBlank { getActiveBranchId() }
-                val custUserUid = updatedCustomer.originatingUserUid.ifBlank { getCurrentUserUid() }
+                if (updatedCustomer.branchId.isBlank() || updatedCustomer.originatingUserUid.isBlank()) {
+                    android.util.Log.e("PharmacyViewModel", "Cannot update customer ${updatedCustomer.id}: missing lineage. Failing closed.")
+                    onComplete(false, "Customer lineage missing")
+                    return@launch
+                }
                 val custMap = mapOf(
                     "id" to updatedCustomer.id,
                     "name" to updatedCustomer.name,
@@ -2262,16 +2282,16 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
                     "state" to updatedCustomer.state,
                     "lga" to updatedCustomer.lga,
                     "city" to updatedCustomer.city,
-                    "branchId" to custBranchId,
-                    "originatingUserUid" to custUserUid
+                    "branchId" to updatedCustomer.branchId,
+                    "originatingUserUid" to updatedCustomer.originatingUserUid
                 )
                 val outboxRecord = com.example.data.sync.SyncOutboxRecord(
-                    branchId = custBranchId,
+                    branchId = updatedCustomer.branchId,
                     entityType = "CUSTOMER",
                     entityId = updatedCustomer.id.toString(),
                     operationType = "UPSERT",
                     payloadJson = org.json.JSONObject(custMap).toString(),
-                    originatingUserUid = custUserUid
+                    originatingUserUid = updatedCustomer.originatingUserUid
                 )
                 repository.updateCustomerAndOutbox(updatedCustomer, outboxRecord)
                 syncCustomerToBranch(updatedCustomer)
@@ -2383,8 +2403,10 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
     }
 
     private suspend fun updateOperationTaskAndOutboxHelper(task: OperationTask) {
-        val branchId = task.branchId.ifBlank { getActiveBranchId() }
-        val userUid = task.originatingUserUid.ifBlank { getCurrentUserUid() }
+        if (task.branchId.isBlank() || task.originatingUserUid.isBlank()) {
+            android.util.Log.e("PharmacyViewModel", "Cannot update task ${task.id}: missing lineage. Failing closed.")
+            return
+        }
         val map: Map<String, Any> = mapOf(
             "id" to task.id,
             "title" to task.title,
@@ -2393,8 +2415,8 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
             "category" to task.category,
             "isCompleted" to task.isCompleted,
             "createdAt" to task.createdAt,
-            "branchId" to branchId,
-            "originatingUserUid" to userUid,
+            "branchId" to task.branchId,
+            "originatingUserUid" to task.originatingUserUid,
             "assignedToName" to (task.assignedToName ?: ""),
             "assignedToUid" to (task.assignedToUid ?: ""),
             "verifiedBy" to (task.verifiedBy ?: ""),
@@ -2408,12 +2430,12 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
             "approvalNotes" to (task.approvalNotes ?: "")
         )
         val outbox = com.example.data.sync.SyncOutboxRecord(
-            branchId = branchId,
+            branchId = task.branchId,
             entityType = "TASK",
             entityId = task.id.toString(),
             operationType = "UPSERT",
             payloadJson = org.json.JSONObject(map).toString(),
-            originatingUserUid = userUid
+            originatingUserUid = task.originatingUserUid
         )
         repository.updateOperationTaskAndOutbox(task, outbox)
     }
@@ -2915,15 +2937,17 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
 
     fun deleteOperationTask(task: OperationTask) {
         viewModelScope.launch {
-            val taskBranchId = task.branchId.ifBlank { getActiveBranchId() }
-            val taskUserUid = task.originatingUserUid.ifBlank { getCurrentUserUid() }
+            if (task.branchId.isBlank() || task.originatingUserUid.isBlank()) {
+                android.util.Log.e("PharmacyViewModel", "Cannot delete task ${task.id}: missing lineage. Failing closed.")
+                return@launch
+            }
             val outbox = com.example.data.sync.SyncOutboxRecord(
-                branchId = taskBranchId,
+                branchId = task.branchId,
                 entityType = "TASK",
                 entityId = task.id.toString(),
                 operationType = "DELETE",
                 payloadJson = "{}",
-                originatingUserUid = taskUserUid
+                originatingUserUid = task.originatingUserUid
             )
             repository.deleteOperationTaskAndOutbox(task, outbox)
             logAuditTrail(
@@ -3079,15 +3103,17 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
 
     fun deleteReceipt(receipt: Receipt) {
         viewModelScope.launch {
-            val recBranchId = receipt.branchId.ifBlank { getActiveBranchId() }
-            val recUserUid = receipt.originatingUserUid.ifBlank { getCurrentUserUid() }
+            if (receipt.branchId.isBlank() || receipt.originatingUserUid.isBlank()) {
+                android.util.Log.e("PharmacyViewModel", "Cannot delete receipt ${receipt.id}: missing lineage. Failing closed.")
+                return@launch
+            }
             val outbox = com.example.data.sync.SyncOutboxRecord(
-                branchId = recBranchId,
+                branchId = receipt.branchId,
                 entityType = "RECEIPT",
                 entityId = receipt.id.toString(),
                 operationType = "DELETE",
                 payloadJson = "{}",
-                originatingUserUid = recUserUid
+                originatingUserUid = receipt.originatingUserUid
             )
             repository.deleteReceiptAndOutbox(receipt, outbox)
         }
@@ -3460,39 +3486,45 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
     
     fun deleteCustomer(customer: Customer) {
         viewModelScope.launch { 
-            val branchId = customer.branchId.ifBlank { getActiveBranchId() }
-            val userUid = customer.originatingUserUid.ifBlank { getCurrentUserUid() }
+            if (customer.branchId.isBlank() || customer.originatingUserUid.isBlank()) {
+                android.util.Log.e("PharmacyViewModel", "Cannot delete customer ${customer.id}: missing lineage. Failing closed.")
+                return@launch
+            }
             val outboxRecord = com.example.data.sync.SyncOutboxRecord(
-                branchId = branchId,
+                branchId = customer.branchId,
                 entityType = "CUSTOMER",
                 entityId = customer.id.toString(),
                 operationType = "DELETE",
                 payloadJson = "{}",
-                originatingUserUid = userUid
+                originatingUserUid = customer.originatingUserUid
             )
             repository.deleteCustomerAndOutbox(customer, outboxRecord)
             // Cleanup orphans since no ForeignKeys cascade
             customerMedications.value.filter { it.customerId == customer.id }.forEach { med ->
-                val medOutbox = com.example.data.sync.SyncOutboxRecord(
-                    branchId = med.branchId.ifBlank { branchId },
-                    entityType = "CUSTOMER_MEDICATION",
-                    entityId = med.id.toString(),
-                    operationType = "DELETE",
-                    payloadJson = "{}",
-                    originatingUserUid = med.originatingUserUid.ifBlank { userUid }
-                )
-                repository.deleteCustomerMedicationAndOutbox(med, medOutbox)
+                if (med.branchId.isNotBlank() && med.originatingUserUid.isNotBlank()) {
+                    val medOutbox = com.example.data.sync.SyncOutboxRecord(
+                        branchId = med.branchId,
+                        entityType = "CUSTOMER_MEDICATION",
+                        entityId = med.id.toString(),
+                        operationType = "DELETE",
+                        payloadJson = "{}",
+                        originatingUserUid = med.originatingUserUid
+                    )
+                    repository.deleteCustomerMedicationAndOutbox(med, medOutbox)
+                }
             }
             clinicalInterventions.value.filter { it.customerId == customer.id }.forEach { inter ->
-                val interOutbox = com.example.data.sync.SyncOutboxRecord(
-                    branchId = inter.branchId.ifBlank { branchId },
-                    entityType = "INTERVENTION",
-                    entityId = inter.id.toString(),
-                    operationType = "DELETE",
-                    payloadJson = "{}",
-                    originatingUserUid = inter.originatingUserUid.ifBlank { userUid }
-                )
-                repository.deleteClinicalInterventionAndOutbox(inter, interOutbox)
+                if (inter.branchId.isNotBlank() && inter.originatingUserUid.isNotBlank()) {
+                    val interOutbox = com.example.data.sync.SyncOutboxRecord(
+                        branchId = inter.branchId,
+                        entityType = "INTERVENTION",
+                        entityId = inter.id.toString(),
+                        operationType = "DELETE",
+                        payloadJson = "{}",
+                        originatingUserUid = inter.originatingUserUid
+                    )
+                    repository.deleteClinicalInterventionAndOutbox(inter, interOutbox)
+                }
             }
             triggerImmediateSync()
         }
@@ -3586,15 +3618,17 @@ class PharmacyViewModel(application: Application) : AndroidViewModel(application
 
     fun deleteCustomerMedication(med: CustomerMedication) {
         viewModelScope.launch { 
-            val branchId = med.branchId.ifBlank { getActiveBranchId() }
-            val userUid = med.originatingUserUid.ifBlank { getCurrentUserUid() }
+            if (med.branchId.isBlank() || med.originatingUserUid.isBlank()) {
+                android.util.Log.e("PharmacyViewModel", "Cannot delete medication ${med.id}: missing lineage. Failing closed.")
+                return@launch
+            }
             val outboxRecord = com.example.data.sync.SyncOutboxRecord(
-                branchId = branchId,
+                branchId = med.branchId,
                 entityType = "CUSTOMER_MEDICATION",
                 entityId = med.id.toString(),
                 operationType = "DELETE",
                 payloadJson = "{}",
-                originatingUserUid = userUid
+                originatingUserUid = med.originatingUserUid
             )
             repository.deleteCustomerMedicationAndOutbox(med, outboxRecord)
             triggerImmediateSync()

@@ -371,6 +371,7 @@ interface PharmacyDao {
 
     @Transaction
     suspend fun insertMedicationSaleAndOutbox(sale: MedicationSale, outbox: com.example.data.sync.SyncOutboxRecord) {
+        if (outbox.branchId.isBlank() || outbox.originatingUserUid.isBlank()) throw IllegalArgumentException("Outbox lineage missing")
         if (outbox.payloadJson.isNotBlank()) org.json.JSONObject(outbox.payloadJson)
         insertMedicationSale(sale)
         insertOutboxRecord(outbox)
@@ -378,6 +379,7 @@ interface PharmacyDao {
 
     @Transaction
     suspend fun insertCustomerAndOutbox(customer: Customer, outbox: com.example.data.sync.SyncOutboxRecord): Long {
+        if (outbox.branchId.isBlank() || outbox.originatingUserUid.isBlank()) throw IllegalArgumentException("Outbox lineage missing")
         val jsonObj = org.json.JSONObject(outbox.payloadJson)
         val id = insertCustomer(customer)
         jsonObj.put("id", id)
@@ -391,6 +393,7 @@ interface PharmacyDao {
 
     @Transaction
     suspend fun updateCustomerAndOutbox(customer: Customer, outbox: com.example.data.sync.SyncOutboxRecord) {
+        if (outbox.branchId.isBlank() || outbox.originatingUserUid.isBlank()) throw IllegalArgumentException("Outbox lineage missing")
         if (outbox.payloadJson.isNotBlank()) org.json.JSONObject(outbox.payloadJson)
         updateCustomer(customer)
         insertOutboxRecord(outbox)
@@ -398,6 +401,7 @@ interface PharmacyDao {
 
     @Transaction
     suspend fun deleteCustomerAndOutbox(customer: Customer, outbox: com.example.data.sync.SyncOutboxRecord) {
+        if (outbox.branchId.isBlank() || outbox.originatingUserUid.isBlank()) throw IllegalArgumentException("Outbox lineage missing")
         if (outbox.payloadJson.isNotBlank()) org.json.JSONObject(outbox.payloadJson)
         deleteCustomer(customer)
         insertOutboxRecord(outbox)
@@ -405,6 +409,7 @@ interface PharmacyDao {
 
     @Transaction
     suspend fun insertCustomerMedicationAndOutbox(medication: CustomerMedication, outbox: com.example.data.sync.SyncOutboxRecord): Long {
+        if (outbox.branchId.isBlank() || outbox.originatingUserUid.isBlank()) throw IllegalArgumentException("Outbox lineage missing")
         val jsonObj = org.json.JSONObject(outbox.payloadJson)
         val id = insertCustomerMedication(medication)
         jsonObj.put("id", id)
@@ -418,6 +423,7 @@ interface PharmacyDao {
 
     @Transaction
     suspend fun updateCustomerMedicationAndOutbox(medication: CustomerMedication, outbox: com.example.data.sync.SyncOutboxRecord) {
+        if (outbox.branchId.isBlank() || outbox.originatingUserUid.isBlank()) throw IllegalArgumentException("Outbox lineage missing")
         if (outbox.payloadJson.isNotBlank()) org.json.JSONObject(outbox.payloadJson)
         updateCustomerMedication(medication)
         insertOutboxRecord(outbox)
@@ -425,6 +431,7 @@ interface PharmacyDao {
 
     @Transaction
     suspend fun deleteCustomerMedicationAndOutbox(medication: CustomerMedication, outbox: com.example.data.sync.SyncOutboxRecord) {
+        if (outbox.branchId.isBlank() || outbox.originatingUserUid.isBlank()) throw IllegalArgumentException("Outbox lineage missing")
         if (outbox.payloadJson.isNotBlank()) org.json.JSONObject(outbox.payloadJson)
         deleteCustomerMedication(medication)
         insertOutboxRecord(outbox)
@@ -432,6 +439,7 @@ interface PharmacyDao {
 
     @Transaction
     suspend fun insertClinicalInterventionAndOutbox(intervention: ClinicalIntervention, outbox: com.example.data.sync.SyncOutboxRecord): Long {
+        if (outbox.branchId.isBlank() || outbox.originatingUserUid.isBlank()) throw IllegalArgumentException("Outbox lineage missing")
         val jsonObj = org.json.JSONObject(outbox.payloadJson)
         val id = insertClinicalIntervention(intervention)
         jsonObj.put("id", id)
@@ -445,6 +453,7 @@ interface PharmacyDao {
 
     @Transaction
     suspend fun updateClinicalInterventionAndOutbox(intervention: ClinicalIntervention, outbox: com.example.data.sync.SyncOutboxRecord) {
+        if (outbox.branchId.isBlank() || outbox.originatingUserUid.isBlank()) throw IllegalArgumentException("Outbox lineage missing")
         if (outbox.payloadJson.isNotBlank()) org.json.JSONObject(outbox.payloadJson)
         updateClinicalIntervention(intervention)
         insertOutboxRecord(outbox)
@@ -452,6 +461,7 @@ interface PharmacyDao {
 
     @Transaction
     suspend fun deleteClinicalInterventionAndOutbox(intervention: ClinicalIntervention, outbox: com.example.data.sync.SyncOutboxRecord) {
+        if (outbox.branchId.isBlank() || outbox.originatingUserUid.isBlank()) throw IllegalArgumentException("Outbox lineage missing")
         if (outbox.payloadJson.isNotBlank()) org.json.JSONObject(outbox.payloadJson)
         deleteClinicalIntervention(intervention)
         insertOutboxRecord(outbox)
@@ -459,6 +469,7 @@ interface PharmacyDao {
 
     @Transaction
     suspend fun insertInventoryItemAndOutbox(item: InventoryItem, outbox: com.example.data.sync.SyncOutboxRecord): Long {
+        if (outbox.branchId.isBlank() || outbox.originatingUserUid.isBlank()) throw IllegalArgumentException("Outbox lineage missing")
         val jsonObj = org.json.JSONObject(outbox.payloadJson)
         val id = insertInventoryItem(item)
         jsonObj.put("id", id)
@@ -472,6 +483,7 @@ interface PharmacyDao {
 
     @Transaction
     suspend fun updateInventoryItemAndOutbox(item: InventoryItem, outbox: com.example.data.sync.SyncOutboxRecord) {
+        if (outbox.branchId.isBlank() || outbox.originatingUserUid.isBlank()) throw IllegalArgumentException("Outbox lineage missing")
         if (outbox.payloadJson.isNotBlank()) org.json.JSONObject(outbox.payloadJson)
         updateInventoryItem(item)
         insertOutboxRecord(outbox)
@@ -479,6 +491,7 @@ interface PharmacyDao {
 
     @Transaction
     suspend fun deleteInventoryItemAndOutbox(item: InventoryItem, outbox: com.example.data.sync.SyncOutboxRecord) {
+        if (outbox.branchId.isBlank() || outbox.originatingUserUid.isBlank()) throw IllegalArgumentException("Outbox lineage missing")
         if (outbox.payloadJson.isNotBlank()) org.json.JSONObject(outbox.payloadJson)
         deleteInventoryItem(item)
         insertOutboxRecord(outbox)
@@ -486,6 +499,7 @@ interface PharmacyDao {
 
     @Transaction
     suspend fun insertOperationTaskAndOutbox(task: OperationTask, outbox: com.example.data.sync.SyncOutboxRecord) {
+        if (outbox.branchId.isBlank() || outbox.originatingUserUid.isBlank()) throw IllegalArgumentException("Outbox lineage missing")
         if (outbox.payloadJson.isNotBlank()) org.json.JSONObject(outbox.payloadJson)
         insertOperationTask(task)
         insertOutboxRecord(outbox)
@@ -493,6 +507,7 @@ interface PharmacyDao {
 
     @Transaction
     suspend fun updateOperationTaskAndOutbox(task: OperationTask, outbox: com.example.data.sync.SyncOutboxRecord) {
+        if (outbox.branchId.isBlank() || outbox.originatingUserUid.isBlank()) throw IllegalArgumentException("Outbox lineage missing")
         if (outbox.payloadJson.isNotBlank()) org.json.JSONObject(outbox.payloadJson)
         updateOperationTask(task)
         insertOutboxRecord(outbox)
@@ -500,6 +515,7 @@ interface PharmacyDao {
 
     @Transaction
     suspend fun deleteOperationTaskAndOutbox(task: OperationTask, outbox: com.example.data.sync.SyncOutboxRecord) {
+        if (outbox.branchId.isBlank() || outbox.originatingUserUid.isBlank()) throw IllegalArgumentException("Outbox lineage missing")
         if (outbox.payloadJson.isNotBlank()) org.json.JSONObject(outbox.payloadJson)
         deleteOperationTask(task)
         insertOutboxRecord(outbox)
@@ -507,6 +523,7 @@ interface PharmacyDao {
 
     @Transaction
     suspend fun insertReceiptAndOutbox(receipt: Receipt, outbox: com.example.data.sync.SyncOutboxRecord) {
+        if (outbox.branchId.isBlank() || outbox.originatingUserUid.isBlank()) throw IllegalArgumentException("Outbox lineage missing")
         if (outbox.payloadJson.isNotBlank()) org.json.JSONObject(outbox.payloadJson)
         insertReceipt(receipt)
         insertOutboxRecord(outbox)
@@ -514,6 +531,7 @@ interface PharmacyDao {
 
     @Transaction
     suspend fun updateReceiptAndOutbox(receipt: Receipt, outbox: com.example.data.sync.SyncOutboxRecord) {
+        if (outbox.branchId.isBlank() || outbox.originatingUserUid.isBlank()) throw IllegalArgumentException("Outbox lineage missing")
         if (outbox.payloadJson.isNotBlank()) org.json.JSONObject(outbox.payloadJson)
         updateReceipt(receipt)
         insertOutboxRecord(outbox)
@@ -521,6 +539,7 @@ interface PharmacyDao {
 
     @Transaction
     suspend fun deleteReceiptAndOutbox(receipt: Receipt, outbox: com.example.data.sync.SyncOutboxRecord) {
+        if (outbox.branchId.isBlank() || outbox.originatingUserUid.isBlank()) throw IllegalArgumentException("Outbox lineage missing")
         if (outbox.payloadJson.isNotBlank()) org.json.JSONObject(outbox.payloadJson)
         deleteReceipt(receipt)
         insertOutboxRecord(outbox)
